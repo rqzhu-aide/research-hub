@@ -1,0 +1,58 @@
+# Research Hub Configuration
+# User defines 3-4 Hermes profiles here. The hub orchestrates workflows across them.
+
+hub:
+  name: "My Research Hub"
+  db_path: "./hub.db"
+  projects_dir: "./projects"
+  logs_dir: "./logs"
+  max_iterations: 10
+
+# Define your agent profiles here (must already exist in Hermes)
+agents:
+  - id: "research-lead"
+    profile: "consultant"
+    name: "Research Lead"
+    role: "paper_drafts, lit_survey, proof_checking"
+    model: "kimi-k2.6"
+
+  - id: "method-dev"
+    profile: "method-dev"
+    name: "Method Developer"
+    role: "math_proofs, algorithm_design"
+    model: "claude-sonnet-4"
+
+  - id: "coder"
+    profile: "coder"
+    name: "Coder / Sim Runner"
+    role: "implementation, simulation, experiments"
+    model: "glm-5.1"
+
+  - id: "reviewer"
+    profile: "reviewer"
+    name: "Reviewer"
+    role: "code_review, result_validation"
+    model: "deepseek-v4-pro"
+
+# Workflow stages define how tasks flow between agents
+workflows:
+  default:
+    - stage: "ideation"
+      agent: "research-lead"
+      description: "Draft research questions and initial approach"
+    - stage: "methodology"
+      agent: "method-dev"
+      description: "Develop mathematical framework and algorithms"
+      depends_on: ["ideation"]
+    - stage: "implementation"
+      agent: "coder"
+      description: "Implement methods and run simulations"
+      depends_on: ["methodology"]
+    - stage: "validation"
+      agent: "reviewer"
+      description: "Review results and validate correctness"
+      depends_on: ["implementation"]
+    - stage: "synthesis"
+      agent: "research-lead"
+      description: "Compile findings into summary/paper draft"
+      depends_on: ["validation"]
