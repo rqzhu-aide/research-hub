@@ -19,7 +19,8 @@ HUB_DIR = Path(__file__).parent.resolve()
 DB_PATH = HUB_DIR / "hub.db"
 CONFIG_PATH = HUB_DIR / "config.yaml"
 PROJECTS_DIR = HUB_DIR / "projects"
-TEMPLATES_DIR = HUB_DIR / "exploration-templates"
+TEMPLATES_DIR = HUB_DIR / "exploration-templates"   # legacy
+CONFIG_DIR = HUB_DIR / "config"                     # new: souls, phases, team
 
 # ── DB helpers ───────────────────────────────────────────────────────────────
 
@@ -352,7 +353,77 @@ def get_round_position(round_num: int, max_rounds: int) -> str:
 
 def load_setting_template() -> str:
     """Load the default setting.md scaffold."""
+    new_path = CONFIG_DIR / "projects" / "setting-template.md"
+    if new_path.exists():
+        return new_path.read_text()
+    # Legacy fallback
     return load_template("setting-template.md")
+
+
+# ── Layered memory composition (new) ─────────────────────────────────────────
+
+def _read_config_file(rel_path: str) -> str:
+    """Read a file from config/, returning empty string if missing."""
+    p = CONFIG_DIR / rel_path
+    return p.read_text() if p.exists() else ""
+
+
+def _load_soul(role_id: str) -> str:
+    """Load the soul markdown for a role. Returns empty string if missing."""
+    return _read_config_file(f"souls/{role_id}.md")
+
+
+def _load_team_shared() -> str:
+    """Load the shared team charter + norms."""
+    charter = _read_config_file("team/charter.md")
+    norms = _read_config_file("team/norms.md")
+    parts = []
+    if charter:
+        parts.append(charter)
+    if norms:
+        parts.append(norms)
+    return "\n\n---\n\n".join(parts)
+
+
+def _load_phase_overview(phase_slug: str) -> str:
+    """Load the phase's _phase.md shared overview."""
+    return _read_config_file(f"phases/{phase_slug}/_phase.md")
+
+
+def _compose_memory_entry(project_id: int, role_id: str, phase_cfg: dict,
+                          settings_content: str, proj_dir: Path,
+                          project_name: str) -> str:
+    """
+    Compose the full MEMORY.md entry by stacking layers:
+        team shared + soul + phase overview + role lens + project context
+    """
+    phase_slug = phase_cfg["slug"]
+    phase_name = phase_cfg.get("name", phase_slug)
+    pattern = phase_cfg.get("pattern", "")
+
+    team_shared = _load_team_shared()
+    soul = _load_soul(role_id)
+    phase_overview = _load_phase_overview(phase_slug)
+    lens = _get_role_lens(phase_cfg, role_id)
+
+    parts = [f"# Research Hub — Project {project_id} Phase {phase_slug}\n"]
+    parts.append(f"**Project:** {project_name}")
+    parts.append(f"**Phase:** {phase_name} ({pattern})")
+    parts.append(f"**Your role:** {role_id}")
+    if lens:
+        parts.append(f"**Your specific lens this phase:** {lens}")
+    parts.append(f"**Project dir:** {proj_dir}\n")
+
+    if team_shared:
+        parts.append("\n## Team Context\n" + team_shared)
+    if soul:
+        parts.append("\n## Your Soul (stable identity)\n" + soul)
+    if phase_overview:
+        parts.append(f"\n## Phase Overview: {phase_name}\n" + phase_overview)
+    if settings_content:
+        parts.append("\n## Project Settings\n" + settings_content)
+
+    return "\n".join(parts)
 
 def write_agent_memory(project_id: int, profile: str, role: str,
                        settings_content: str, proj_dir: Path,
@@ -813,7 +884,11 @@ def _setup_parallel(phase_id: int, project_id: int, phase_cfg: dict,
         if not profile:
             raise ValueError(f"Agent '{role}' not found in config.yaml")
         title = f"[{phase_cfg['name']}] {role} exploration"
-        kid = create_kanban_task(board_slug, title, m.get("lens", ""),
+        body = _build_pattern_task_body(
+            phase_cfg, role, "parallel_member",
+            output_path=m.get("output", "")
+        )
+        kid = create_kanban_task(board_slug, title, body,
                                  profile, workspace=f"dir:{proj_dir}")
         tid = _create_phase_task(
             phase_id, project_id, "parallel_member", role, profile,
@@ -830,10 +905,14 @@ def _setup_parallel(phase_id: int, project_id: int, phase_cfg: dict,
         deps = ",".join(str(t) for t in member_task_ids)
         # Link synthesis to last member in kanban (visual chain; gating is via depends_on_ids)
         parent = member_kanban_ids[-1] if member_kanban_ids else None
+        synth_body = _build_pattern_task_body(
+            phase_cfg, synth_role, "synthesis",
+            output_path=synth.get("output", "")
+        )
         kid = create_kanban_task(
             board_slug,
             f"[{phase_cfg['name']}] Synthesis ({synth_role})",
-            synth.get("task", "Merge the explorations."),
+            synth_body,
             synth_profile,
             parent=parent,
             workspace=f"dir:{proj_dir}"
@@ -865,9 +944,13 @@ def _setup_sequential(phase_id: int, project_id: int, phase_cfg: dict,
         deps = str(prev_task_id) if prev_task_id else ""
         parent = prev_kanban_id
 
+        body = _build_pattern_task_body(
+            phase_cfg, role, "sequential_step",
+            output_path=step.get("output", "")
+        )
         kid = create_kanban_task(
             board_slug, title,
-            step.get("lens", ""),
+            body,
             profile,
             parent=parent,
             workspace=f"dir:{proj_dir}"
@@ -899,7 +982,7 @@ def _setup_debate(phase_id: int, project_id: int, phase_cfg: dict,
         position = get_round_position(round_num, max_rounds)
         owner_lens = phase_cfg.get("owner_lens", "")
         title = f"[{phase_cfg['name']}] Round {round_num} — {owner_role} proposal"
-        body = _build_debate_body("proposal", owner_role, position, round_num, max_rounds, owner_lens)
+        body = _build_debate_body("proposal", owner_role, position, round_num, max_rounds, owner_lens, phase_cfg["slug"])
         kid = create_kanban_task(board_slug, title, body, owner_profile,
                                  parent=prev_kanban_id, workspace=f"dir:{proj_dir}")
         proposal_tid = _create_phase_task(
@@ -917,7 +1000,7 @@ def _setup_debate(phase_id: int, project_id: int, phase_cfg: dict,
                 raise ValueError(f"Agent '{crole}' not found in config.yaml")
             clens = phase_cfg.get("critic_lenses", {}).get(crole, "")
             ctitle = f"[{phase_cfg['name']}] Round {round_num} — {crole} critique"
-            cbody = _build_debate_body("critique", crole, position, round_num, max_rounds, clens)
+            cbody = _build_debate_body("critique", crole, position, round_num, max_rounds, clens, phase_cfg["slug"])
             ckid = create_kanban_task(board_slug, ctitle, cbody, cprofile,
                                       parent=kid, workspace=f"dir:{proj_dir}")
             _create_phase_task(
@@ -931,12 +1014,28 @@ def _setup_debate(phase_id: int, project_id: int, phase_cfg: dict,
 
 
 def _build_debate_body(side: str, role: str, position: str, round_num: int,
-                       max_rounds: int, lens: str) -> str:
-    """Build a debate task body. Tries pattern template; falls back to inline."""
-    # Try to load a pattern-specific template
+                       max_rounds: int, lens: str, phase_slug: str = "") -> str:
+    """Build a debate task body. Loads from config/phases/<slug>/{proposal,critique}.md."""
+    # Try pattern-specific templates from config/phases/
+    if phase_slug:
+        tpl_path = CONFIG_DIR / "phases" / phase_slug / f"{side}.md"
+        if tpl_path.exists():
+            position_hint = {
+                "r1": "Cold-start — this is the first proposal. Establish the baseline method.",
+                "rmid": "Middle round — revise based on prior critiques. Address each concern.",
+                "rfinal": "Final round — converge. Lock in the method; resolve any open issues.",
+            }.get(position, "")
+            return fill_template(tpl_path.read_text(), {
+                "role": role, "round_num": round_num, "max_rounds": max_rounds,
+                "lens": lens, "position": position,
+                "position_hint": position_hint,
+                "prev_round": round_num - 1,
+                "output_path": f"phases/{phase_slug}/{role}/round-{round_num:02d}.md",
+            })
+    # Legacy fallback (patterns/ in exploration-templates)
     tpl_candidates = [
-        f"patterns/debate-{side}-{position}.md",   # e.g. patterns/debate-proposal-r1.md
-        f"patterns/debate-{side}.md",               # generic
+        f"patterns/debate-{side}-{position}.md",
+        f"patterns/debate-{side}.md",
     ]
     for tpl in tpl_candidates:
         tpl_path = TEMPLATES_DIR / tpl
@@ -950,6 +1049,30 @@ def _build_debate_body(side: str, role: str, position: str, round_num: int,
     return (f"# {action.capitalize()} — Round {round_num}/{max_rounds} ({position})\n\n"
             f"**Your role:** {role}\n**Your lens:** {lens}\n\n"
             f"Write your {action} to the current proposal.")
+
+
+def _build_pattern_task_body(phase_cfg: dict, role: str, task_type: str,
+                              output_path: str = "", **extra) -> str:
+    """Build a task body for parallel/sequential patterns from config/phases/."""
+    slug = phase_cfg.get("slug", "")
+    # Try role-specific file first (e.g. lead-exploration.md, synthesis.md)
+    candidates = []
+    if task_type == "parallel_member":
+        candidates.append(f"phases/{slug}/{role}-exploration.md")
+    elif task_type == "synthesis":
+        candidates.append(f"phases/{slug}/synthesis.md")
+    elif task_type == "sequential_step":
+        candidates.append(f"phases/{slug}/{role}-step.md")
+
+    for rel in candidates:
+        p = CONFIG_DIR / rel
+        if p.exists():
+            variables = {"role": role, "output_path": output_path, **extra}
+            return fill_template(p.read_text(), variables)
+
+    # Inline fallback — use the lens from config
+    lens = _get_role_lens(phase_cfg, role) or ""
+    return f"# Task: {task_type} ({role})\n\n**Lens:** {lens}\n**Output:** {output_path}"
 
 
 def setup_phase(project_id: int, phase_slug: str) -> int:
@@ -1054,17 +1177,9 @@ def _write_phase_memory(project_id: int, profile: str, role_id: str,
         if len(kept) != len(sections):
             memory_file.write_text("\n§\n".join(kept))
 
-    # Build memory entry — lens comes from phase config
-    lens = _get_role_lens(phase_cfg, role_id)
-    entry = (
-        f"# Research Hub — Project {project_id} Phase {slug}\n\n"
-        f"**Project:** {project_name}\n"
-        f"**Phase:** {phase_cfg.get('name', slug)} ({phase_cfg.get('pattern', '')})\n"
-        f"**Your role:** {role_id}\n"
-        f"**Your lens:** {lens}\n"
-        f"**Project dir:** {proj_dir}\n\n"
-        f"## Project Settings\n{settings_content}\n"
-    )
+    # Compose the full layered entry
+    entry = _compose_memory_entry(project_id, role_id, phase_cfg,
+                                   settings_content, proj_dir, project_name)
     with open(memory_file, "a") as f:
         if memory_file.stat().st_size > 0:
             f.write("\n§\n")
