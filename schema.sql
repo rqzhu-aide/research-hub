@@ -91,19 +91,41 @@ CREATE TABLE IF NOT EXISTS rounds (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Kanban task mapping (our logical tasks -> kanban board task IDs)
-CREATE TABLE IF NOT EXISTS kanban_tasks (
+-- Unified phase task table (handles parallel / sequential / debate patterns)
+-- Replaces the rigid rounds table for new phases. Old rounds table kept for back-compat.
+CREATE TABLE IF NOT EXISTS phase_tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    phase_id INTEGER NOT NULL REFERENCES phases(id) ON DELETE CASCADE,
     project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    phase_id INTEGER REFERENCES phases(id),
-    round_id INTEGER REFERENCES rounds(id),
-    kanban_id TEXT NOT NULL,
-    board_slug TEXT NOT NULL,
-    role TEXT NOT NULL,
-    round_number INTEGER,
-    status TEXT,
+    -- What kind of task this is within the pattern:
+    --   parallel_member  - independent exploration in a parallel phase
+    --   synthesis        - merges parallel members' outputs
+    --   sequential_step  - one step in a sequential pipeline
+    --   debate_proposal  - owner's proposal in a debate round
+    --   debate_critique  - a critic's response in a debate round
+    task_type TEXT NOT NULL CHECK(task_type IN (
+        'parallel_member', 'synthesis', 'sequential_step',
+        'debate_proposal', 'debate_critique'
+    )),
+    role TEXT NOT NULL,              -- 'lead', 'statistician', 'programmer'
+    profile TEXT NOT NULL,           -- actual hermes profile name
+    round_num INTEGER DEFAULT 1,     -- debate round (1-based); 1 for non-debate
+    sequence_order INTEGER DEFAULT 0,-- step order in sequential pipelines
+    lens TEXT,                       -- what this task should focus on
+    title TEXT,                      -- kanban task title
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'blocked', 'running', 'completed', 'failed')),
+    kanban_id TEXT,                  -- hermes kanban task id
+    kanban_parent_id TEXT,           -- linked parent task (for gating)
+    depends_on_ids TEXT,             -- comma-separated phase_task ids that must complete first
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    output_path TEXT,                -- relative path within project dir
+    result_summary TEXT,
+    error_log TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_phase_tasks_phase ON phase_tasks(phase_id);
+CREATE INDEX IF NOT EXISTS idx_phase_tasks_project ON phase_tasks(project_id);
 
 -- User dashboard state
 CREATE TABLE IF NOT EXISTS dashboard_state (

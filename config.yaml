@@ -10,48 +10,125 @@ hub:
 
 # Define your agent profiles here (must already exist in Hermes)
 agents:
-  - id: "research-lead"
+  - id: "lead"
     profile: "consultant"
-    name: "Research Lead"
-    role: "paper_drafts, lit_survey, proof_checking"
+    name: "Team Lead"
+    role: "domain, framing, writing"
     model: "kimi-k2.6"
 
-  - id: "method-dev"
+  - id: "statistician"
     profile: "method-dev"
-    name: "Method Developer"
-    role: "math_proofs, algorithm_design"
+    name: "Statistician"
+    role: "methods, math, rigor"
     model: "claude-sonnet-4"
 
-  - id: "coder"
+  - id: "programmer"
     profile: "coder"
-    name: "Coder / Sim Runner"
-    role: "implementation, simulation, experiments"
+    name: "Programmer"
+    role: "implementation, data, reproducibility"
     model: "glm-5.1"
 
   - id: "reviewer"
     profile: "reviewer"
     name: "Reviewer"
-    role: "code_review, result_validation"
+    role: "independent quality check (on-demand)"
     model: "deepseek-v4-pro"
 
-  - id: "manager"
-    profile: "manager"
-    name: "Team Manager"
-    role: "workflow_management, coordination"
-    model: "kimi-k2.6"
+# Phase definitions: each phase declares its interaction pattern.
+#   parallel   = members work independently from their lens, then synthesizer merges
+#   sequential = pipeline A→B→C, each takes previous output as input
+#   debate     = owner proposes, critics critique, owner revises, repeat N rounds
+phases:
+  - slug: "01-ideation"
+    name: "Ideation"
+    description: "Literature exploration + research question formation"
+    pattern: parallel
+    synthesizer: lead           # merges the three independent explorations
+    members:
+      - role: lead
+        lens: "Domain-significant related work — what questions matter, what's been asked, where the field is"
+        output: "phases/01-ideation/lead-exploration.md"
+      - role: statistician
+        lens: "Theoretically / methodologically related work — what methods have been used, statistical framings"
+        output: "phases/01-ideation/statistician-exploration.md"
+      - role: programmer
+        lens: "Computationally related work — what's been implemented, tools, datasets, reproducibility"
+        output: "phases/01-ideation/programmer-exploration.md"
+    synthesis:
+      owner: lead
+      output: "phases/01-ideation/synthesis.md"
+      task: "Merge the three explorations into a unified picture. Identify the gap. Propose 1-2 candidate research questions."
 
-# Workflow stages define how tasks flow between agents
+  - slug: "02-methodology"
+    name: "Methodology"
+    description: "Method design — how to rigorously answer the question"
+    pattern: debate
+    owner: statistician
+    critics: [lead, programmer]
+    owner_lens: "Propose a method that will rigorously answer the research question"
+    critic_lenses:
+      lead: "Does it actually answer the research question? Will the result be meaningful?"
+      programmer: "Can we implement this? What's the computational budget? Are the data requirements realistic?"
+    max_rounds: 3
+
+  - slug: "03-implementation"
+    name: "Implementation"
+    description: "Build + run — code, experiments, results"
+    pattern: sequential
+    steps:
+      - role: programmer
+        lens: "Implement the agreed method. Produce working code + initial results."
+        output: "phases/03-implementation/code-and-results/"
+      - role: statistician
+        lens: "Verify the numbers. Are tests correct? Is the interpretation of outputs sound?"
+        input_from: programmer
+        output: "phases/03-implementation/statistician-review.md"
+      - role: lead
+        lens: "Are we on-goal? Does the output actually answer the research question?"
+        input_from: statistician
+        output: "phases/03-implementation/lead-signoff.md"
+
+  - slug: "04-analysis"
+    name: "Analysis"
+    description: "Interpret results — what do they mean, are they defensible"
+    pattern: debate
+    owner: statistician
+    critics: [lead, programmer]
+    owner_lens: "Interpret the results with proper rigor — robustness, sensitivity, honest reporting"
+    critic_lenses:
+      lead: "What does it mean for the field? Is the narrative coherent?"
+      programmer: "Is it reproducible? Did the code actually do what we claim?"
+    max_rounds: 3
+
+  - slug: "05-writing"
+    name: "Writing"
+    description: "Compile findings — paper / report draft"
+    pattern: sequential
+    steps:
+      - role: lead
+        lens: "Draft the paper/report — clear narrative that tells the story"
+        output: "phases/05-writing/draft-v1.md"
+      - role: statistician
+        lens: "Fact-check every statistical claim. Reporting standards met?"
+        input_from: lead
+        output: "phases/05-writing/statistician-corrections.md"
+      - role: programmer
+        lens: "Verify technical details, reproducibility section, code availability"
+        input_from: statistician
+        output: "phases/05-writing/programmer-corrections.md"
+
+# Legacy workflow stages (kept for backward compat with hub.py task scaffold)
 workflows:
   default:
     - stage: "ideation"
-      agent: "research-lead"
+      agent: "lead"
       description: "Draft research questions and initial approach"
     - stage: "methodology"
-      agent: "method-dev"
+      agent: "statistician"
       description: "Develop mathematical framework and algorithms"
       depends_on: ["ideation"]
     - stage: "implementation"
-      agent: "coder"
+      agent: "programmer"
       description: "Implement methods and run simulations"
       depends_on: ["methodology"]
     - stage: "validation"
@@ -59,6 +136,6 @@ workflows:
       description: "Review results and validate correctness"
       depends_on: ["implementation"]
     - stage: "synthesis"
-      agent: "research-lead"
+      agent: "lead"
       description: "Compile findings into summary/paper draft"
       depends_on: ["validation"]

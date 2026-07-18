@@ -52,6 +52,36 @@ def get_agent(cfg: dict, agent_id: str) -> Optional[dict]:
 def get_workflow(cfg: dict, name: str = "default") -> List[dict]:
     return cfg.get("workflows", {}).get(name, [])
 
+# ── Phase config helpers (new pattern-based system) ──────────────────────────
+
+def get_phases_config(cfg: dict) -> List[dict]:
+    """Return the new-style phases config list (pattern-based)."""
+    return cfg.get("phases", [])
+
+def get_phase_config(cfg: dict, slug: str) -> Optional[dict]:
+    """Return the config for a specific phase slug."""
+    for p in get_phases_config(cfg):
+        if p["slug"] == slug:
+            return p
+    return None
+
+def get_agent_by_id(cfg: dict, agent_id: str) -> Optional[dict]:
+    """Look up an agent by its id (e.g. 'lead', 'statistician')."""
+    for a in get_agents(cfg):
+        if a["id"] == agent_id:
+            return a
+    return None
+
+def get_agent_profile(cfg: dict, agent_id: str) -> Optional[str]:
+    """Resolve an agent_id to its Hermes profile name."""
+    a = get_agent_by_id(cfg, agent_id)
+    return a["profile"] if a else None
+
+def get_agent_display_name(cfg: dict, agent_id: str) -> str:
+    """Resolve an agent_id to its display name."""
+    a = get_agent_by_id(cfg, agent_id)
+    return a["name"] if a else agent_id
+
 # ── Project lifecycle ────────────────────────────────────────────────────────
 
 def create_project(name: str, description: str = "", goal: str = "",
@@ -724,6 +754,455 @@ def view_round_output(project_id: int, round_num: int, role: str) -> Optional[st
     if file_path.exists():
         return file_path.read_text()
     return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NEW PATTERN-BASED PHASE ENGINE (parallel / sequential / debate)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _get_or_create_phase(project_id: int, slug: str, name: str,
+                         description: str, max_rounds: int = 1) -> int:
+    """Idempotent: reset existing phase to fresh state, or create new."""
+    existing = get_phase(project_id, slug)
+    if existing:
+        # Wipe old phase_tasks for a clean re-setup
+        with get_db() as conn:
+            conn.execute("DELETE FROM phase_tasks WHERE phase_id = ?", (existing["id"],))
+            conn.execute(
+                "UPDATE phases SET status='active', name=?, description=?, max_rounds=? WHERE id=?",
+                (name, description, max_rounds, existing["id"])
+            )
+        return existing["id"]
+    return init_phase(project_id, slug, name, description, max_rounds)
+
+
+def _create_phase_task(phase_id: int, project_id: int, task_type: str,
+                       role: str, profile: str, title: str,
+                       lens: str = "", output_path: str = "",
+                       round_num: int = 1, sequence_order: int = 0,
+                       depends_on_ids: str = "", kanban_id: str = "",
+                       kanban_parent_id: str = "") -> int:
+    """Insert a phase_tasks row."""
+    with get_db() as conn:
+        cur = conn.execute(
+            """INSERT INTO phase_tasks
+               (phase_id, project_id, task_type, role, profile, title, lens,
+                output_path, round_num, sequence_order, depends_on_ids,
+                kanban_id, kanban_parent_id, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (phase_id, project_id, task_type, role, profile, title, lens,
+             output_path, round_num, sequence_order, depends_on_ids,
+             kanban_id, kanban_parent_id,
+             "blocked" if depends_on_ids else "pending")
+        )
+        return cur.lastrowid
+
+
+def _setup_parallel(phase_id: int, project_id: int, phase_cfg: dict,
+                    proj_dir: Path, board_slug: str) -> None:
+    """Parallel pattern: N independent members + 1 synthesis (gated on all members)."""
+    members = phase_cfg.get("members", [])
+    synth = phase_cfg.get("synthesis", {})
+    member_task_ids = []
+    member_kanban_ids = []
+
+    # 1. Create one task per member — all start immediately (no deps)
+    for m in members:
+        role = m["role"]
+        profile = get_agent_profile(load_config(), role)
+        if not profile:
+            raise ValueError(f"Agent '{role}' not found in config.yaml")
+        title = f"[{phase_cfg['name']}] {role} exploration"
+        kid = create_kanban_task(board_slug, title, m.get("lens", ""),
+                                 profile, workspace=f"dir:{proj_dir}")
+        tid = _create_phase_task(
+            phase_id, project_id, "parallel_member", role, profile,
+            title, lens=m.get("lens", ""), output_path=m.get("output", ""),
+            kanban_id=kid
+        )
+        member_task_ids.append(tid)
+        member_kanban_ids.append(kid)
+
+    # 2. Create synthesis task — blocked until ALL members complete
+    if synth:
+        synth_role = synth.get("owner", "lead")
+        synth_profile = get_agent_profile(load_config(), synth_role)
+        deps = ",".join(str(t) for t in member_task_ids)
+        # Link synthesis to last member in kanban (visual chain; gating is via depends_on_ids)
+        parent = member_kanban_ids[-1] if member_kanban_ids else None
+        kid = create_kanban_task(
+            board_slug,
+            f"[{phase_cfg['name']}] Synthesis ({synth_role})",
+            synth.get("task", "Merge the explorations."),
+            synth_profile,
+            parent=parent,
+            workspace=f"dir:{proj_dir}"
+        )
+        _create_phase_task(
+            phase_id, project_id, "synthesis", synth_role, synth_profile,
+            f"[{phase_cfg['name']}] Synthesis",
+            lens=synth.get("task", ""),
+            output_path=synth.get("output", ""),
+            depends_on_ids=deps,
+            kanban_id=kid,
+            kanban_parent_id=parent
+        )
+
+
+def _setup_sequential(phase_id: int, project_id: int, phase_cfg: dict,
+                      proj_dir: Path, board_slug: str) -> None:
+    """Sequential pattern: A→B→C pipeline, each step depends on the prior."""
+    steps = phase_cfg.get("steps", [])
+    prev_task_id = None
+    prev_kanban_id = None
+
+    for i, step in enumerate(steps):
+        role = step["role"]
+        profile = get_agent_profile(load_config(), role)
+        if not profile:
+            raise ValueError(f"Agent '{role}' not found in config.yaml")
+        title = f"[{phase_cfg['name']}] Step {i+1}: {role}"
+        deps = str(prev_task_id) if prev_task_id else ""
+        parent = prev_kanban_id
+
+        kid = create_kanban_task(
+            board_slug, title,
+            step.get("lens", ""),
+            profile,
+            parent=parent,
+            workspace=f"dir:{proj_dir}"
+        )
+        prev_task_id = _create_phase_task(
+            phase_id, project_id, "sequential_step", role, profile,
+            title, lens=step.get("lens", ""),
+            output_path=step.get("output", ""),
+            sequence_order=i + 1,
+            depends_on_ids=deps,
+            kanban_id=kid,
+            kanban_parent_id=parent
+        )
+        prev_kanban_id = kid
+
+
+def _setup_debate(phase_id: int, project_id: int, phase_cfg: dict,
+                  proj_dir: Path, board_slug: str) -> None:
+    """Debate pattern: per round — owner proposes, critics critique. Repeat max_rounds."""
+    owner_role = phase_cfg["owner"]
+    critic_roles = phase_cfg.get("critics", [])
+    max_rounds = phase_cfg.get("max_rounds", 3)
+    cfg = load_config()
+    owner_profile = get_agent_profile(cfg, owner_role)
+
+    prev_kanban_id = None
+    for round_num in range(1, max_rounds + 1):
+        # Owner proposal
+        position = get_round_position(round_num, max_rounds)
+        owner_lens = phase_cfg.get("owner_lens", "")
+        title = f"[{phase_cfg['name']}] Round {round_num} — {owner_role} proposal"
+        body = _build_debate_body("proposal", owner_role, position, round_num, max_rounds, owner_lens)
+        kid = create_kanban_task(board_slug, title, body, owner_profile,
+                                 parent=prev_kanban_id, workspace=f"dir:{proj_dir}")
+        proposal_tid = _create_phase_task(
+            phase_id, project_id, "debate_proposal", owner_role, owner_profile,
+            title, lens=owner_lens, round_num=round_num,
+            output_path=f"phases/{phase_cfg['slug']}/{owner_role}/round-{round_num:02d}.md",
+            kanban_id=kid
+        )
+        prev_kanban_id = kid
+
+        # Critics (depend on proposal)
+        for crole in critic_roles:
+            cprofile = get_agent_profile(cfg, crole)
+            if not cprofile:
+                raise ValueError(f"Agent '{crole}' not found in config.yaml")
+            clens = phase_cfg.get("critic_lenses", {}).get(crole, "")
+            ctitle = f"[{phase_cfg['name']}] Round {round_num} — {crole} critique"
+            cbody = _build_debate_body("critique", crole, position, round_num, max_rounds, clens)
+            ckid = create_kanban_task(board_slug, ctitle, cbody, cprofile,
+                                      parent=kid, workspace=f"dir:{proj_dir}")
+            _create_phase_task(
+                phase_id, project_id, "debate_critique", crole, cprofile,
+                ctitle, lens=clens, round_num=round_num,
+                depends_on_ids=str(proposal_tid),
+                output_path=f"phases/{phase_cfg['slug']}/{crole}/round-{round_num:02d}.md",
+                kanban_id=ckid, kanban_parent_id=kid
+            )
+            prev_kanban_id = ckid
+
+
+def _build_debate_body(side: str, role: str, position: str, round_num: int,
+                       max_rounds: int, lens: str) -> str:
+    """Build a debate task body. Tries pattern template; falls back to inline."""
+    # Try to load a pattern-specific template
+    tpl_candidates = [
+        f"patterns/debate-{side}-{position}.md",   # e.g. patterns/debate-proposal-r1.md
+        f"patterns/debate-{side}.md",               # generic
+    ]
+    for tpl in tpl_candidates:
+        tpl_path = TEMPLATES_DIR / tpl
+        if tpl_path.exists():
+            return fill_template(tpl_path.read_text(), {
+                "role": role, "round_num": round_num, "max_rounds": max_rounds,
+                "lens": lens, "position": position,
+            })
+    # Inline fallback
+    action = "propose" if side == "proposal" else "critique"
+    return (f"# {action.capitalize()} — Round {round_num}/{max_rounds} ({position})\n\n"
+            f"**Your role:** {role}\n**Your lens:** {lens}\n\n"
+            f"Write your {action} to the current proposal.")
+
+
+def setup_phase(project_id: int, phase_slug: str) -> int:
+    """
+    Dispatcher: read phase config, route to the right pattern setup.
+    This is the main entry point for starting any of the 5 phases.
+    """
+    cfg = load_config()
+    phase_cfg = get_phase_config(cfg, phase_slug)
+    if not phase_cfg:
+        raise ValueError(f"Phase '{phase_slug}' not found in config.yaml")
+
+    proj = get_project(project_id)
+    if not proj:
+        raise ValueError(f"Project {project_id} not found")
+    proj_dir = get_project_dir(project_id)
+    if not proj_dir:
+        raise ValueError(f"Project directory not found for project {project_id}")
+
+    pattern = phase_cfg.get("pattern", "debate")
+    slug = phase_cfg["slug"]
+    name = phase_cfg.get("name", slug)
+    description = phase_cfg.get("description", "")
+    max_rounds = phase_cfg.get("max_rounds", 1)
+
+    phase_id = _get_or_create_phase(project_id, slug, name, description, max_rounds)
+
+    # Create phase output directory
+    phase_dir = proj_dir / "phases" / slug
+    phase_dir.mkdir(parents=True, exist_ok=True)
+
+    # Ensure setting.md exists
+    settings_path = proj_dir / "setting.md"
+    if not settings_path.exists():
+        settings_path.write_text(load_setting_template())
+
+    # Create / reuse kanban board
+    board_slug = f"rhub-p{project_id}"
+    create_kanban_board(board_slug, proj["name"])
+
+    # Write memory entries for each participant in this phase
+    settings_content = settings_path.read_text()
+    participants = _phase_participants(phase_cfg)
+    for role_id in participants:
+        profile = get_agent_profile(cfg, role_id)
+        if profile:
+            _write_phase_memory(project_id, profile, role_id, phase_cfg,
+                                settings_content, proj_dir, proj["name"])
+
+    # Route to pattern-specific setup
+    if pattern == "parallel":
+        _setup_parallel(phase_id, project_id, phase_cfg, proj_dir, board_slug)
+    elif pattern == "sequential":
+        _setup_sequential(phase_id, project_id, phase_cfg, proj_dir, board_slug)
+    elif pattern == "debate":
+        _setup_debate(phase_id, project_id, phase_cfg, proj_dir, board_slug)
+    else:
+        raise ValueError(f"Unknown pattern: {pattern}")
+
+    # Mark phase running
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE phases SET status='running', config_json=? WHERE id=?",
+            (json.dumps({"pattern": pattern, "slug": slug}), phase_id)
+        )
+
+    print(f"[hub] Phase '{slug}' ({pattern}) set up for project #{project_id}")
+    return phase_id
+
+
+def _phase_participants(phase_cfg: dict) -> list:
+    """Return all agent_ids involved in a phase (for memory writes)."""
+    pattern = phase_cfg.get("pattern", "debate")
+    if pattern == "parallel":
+        return [m["role"] for m in phase_cfg.get("members", [])] + \
+               [phase_cfg.get("synthesis", {}).get("owner", "lead")]
+    elif pattern == "sequential":
+        return [s["role"] for s in phase_cfg.get("steps", [])]
+    elif pattern == "debate":
+        return [phase_cfg.get("owner")] + phase_cfg.get("critics", [])
+    return []
+
+
+def _write_phase_memory(project_id: int, profile: str, role_id: str,
+                        phase_cfg: dict, settings_content: str,
+                        proj_dir: Path, project_name: str) -> None:
+    """Write/update memory for a participant in this phase. Skips gracefully if profile missing."""
+    memory_dir = Path.home() / ".hermes" / "profiles" / profile / "memories"
+    if not memory_dir.exists():
+        print(f"[hub] WARNING: Profile '{profile}' has no memories dir — skipping memory write. "
+              f"Create it with: hermes profile create {profile}")
+        return
+
+    # Clean old entries for this project+phase
+    slug = phase_cfg["slug"]
+    memory_file = memory_dir / "MEMORY.md"
+    if memory_file.exists():
+        content = memory_file.read_text()
+        marker = f"# Research Hub — Project {project_id} Phase {slug}"
+        sections = content.split("\n§\n")
+        kept = [s for s in sections if marker not in s]
+        if len(kept) != len(sections):
+            memory_file.write_text("\n§\n".join(kept))
+
+    # Build memory entry — lens comes from phase config
+    lens = _get_role_lens(phase_cfg, role_id)
+    entry = (
+        f"# Research Hub — Project {project_id} Phase {slug}\n\n"
+        f"**Project:** {project_name}\n"
+        f"**Phase:** {phase_cfg.get('name', slug)} ({phase_cfg.get('pattern', '')})\n"
+        f"**Your role:** {role_id}\n"
+        f"**Your lens:** {lens}\n"
+        f"**Project dir:** {proj_dir}\n\n"
+        f"## Project Settings\n{settings_content}\n"
+    )
+    with open(memory_file, "a") as f:
+        if memory_file.stat().st_size > 0:
+            f.write("\n§\n")
+        f.write(entry)
+
+
+def _get_role_lens(phase_cfg: dict, role_id: str) -> str:
+    """Extract the specific lens for a role in a phase."""
+    pattern = phase_cfg.get("pattern", "debate")
+    if pattern == "parallel":
+        for m in phase_cfg.get("members", []):
+            if m["role"] == role_id:
+                return m.get("lens", "")
+        if phase_cfg.get("synthesis", {}).get("owner") == role_id:
+            return phase_cfg.get("synthesis", {}).get("task", "")
+    elif pattern == "sequential":
+        for s in phase_cfg.get("steps", []):
+            if s["role"] == role_id:
+                return s.get("lens", "")
+    elif pattern == "debate":
+        if phase_cfg.get("owner") == role_id:
+            return phase_cfg.get("owner_lens", "")
+        return phase_cfg.get("critic_lenses", {}).get(role_id, "")
+    return ""
+
+
+# ── Phase polling & status (uniform across patterns) ─────────────────────────
+
+def poll_phase(project_id: int, phase_slug: str) -> Optional[dict]:
+    """
+    Poll kanban for all tasks in a phase, update phase_tasks status,
+    promote blocked tasks when their deps complete.
+    Returns the phase status dict.
+    """
+    phase = get_phase(project_id, phase_slug)
+    if not phase:
+        return None
+
+    cfg = load_config()
+    phase_cfg = get_phase_config(cfg, phase_slug)
+    if not phase_cfg:
+        return None
+
+    board_slug = f"rhub-p{project_id}"
+    result = subprocess.run(
+        ["hermes", "kanban", "--board", board_slug, "list"],
+        capture_output=True, text=True
+    )
+    kanban_statuses = parse_kanban_list(result.stdout) if result.returncode == 0 else {}
+
+    with get_db() as conn:
+        tasks = conn.execute(
+            "SELECT * FROM phase_tasks WHERE phase_id = ? ORDER BY id",
+            (phase["id"],)
+        ).fetchall()
+
+        any_running = False
+        any_failed = False
+        all_complete = True
+        updates = []
+
+        for t in tasks:
+            new_status = t["status"]
+            # Update from kanban if we have a mapping
+            if t["kanban_id"] and t["kanban_id"] in kanban_statuses:
+                ks = kanban_statuses[t["kanban_id"]]
+                mapped = _KANBAN_STATUS_MAP.get(ks, t["status"])
+                if mapped != t["status"]:
+                    new_status = mapped
+
+            # Check if blocked tasks can be unblocked
+            if new_status == "blocked" and t["depends_on_ids"]:
+                dep_ids = [int(x) for x in t["depends_on_ids"].split(",") if x.strip()]
+                deps_done = True
+                for dep_id in dep_ids:
+                    dep = conn.execute(
+                        "SELECT status FROM phase_tasks WHERE id = ?", (dep_id,)
+                    ).fetchone()
+                    if not dep or dep["status"] != "completed":
+                        deps_done = False
+                        break
+                if deps_done:
+                    new_status = "pending"  # ready to be picked up
+
+            if new_status != t["status"]:
+                updates.append((new_status, t["id"]))
+                if new_status == "running" and not t["started_at"]:
+                    updates.append((datetime.now().isoformat(), t["id"], "started_at"))
+                if new_status in ("completed", "failed") and not t["completed_at"]:
+                    updates.append((datetime.now().isoformat(), t["id"], "completed_at"))
+
+            if new_status == "running":
+                any_running = True
+            if new_status == "failed":
+                any_failed = True
+            if new_status != "completed":
+                all_complete = False
+
+        # Apply updates
+        for u in updates:
+            if len(u) == 2:
+                conn.execute("UPDATE phase_tasks SET status = ? WHERE id = ?", u)
+            elif len(u) == 3:
+                conn.execute(f"UPDATE phase_tasks SET {u[2]} = ? WHERE id = ?", (u[0], u[1]))
+
+        # Aggregate phase status
+        new_phase_status = "running"
+        if all_complete:
+            new_phase_status = "completed"
+        elif any_failed:
+            new_phase_status = "failed"
+        elif not any_running:
+            new_phase_status = "active"
+
+        conn.execute("UPDATE phases SET status = ? WHERE id = ?",
+                     (new_phase_status, phase["id"]))
+
+    return get_phase_status(project_id, phase_slug)
+
+
+def get_phase_status(project_id: int, phase_slug: str) -> Optional[dict]:
+    """Get full status of a phase for display."""
+    phase = get_phase(project_id, phase_slug)
+    if not phase:
+        return None
+    with get_db() as conn:
+        tasks = conn.execute(
+            "SELECT * FROM phase_tasks WHERE phase_id = ? ORDER BY round_num, sequence_order, id",
+            (phase["id"],)
+        ).fetchall()
+    cfg = load_config()
+    phase_cfg = get_phase_config(cfg, phase_slug) or {}
+    return {
+        "phase": dict(phase),
+        "phase_cfg": phase_cfg,
+        "tasks": [dict(t) for t in tasks],
+        "pattern": phase_cfg.get("pattern", "debate"),
+    }
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
