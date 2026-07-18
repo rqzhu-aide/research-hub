@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Research Hub{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1>🔬 Research Hub</h1>
+      </div>
+      <nav class="project-list">
+        <h2>Projects</h2>
+        {% for p in projects or [] %}
+        <a href="{{ url_for('project_view', project_id=p.id) }}"
+           class="project-item {{ 'active' if project and project.id == p.id else '' }}">
+          <span class="proj-status proj-status-{{ p.status }}">{{ {"active":"●","paused":"⏸","completed":"✓","archived":"━"}.get(p.status, "●") }}</span>
+          <span class="proj-name">{{ p.name }}</span>
+        </a>
+        {% endfor %}
+      </nav>
+      <div class="sidebar-footer">
+        <a href="{{ url_for('profiles_view') }}" class="nav-link">👥 Agent Profiles</a>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-container">
+            {% for category, message in messages %}
+              <div class="flash flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>

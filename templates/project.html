@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} — Research Hub{% endblock %}
+{% block content %}
+{% set project_id = project.id %}
+
+<header class="project-header">
+  <div>
+    <h1>{{ project.name }}</h1>
+    <p class="project-meta">
+      #{{ project.id }} · status: <strong>{{ project.status }}</strong> ·
+      iteration {{ project.current_iteration }}/{{ project.max_iterations }}
+    </p>
+    {% if project.goal %}
+    <p class="project-goal">🎯 {{ project.goal }}</p>
+    {% endif %}
+  </div>
+</header>
+
+<div class="phase-bar">
+  {% for ph in phases %}
+  <span class="phase-chip phase-{{ ph.status }}" title="{{ ph.description or '' }}">
+    {{ ph.slug }}: {{ ph.name or ph.slug }} ({{ ph.status }})
+  </span>
+  {% else %}
+  <span class="phase-chip phase-pending">No phases yet</span>
+  {% endfor %}
+</div>
+
+<div class="grid">
+  <!-- ─── Settings editor ─────────────────────────────────── -->
+  <section class="panel">
+    <h3>📋 Project Settings <small>(goal, constraints, success criteria)</small></h3>
+    <form action="{{ url_for('save_settings', project_id=project.id) }}" method="post">
+      <textarea name="settings_content" class="settings-editor"
+                placeholder="Describe research goal, task, constraints, team settings...">{{ settings_content }}</textarea>
+      <button type="submit" class="btn btn-primary">Save Settings</button>
+    </form>
+    {% if not settings_content.strip() %}
+    <p class="hint">Tip: fill in Goal, Task, Constraints, Success Criteria. This gets injected into each agent's MEMORY.md.</p>
+    {% endif %}
+  </section>
+
+  <!-- ─── Agent panel ─────────────────────────────────────── -->
+  <section class="panel">
+    <h3>🤖 Agent Setup <small>(who debates, how many rounds)</small></h3>
+    <form action="{{ url_for('setup_agents', project_id=project.id) }}" method="post" class="agent-form">
+      <label>Proposer
+        <select name="proposer">
+          {% for a in profiles %}
+          <option value="{{ a.profile }}">{{ a.name }} ({{ a.profile }} · {{ a.model }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Critic
+        <select name="critic">
+          {% for a in profiles %}
+          <option value="{{ a.profile }}">{{ a.name }} ({{ a.profile }} · {{ a.model }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Manager <small>(optional)</small>
+        <select name="manager">
+          <option value="">— none —</option>
+          {% for a in profiles %}
+          <option value="{{ a.profile }}">{{ a.name }} ({{ a.profile }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Max rounds
+        <input type="number" name="max_rounds" value="3" min="1" max="10">
+      </label>
+      <button type="submit" class="btn btn-primary"
+              onclick="return confirm('Set up idea phase? This writes MEMORY.md entries and creates kanban tasks.')">
+        ▶ Start Idea Phase
+      </button>
+    </form>
+    {% if idea_status and idea_status.proposer_profile %}
+    <p class="status-line">
+      Active: <strong>{{ idea_status.proposer_profile }}</strong> ↔ <strong>{{ idea_status.critic_profile }}</strong>
+    </p>
+    {% endif %}
+  </section>
+
+  <!-- ─── Progress panel (HTMX-polled) ────────────────────── -->
+  <section class="panel" id="progress-panel"
+           hx-get="{{ url_for('progress_panel', project_id=project.id) }}"
+           hx-trigger="every 2s"
+           hx-swap="innerHTML">
+    {% include '_progress_panel.html' %}
+  </section>
+
+  <!-- ─── Activity panel (HTMX-polled) ────────────────────── -->
+  <section class="panel" id="activity-panel"
+           hx-get="{{ url_for('activity_panel', project_id=project.id) }}"
+           hx-trigger="every 3s"
+           hx-swap="innerHTML">
+    {% include '_activity_panel.html' %}
+  </section>
+</div>
+
+{% endblock %}

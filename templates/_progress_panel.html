@@ -1,0 +1,41 @@
+{# Partial: rounds table — rendered inside #progress-panel, polled every 2s #}
+<h3>📊 Round Progress</h3>
+{% if idea_status and idea_status.rounds %}
+<table class="rounds-table">
+  <thead>
+    <tr><th>Round</th><th>Proposer</th><th>Critic</th></tr>
+  </thead>
+  <tbody>
+    {% for r in idea_status.rounds %}
+    <tr>
+      <td class="round-num">{{ r.round_number }}</td>
+      <td class="cell-{{ r.proposer_status }}">
+        {{ {"pending":"⏳","running":"🔄","completed":"✅","failed":"❌","blocked":"🚫"}.get(r.proposer_status, "?") }}
+        {{ r.proposer_status }}
+        {% if r.proposer_completed_at %}
+          <small>· {{ r.proposer_completed_at[11:19] }}</small>
+        {% endif %}
+        {% if r.proposer_status == 'completed' %}
+          <a href="{{ url_for('round_output', project_id=project_id, round_num=r.round_number, role='proposer') }}" class="view-link">view</a>
+        {% endif %}
+      </td>
+      <td class="cell-{{ r.critic_status }}">
+        {{ {"pending":"⏳","running":"🔄","completed":"✅","failed":"❌","blocked":"🚫"}.get(r.critic_status, "?") }}
+        {{ r.critic_status }}
+        {% if r.critic_completed_at %}
+          <small>· {{ r.critic_completed_at[11:19] }}</small>
+        {% endif %}
+        {% if r.critic_status == 'completed' %}
+          <a href="{{ url_for('round_output', project_id=project_id, round_num=r.round_number, role='critic') }}" class="view-link">view</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="status-line">Phase: <strong>{{ idea_status.phase.status }}</strong>
+  · round {{ idea_status.phase.current_round }}/{{ idea_status.phase.max_rounds }}
+</p>
+{% else %}
+<p class="hint">No idea phase set up yet. Configure agents above and click "Start Idea Phase".</p>
+{% endif %}

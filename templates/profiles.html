@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Agent Profiles — Research Hub{% endblock %}
+{% block content %}
+<header class="project-header">
+  <h1>👥 Agent Profiles</h1>
+  <p class="project-meta">Defined in <code>config.yaml</code>. Each profile is an independent Hermes instance with its own memory.</p>
+</header>
+
+<div class="profiles-grid">
+  {% for a in agents %}
+  <div class="profile-card">
+    <h3>{{ a.name }}</h3>
+    <dl class="profile-meta">
+      <dt>Profile</dt><dd><code>{{ a.profile }}</code></dd>
+      <dt>Role</dt><dd>{{ a.role }}</dd>
+      <dt>Model</dt><dd>{{ a.model }}</dd>
+      <dt>Memory</dt>
+      <dd>
+        {% if a.memory_exists %}
+          <span class="mem-present">✓ {{ a.memory_size }} bytes</span>
+          <a href="{{ url_for('profile_memory', name=a.profile) }}" class="view-link">view</a>
+        {% else %}
+          <span class="mem-absent">— empty —</span>
+        {% endif %}
+      </dd>
+    </dl>
+  </div>
+  {% endfor %}
+</div>
+
+<p class="hint">
+  💡 These are the "souls" — each profile's MEMORY.md carries its role + project context.
+  Research Hub writes to these files when you start an idea phase; agents then read them
+  on every turn to stay in character.
+</p>
+{% endblock %}
