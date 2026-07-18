@@ -1,0 +1,69 @@
+{# Partial: phase task status — rendered inside #progress-panel, polled every 2s #}
+<h3>📊 Task Progress</h3>
+{% if phase_status and phase_status.tasks %}
+
+{% if phase_status.pattern == 'parallel' %}
+{# Parallel: show members side by side, then synthesis #}
+<div class="parallel-view">
+  <h4>Members (parallel)</h4>
+  <div class="member-row">
+    {% for t in phase_status.tasks if t.task_type == 'parallel_member' %}
+    <div class="member-card cell-{{ t.status }}">
+      <div class="member-role">{{ t.role }}</div>
+      <div class="member-status">{{ {"pending":"⏳","running":"🔄","completed":"✅","failed":"❌","blocked":"🔒"}.get(t.status, "?") }} {{ t.status }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% for t in phase_status.tasks if t.task_type == 'synthesis' %}
+  <div class="synthesis-status cell-{{ t.status }}">
+    <strong>🔀 Synthesis ({{ t.role }})</strong>
+    {{ {"pending":"⏳","running":"🔄","completed":"✅","failed":"❌","blocked":"🔒"}.get(t.status, "?") }} {{ t.status }}
+    {% if t.status == 'blocked' %}<small>· waiting for all members</small>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+{% elif phase_status.pattern == 'sequential' %}
+{# Sequential: show as pipeline #}
+<div class="sequential-view">
+  {% for t in phase_status.tasks %}
+  <div class="pipeline-step cell-{{ t.status }}">
+    <span class="step-num">{{ t.sequence_order }}</span>
+    <span class="step-role">{{ t.role }}</span>
+    <span class="step-status">{{ {"pending":"⏳","running":"🔄","completed":"✅","failed":"❌","blocked":"🔒"}.get(t.status, "?") }}</span>
+    <small>{{ t.status }}</small>
+  </div>
+  {% endfor %}
+</div>
+
+{% elif phase_status.pattern == 'debate' %}
+{# Debate: show rounds #}
+<table class="rounds-table">
+  <thead>
+    <tr><th>Round</th><th>Owner</th><th>Critic 1</th><th>Critic 2</th></tr>
+  </thead>
+  <tbody>
+    {% set ns = namespace(curr_round=0) %}
+    {% for t in phase_status.tasks %}
+      {% if t.round_num != ns.curr_round %}
+        {% set ns.curr_round = t.round_num %}
+        {% if not loop.first %}</tr>{% endif %}
+        <tr><td class="round-num">{{ t.round_num }}</td>
+      {% endif %}
+      <td class="cell-{{ t.status }}">
+        {{ {"pending":"⏳","running":"🔄","completed":"✅","failed":"❌","blocked":"🔒"}.get(t.status, "?") }}
+        <small>{{ t.role }}</small>
+      </td>
+    {% endfor %}
+    </tr>
+  </tbody>
+</table>
+{% endif %}
+
+<p class="status-line">Phase: <strong>{{ phase_status.phase.status }}</strong>
+  · {{ phase_status.tasks | selectattr('status','equalto','completed') | list | length }}/{{ phase_status.tasks | length }} tasks done
+</p>
+
+{% else %}
+<p class="hint">No tasks yet. Click "Start" to create the task chain.</p>
+{% endif %}

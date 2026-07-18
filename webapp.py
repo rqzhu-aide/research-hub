@@ -49,7 +49,6 @@ def project_view(project_id: int):
         return redirect(url_for("index"))
     proj = dict(proj)
     projects = [dict(p) for p in hub.list_projects()]
-    idea_status = hub.get_idea_status(project_id)
     phases = [dict(p) for p in hub.get_phases(project_id)]
 
     # Read setting.md if it exists
@@ -60,15 +59,76 @@ def project_view(project_id: int):
         if s.exists():
             settings_content = s.read_text()
 
+    # Get phase configs from config.yaml
+    cfg = hub.load_config()
+    phase_configs = hub.get_phases_config(cfg)
+
     return render_template(
         "project.html",
         project=proj,
         projects=projects,
         phases=phases,
-        idea_status=idea_status,
+        phase_configs=phase_configs,
         settings_content=settings_content,
         profiles=_profiles(),
     )
+
+
+@app.route("/project/<int:project_id>/phase/<phase_slug>")
+def phase_view(project_id: int, phase_slug: str):
+    """View a specific phase with its pattern, participants, and task status."""
+    proj = hub.get_project(project_id)
+    if not proj:
+        flash(f"Project #{project_id} not found", "error")
+        return redirect(url_for("index"))
+    proj = dict(proj)
+    projects = [dict(p) for p in hub.list_projects()]
+
+    cfg = hub.load_config()
+    phase_cfg = hub.get_phase_config(cfg, phase_slug)
+    if not phase_cfg:
+        flash(f"Phase '{phase_slug}' not found in config", "error")
+        return redirect(url_for("project_view", project_id=project_id))
+
+    phase_status = hub.get_phase_status(project_id, phase_slug)
+    proj_dir = hub.get_project_dir(project_id)
+    settings_content = ""
+    if proj_dir:
+        s = proj_dir / "setting.md"
+        if s.exists():
+            settings_content = s.read_text()
+
+    return render_template(
+        "phase_view.html",
+        project=proj,
+        projects=projects,
+        phase_cfg=phase_cfg,
+        phase_status=phase_status,
+        settings_content=settings_content,
+        all_phases=hub.get_phases_config(cfg),
+    )
+
+
+@app.route("/project/<int:project_id>/phase/<phase_slug>/start", methods=["POST"])
+def start_phase(project_id: int, phase_slug: str):
+    """Start a phase — creates task chain via setup_phase()."""
+    try:
+        phase_id = hub.setup_phase(project_id, phase_slug)
+        flash(f"Phase started (phase #{phase_id}). Task chain created on kanban.", "success")
+    except Exception as e:
+        traceback.print_exc()
+        flash(f"Phase setup failed: {e}", "error")
+    return redirect(url_for("phase_view", project_id=project_id, phase_slug=phase_slug))
+
+
+@app.route("/project/<int:project_id>/phase/<phase_slug>/progress")
+def phase_progress(project_id: int, phase_slug: str):
+    """HTMX-polled partial: phase task status."""
+    hub.poll_phase(project_id, phase_slug)
+    phase_status = hub.get_phase_status(project_id, phase_slug)
+    return render_template("_phase_progress.html",
+                           phase_status=phase_status, project_id=project_id,
+                           phase_slug=phase_slug)
 
 
 @app.route("/project/<int:project_id>/settings", methods=["POST"])

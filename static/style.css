@@ -210,3 +210,65 @@ code { background: var(--bg); padding: 1px 5px; border-radius: 3px; font-size: 1
 /* ─── HTMX loading indicator ──────────────────────────── */
 .htmx-request .htmx-indicator { opacity: 1; }
 .htmx-indicator { opacity: 0; transition: opacity 200ms; }
+
+/* ─── Phase pattern display ───────────────────────────── */
+.pattern-badge {
+  display: inline-block; padding: 2px 10px; border-radius: 10px;
+  font-size: 12px; font-weight: 600; text-transform: uppercase;
+}
+.pattern-parallel { background: rgba(96,165,250,0.2); color: var(--running); }
+.pattern-sequential { background: rgba(248,113,113,0.2); color: var(--error); }
+.pattern-debate { background: rgba(250,204,21,0.2); color: var(--warning); }
+.pattern-desc { margin-bottom: 12px; font-size: 13px; }
+
+.design-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+.design-table td { padding: 6px 8px; font-size: 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.design-table td:first-child { color: var(--accent); white-space: nowrap; width: 80px; }
+
+.synthesis-box {
+  background: var(--bg-elev2); border-left: 3px solid var(--accent);
+  padding: 10px 12px; border-radius: 4px; font-size: 12px; margin-top: 8px;
+}
+
+.pipeline { list-style: none; padding-left: 0; }
+.pipeline li {
+  padding: 10px 12px; margin-bottom: 6px;
+  background: var(--bg-elev2); border-radius: 4px;
+  border-left: 3px solid var(--accent); font-size: 12px;
+}
+.pipeline li small { color: var(--text-dim); }
+.lens-text { color: var(--text-dim); }
+
+.cell-blocked { color: var(--text-dim); opacity: 0.6; }
+
+/* Parallel member cards */
+.parallel-view .member-row {
+  display: flex; gap: 8px; margin-bottom: 12px;
+}
+.member-card {
+  flex: 1; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 4px; padding: 10px; text-align: center;
+}
+.member-role { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+.member-status { font-size: 11px; }
+.synthesis-status {
+  background: var(--bg-elev2); border-radius: 4px; padding: 8px 12px;
+  font-size: 13px;
+}
+
+/* Sequential pipeline steps */
+.pipeline-step {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; margin-bottom: 6px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+}
+.step-num {
+  background: var(--accent); color: #0a0d12; font-weight: 700;
+  width: 22px; height: 22px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-size: 11px;
+}
+.step-role { font-weight: 600; flex: 1; }
+.step-status { font-size: 16px; }
+
+.phase-active { background: var(--accent); color: #0a0d12; font-weight: 600; }
+.phase-chip { text-decoration: none; }
