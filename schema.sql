@@ -52,6 +52,59 @@ CREATE TABLE IF NOT EXISTS project_agents (
     is_active INTEGER DEFAULT 1
 );
 
+-- Project phases (ordered workflow stages)
+CREATE TABLE IF NOT EXISTS phases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    slug TEXT NOT NULL,
+    name TEXT,
+    description TEXT,
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'active', 'running', 'completed', 'failed')),
+    current_round INTEGER DEFAULT 0,
+    max_rounds INTEGER DEFAULT 3,
+    output_path TEXT,
+    config_json TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, slug)
+);
+
+-- Rounds within a phase (for idea phase round-robin)
+CREATE TABLE IF NOT EXISTS rounds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    phase_id INTEGER NOT NULL REFERENCES phases(id) ON DELETE CASCADE,
+    round_number INTEGER NOT NULL,
+    proposer_status TEXT DEFAULT 'pending' CHECK(proposer_status IN ('pending', 'running', 'completed', 'failed', 'blocked')),
+    proposer_kanban_id TEXT,
+    proposer_started_at TIMESTAMP,
+    proposer_completed_at TIMESTAMP,
+    proposer_duration INTEGER,
+    proposer_output TEXT,
+    proposer_error TEXT,
+    critic_status TEXT DEFAULT 'pending' CHECK(critic_status IN ('pending', 'running', 'completed', 'failed', 'blocked')),
+    critic_kanban_id TEXT,
+    critic_started_at TIMESTAMP,
+    critic_completed_at TIMESTAMP,
+    critic_duration INTEGER,
+    critic_output TEXT,
+    critic_error TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Kanban task mapping (our logical tasks -> kanban board task IDs)
+CREATE TABLE IF NOT EXISTS kanban_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    phase_id INTEGER REFERENCES phases(id),
+    round_id INTEGER REFERENCES rounds(id),
+    kanban_id TEXT NOT NULL,
+    board_slug TEXT NOT NULL,
+    role TEXT NOT NULL,
+    round_number INTEGER,
+    status TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- User dashboard state
 CREATE TABLE IF NOT EXISTS dashboard_state (
     key TEXT PRIMARY KEY,

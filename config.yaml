@@ -34,6 +34,12 @@ agents:
     role: "code_review, result_validation"
     model: "deepseek-v4-pro"
 
+  - id: "manager"
+    profile: "manager"
+    name: "Team Manager"
+    role: "workflow_management, coordination"
+    model: "kimi-k2.6"
+
 # Workflow stages define how tasks flow between agents
 workflows:
   default:
