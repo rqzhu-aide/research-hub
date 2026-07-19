@@ -3,52 +3,108 @@
 {% block content %}
 
 <header class="project-header">
-  <h1>✨ New Project</h1>
-  <p class="project-meta">Create a new research project. A clean folder will be created for it.</p>
+  <h1>New Project</h1>
+  <p class="project-meta">Define the project brief. A structured workspace will be created for the team.</p>
 </header>
 
-<div class="new-project-form">
-  <form action="{{ url_for('new_project') }}" method="post" class="project-form">
+<form action="{{ url_for('new_project') }}" method="post" class="new-project-layout">
+  {# ─── Left column: the form ─────────────────────────────── #}
+  <div class="np-main">
     <div class="form-field">
       <label for="name">Project name <span class="req">*</span></label>
       <input type="text" id="name" name="name" required
-             placeholder="e.g., Constrained RL for Robotics"
-             class="form-input">
+             placeholder="e.g., Constrained RL for Robotic Manipulation"
+             class="form-input"
+             oninput="updatePathPreview(this.value)">
       <small class="hint">This becomes the folder name (slugified).</small>
     </div>
 
     <div class="form-field">
       <label for="description">Short description</label>
       <input type="text" id="description" name="description"
-             placeholder="One-line summary"
+             placeholder="One-line summary of the project"
              class="form-input">
     </div>
 
     <div class="form-field">
-      <label for="goal">Research goal <span class="req">*</span></label>
-      <textarea id="goal" name="goal" rows="3" required
-                placeholder="What are we trying to learn? One sentence or a short paragraph."
-                class="form-textarea"></textarea>
-    </div>
+      <label for="brief">Project brief <span class="req">*</span></label>
+      <textarea id="brief" name="brief" rows="18" required
+                class="form-textarea brief-editor"
+                placeholder="## What this project is about
+Describe the research question or problem you want to explore...
 
-    <div class="form-field">
-      <label for="constraints">Constraints</label>
-      <textarea id="constraints" name="constraints" rows="4"
-                placeholder="Data limitations, compute budget, time constraints, prior work, assumptions..."
-                class="form-textarea"></textarea>
+## Focused setting / domain
+e.g., reinforcement learning for robotic manipulation, causal inference in observational studies, efficient fine-tuning of LLMs...
+
+## Priorities
+What matters most for this project?
+ - Computational efficiency
+ - Theoretical insights
+ - Method feasibility
+ - Empirical validation
+ - Novelty
+
+## Constraints
+Any limitations: data availability, compute budget, time, prior work to build on, assumptions..."></textarea>
+      <small class="hint">Markdown is supported. This becomes <code>setting.md</code> — the brief every agent reads.</small>
     </div>
 
     <div class="form-actions">
-      <button type="submit" class="btn btn-primary btn-large">✨ Create Project</button>
-      <a href="{{ url_for('index') }}" class="btn">Cancel</a>
+      <button type="submit" class="btn btn-primary btn-large">Create Project</button>
+      <a href="{{ url_for('index') }}" class="btn btn-large">Cancel</a>
     </div>
-  </form>
-</div>
+  </div>
 
-<p class="hint" style="margin-top: 24px;">
-  💡 What gets created:<br>
-  <code>{{ workspace_dir if workspace_dir is defined else '~' }}/projects/project-NNN-<i>name</i>/</code> with
-  <code>setting.md</code>, <code>inputs/</code>, <code>outputs/</code>, <code>logs/</code>.
-</p>
+  {# ─── Right column: guidance + folder preview ──────────── #}
+  <aside class="np-aside">
+    <div class="np-card">
+      <h3 class="np-card-title">What to include</h3>
+      <ol class="np-guide">
+        <li>
+          <strong>What this project is about</strong>
+          <span>The research question or problem in plain language.</span>
+        </li>
+        <li>
+          <strong>Focused domain</strong>
+          <span>The specific setting the team will work within — narrow enough to be tractable.</span>
+        </li>
+        <li>
+          <strong>Priority of the goal</strong>
+          <span>What matters most: computational efficiency, theoretical insights, method feasibility, empirical validation, novelty…</span>
+        </li>
+        <li>
+          <strong>Constraints</strong>
+          <span>Data, compute, time, prior work, assumptions — anything that bounds the solution space.</span>
+        </li>
+      </ol>
+    </div>
+
+    <div class="np-card">
+      <h3 class="np-card-title">Workspace that gets created</h3>
+      <div class="folder-tree">
+        <div class="folder-root" id="path-preview">
+          <span class="folder-icon">▣</span> project-NNN-<span class="slug-preview">name</span>/
+        </div>
+        <ul class="folder-list">
+          <li><span class="folder-icon">▾</span> references/ <small>seed papers, literature</small></li>
+          <li><span class="folder-icon">▾</span> ideas/ <small>ideation, explorations</small></li>
+          <li><span class="folder-icon">▾</span> draft/ <small>paper, writing</small></li>
+          <li><span class="folder-icon">▾</span> numerical/ <small>experiments, figures</small></li>
+          <li><span class="folder-icon">▾</span> logs/ <small>phase transcripts</small></li>
+        </ul>
+      </div>
+      <p class="hint" style="margin-top: 10px;">
+        Plus <code>setting.md</code> containing your brief. Phase folders appear as you start each phase.
+      </p>
+    </div>
+  </aside>
+</form>
+
+<script>
+function updatePathPreview(name) {
+  const slug = name.trim().replace(/\s+/g, '_').replace(/\//g, '-').toLowerCase() || 'name';
+  document.querySelectorAll('.slug-preview').forEach(el => el.textContent = slug);
+}
+</script>
 
 {% endblock %}

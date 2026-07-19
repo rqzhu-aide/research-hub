@@ -122,17 +122,19 @@ def get_agent_display_name(cfg: dict, agent_id: str) -> str:
 
 # ── Project lifecycle ────────────────────────────────────────────────────────
 
-def create_project(name: str, description: str = "", goal: str = "",
-                   constraints: str = "", max_iterations: int = 10) -> int:
+def create_project(name: str, description: str = "", brief: str = "",
+                   max_iterations: int = 10) -> int:
     """
     Create a new project with a clean folder structure.
 
     Folder layout created:
         <workspace>/projects/project-NNN-<slug>/
-        ├── setting.md          ← goal, constraints, success criteria
-        ├── inputs/             ← user drops source materials here
-        ├── outputs/            ← final deliverables land here
-        └── logs/               ← phase transcripts
+        ├── setting.md          ← project brief (what/domain/priorities/constraints)
+        ├── references/         ← seed papers, literature, prior work
+        ├── ideas/              ← ideation outputs, brainstorming, explorations
+        ├── draft/              ← paper drafts, writing deliverables
+        ├── numerical/          ← experiments, code outputs, data, figures
+        └── logs/               ← phase transcripts, agent activity logs
 
     Phase folders (phases/01-ideation/, etc.) are created just-in-time
     when you start each phase, not upfront.
@@ -146,7 +148,7 @@ def create_project(name: str, description: str = "", goal: str = "",
     with get_db() as conn:
         cur = conn.execute(
             "INSERT INTO projects (name, description, goal, max_iterations) VALUES (?, ?, ?, ?)",
-            (name, description, goal, max_iterations)
+            (name, description, brief, max_iterations)
         )
         project_id = cur.lastrowid
 
@@ -154,12 +156,11 @@ def create_project(name: str, description: str = "", goal: str = "",
     slug = name.replace(" ", "_").replace("/", "-").lower()
     proj_dir = get_projects_dir() / f"project-{project_id:03d}-{slug}"
     proj_dir.mkdir(parents=True, exist_ok=True)
-    (proj_dir / "inputs").mkdir(exist_ok=True)
-    (proj_dir / "outputs").mkdir(exist_ok=True)
-    (proj_dir / "logs").mkdir(exist_ok=True)
+    for sub in ("references", "ideas", "draft", "numerical", "logs"):
+        (proj_dir / sub).mkdir(exist_ok=True)
 
-    # Generate setting.md from user input
-    setting_content = _build_setting_md(name, description, goal, constraints)
+    # Generate setting.md from the project brief
+    setting_content = _build_setting_md(name, description, brief)
     (proj_dir / "setting.md").write_text(setting_content)
 
     print(f"[hub] Created project #{project_id}: {name}")
@@ -167,19 +168,20 @@ def create_project(name: str, description: str = "", goal: str = "",
     return project_id
 
 
-def _build_setting_md(name: str, description: str, goal: str, constraints: str) -> str:
-    """Generate a setting.md file from user-provided project info."""
+def _build_setting_md(name: str, description: str, brief: str) -> str:
+    """Generate setting.md from the user-provided project brief.
+
+    The brief is written through largely as-is (the user owns its structure),
+    wrapped with a title and the description if provided.
+    """
     parts = [f"# {name}\n"]
     if description:
-        parts.append(f"## Description\n{description}\n")
-    parts.append(f"## Goal\n{goal or '[Describe the overarching research goal]'}\n")
-    if constraints:
-        parts.append(f"## Constraints\n{constraints}\n")
-    parts.append(
-        "## Success Criteria\n"
-        "[What does a good outcome look like? What would confirm we succeeded?]\n"
-    )
+        parts.append(f"_{description}_\n")
+    parts.append("## Project Brief\n")
+    parts.append(brief.strip() or "[Describe what this project is about, the focused domain, priorities, and any constraints.]")
+    parts.append("")
     return "\n".join(parts)
+
 
 def list_projects() -> List[sqlite3.Row]:
     with get_db() as conn:

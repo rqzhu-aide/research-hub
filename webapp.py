@@ -144,15 +144,17 @@ def new_project():
     # POST: create the project
     name = request.form.get("name", "").strip()
     description = request.form.get("description", "").strip()
-    goal = request.form.get("goal", "").strip()
-    constraints = request.form.get("constraints", "").strip()
+    brief = request.form.get("brief", "").strip()
 
     if not name:
         flash("Project name is required.", "error")
         return redirect(url_for("new_project"))
+    if not brief:
+        flash("Project brief is required.", "error")
+        return redirect(url_for("new_project"))
 
     try:
-        pid = hub.create_project(name, description, goal, constraints)
+        pid = hub.create_project(name, description, brief)
         flash(f"Project '{name}' created (#{pid}).", "success")
         return redirect(url_for("project_view", project_id=pid))
     except Exception as e:

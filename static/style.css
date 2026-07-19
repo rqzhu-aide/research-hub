@@ -561,9 +561,108 @@ select:focus, input:focus {
 }
 
 /* ═══ New Project form ════════════════════════════════════ */
-.new-project-form { max-width: 720px; }
+.new-project-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 28px;
+  align-items: start;
+  max-width: 1080px;
+}
+.np-main { min-width: 0; }
+.np-aside {
+  position: sticky;
+  top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.np-card {
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 16px 18px;
+}
+.np-card-title {
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-faint);
+  margin-bottom: 12px;
+}
+
+/* Guidance list */
+ol.np-guide {
+  list-style: none; counter-reset: guide;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.np-guide li {
+  counter-increment: guide;
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.np-guide li::before {
+  content: counter(guide);
+  width: 20px; height: 20px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--r-sm);
+  font-size: 10px; font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  display: flex; align-items: center; justify-content: center;
+}
+.np-guide li strong {
+  display: block;
+  color: var(--text);
+  font-size: 12.5px; font-weight: 600;
+  margin-bottom: 1px;
+  letter-spacing: -0.01em;
+}
+.np-guide li span {
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+
+/* Folder tree preview */
+.folder-tree { font-size: 12px; }
+.folder-root {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--accent);
+  padding: 6px 0;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.folder-root .folder-icon { color: var(--accent); margin-right: 5px; }
+.slug-preview { color: var(--text-secondary); }
+.folder-list {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.folder-list li {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  padding-left: 18px;
+  position: relative;
+}
+.folder-list li .folder-icon {
+  position: absolute; left: 2px;
+  color: var(--text-faint); font-size: 10px;
+}
+.folder-list li small {
+  color: var(--text-faint);
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  margin-left: 6px;
+}
+
+/* Form fields */
 .project-form { display: flex; flex-direction: column; gap: 22px; }
-.form-field { display: flex; flex-direction: column; gap: 8px; }
+.form-field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
 .form-field label {
   font-size: 12.5px; font-weight: 600; color: var(--text);
   letter-spacing: -0.01em;
@@ -578,6 +677,7 @@ select:focus, input:focus {
   padding: 10px 12px; font-size: 13px;
   font-family: inherit;
   transition: border-color var(--t-fast), box-shadow var(--t-fast);
+  width: 100%;
 }
 .form-input::placeholder, .form-textarea::placeholder { color: var(--text-faint); }
 .form-input:focus, .form-textarea:focus {
@@ -585,7 +685,12 @@ select:focus, input:focus {
   box-shadow: var(--shadow-focus);
 }
 .form-textarea { resize: vertical; line-height: 1.6; }
-.form-actions { display: flex; gap: 10px; margin-top: 6px; }
+.brief-editor {
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 12.5px; line-height: 1.7;
+  min-height: 320px;
+}
+.form-actions { display: flex; gap: 10px; margin-top: 8px; }
 
 /* ═══ Hub Settings ════════════════════════════════════════ */
 .settings-grid {
