@@ -605,6 +605,8 @@ ol.np-guide {
 }
 .np-guide li::before {
   content: counter(guide);
+  grid-column: 1;
+  grid-row: 1;
   width: 20px; height: 20px;
   background: var(--accent-soft);
   color: var(--accent);
@@ -615,6 +617,7 @@ ol.np-guide {
   display: flex; align-items: center; justify-content: center;
 }
 .np-guide li strong {
+  grid-column: 2;
   display: block;
   color: var(--text);
   font-size: 12.5px; font-weight: 600;
@@ -622,6 +625,7 @@ ol.np-guide {
   letter-spacing: -0.01em;
 }
 .np-guide li span {
+  grid-column: 2;
   color: var(--text-dim);
   font-size: 11.5px;
 }
