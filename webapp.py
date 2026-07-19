@@ -330,6 +330,24 @@ def save_settings(project_id: int):
     return redirect(url_for("project_view", project_id=project_id))
 
 
+@app.route("/project/<int:project_id>/open-folder", methods=["POST"])
+def open_folder(project_id: int):
+    """Open the project directory in the host OS file browser."""
+    import subprocess
+    proj_dir = hub.get_project_dir(project_id)
+    if not proj_dir or not proj_dir.exists():
+        return "project directory not found", 404
+    try:
+        # xdg-open is the standard Linux way; macOS would use "open", Windows "explorer"
+        subprocess.Popen(["xdg-open", str(proj_dir)],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return "", 204
+    except FileNotFoundError:
+        return "xdg-open not found (this needs a desktop environment)", 500
+    except Exception as e:
+        return str(e), 500
+
+
 @app.route("/project/<int:project_id>/agents", methods=["POST"])
 def setup_agents(project_id: int):
     proposer = request.form.get("proposer", "").strip()

@@ -13,6 +13,13 @@
     <div class="proj-path-box">
       <span class="path-label">Project root</span>
       <code class="path-value">{{ proj_dir }}</code>
+      {% if proj_dir and proj_dir != '(not found)' %}
+      <button type="button" class="btn btn-sm open-folder-btn"
+              title="Open in file browser"
+              onclick="openFolder({{ project.id }})">
+        Open Folder
+      </button>
+      {% endif %}
     </div>
   </div>
 </header>
@@ -21,5 +28,26 @@
 <div id="project-tabs">
   {% include "_project_tabs.html" %}
 </div>
+
+<script>
+async function openFolder(projectId) {
+  const btn = event.target.closest('button');
+  const originalText = btn.innerText;
+  btn.innerText = 'Opening…';
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/project/${projectId}/open-folder`, { method: 'POST' });
+    if (!res.ok) {
+      const msg = await res.text();
+      alert('Could not open folder: ' + msg);
+    }
+  } catch (e) {
+    alert('Network error: ' + e.message);
+  } finally {
+    btn.innerText = originalText;
+    btn.disabled = false;
+  }
+}
+</script>
 
 {% endblock %}
