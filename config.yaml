@@ -10,30 +10,28 @@ hub:
 
 # Define your agent profiles here (must already exist in Hermes)
 # Role id == profile name (so role references in phases map directly to Hermes profiles)
+# NOTE: model/provider live in each profile's own config.yaml — not here.
+#       The profiles page reads them live from ~/.hermes/profiles/<name>/config.yaml
 agents:
   - id: "research_lead"
     profile: "research_lead"
     name: "Research Lead"
     role: "domain, framing, writing"
-    model: "kimi-k2.6"
 
   - id: "theorist"
     profile: "theorist"
     name: "Theorist"
     role: "methods, math, rigor"
-    model: "claude-sonnet-4"
 
   - id: "data_scientist"
     profile: "data_scientist"
     name: "Data Scientist"
     role: "implementation, data, reproducibility"
-    model: "glm-5.1"
 
   - id: "paper_reviewer"
     profile: "paper_reviewer"
     name: "Paper Reviewer"
     role: "independent quality check (on-demand)"
-    model: "deepseek-v4-pro"
 
 # Phase definitions: each phase declares its interaction pattern.
 #   parallel   = members work independently from their lens, then synthesizer merges

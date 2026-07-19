@@ -34,10 +34,6 @@
         <dt>Endpoint</dt>
         <dd><code class="base-url">{{ a.runtime_base_url }}</code></dd>
         {% endif %}
-        {% if a.model and a.runtime_model and a.model != a.runtime_model %}
-        <dt>Hub cfg</dt>
-        <dd><span class="mismatch">config.yaml says <code>{{ a.model }}</code> — profile actually uses <code>{{ a.runtime_model }}</code></span></dd>
-        {% endif %}
       {% endif %}
 
       <dt>Memory</dt>
@@ -66,7 +62,6 @@
 </div>
 
 <p class="hint">
-  Each profile's <code>config.yaml</code> is the source of truth for what model it runs.
-  If a profile's model differs from what's listed in the hub's <code>config.yaml</code>, a mismatch note appears — fix it by editing the profile config with <code>hermes -p &lt;profile&gt; config set model.default &lt;model&gt;</code>.
+  Each profile's <code>config.yaml</code> is the source of truth for what model it runs — the hub reads it live. To change a profile's model, edit it directly: <code>hermes -p &lt;profile&gt; config set model.default &lt;model&gt;</code>.
 </p>
 {% endblock %}
