@@ -210,7 +210,8 @@ your team's work in THIS phase.
 
 ## Step 3 — Run the phase ({rounds_requested} round{"s" if rounds_requested != 1 else ""})
 - **Pattern:** {pattern}
-  {"(members work independently in parallel — create all their tasks at once)" if pattern == "parallel" else "(pipeline — each member takes the previous one's output)" if pattern == "sequential" else "(owner proposes, critics critique, iterate)"}
+  {"(members work independently in parallel — create all their tasks at once)" if pattern == "parallel" else "(pipeline — member N takes member N-1's output as input; create tasks one at a time, waiting for each to complete before starting the next)" if pattern == "sequential" else "(members PROPOSE in round 1, then CRITIQUE each other's proposals in round 2+ — each round, members must read the other members' outputs from the previous round before producing their own; the lead facilitates convergence)"}
+  **Follow the pattern-specific guidance in your `_lead.md` for how to structure tasks and rounds.**
 - **User feedback:** {user_feedback if user_feedback else "(none provided)"}
 
 ### Your team
@@ -259,17 +260,17 @@ The dispatcher ticks every ~60s. Expect each round to take 3-8 minutes.
 
 ### Between rounds
 Read all member outputs from the round (they're in `{project_dir}/{folder}run/{run_n:02d}/round-NN/`).
-Identify gaps. Compose new directives for the next round that fill those gaps.
-Be specific — "find papers citing X" not "look harder".
+Follow the between-rounds guidance in your `_lead.md` — it tells you how to
+compose round N+1 directives specific to THIS phase. **Be specific** in your
+directives; vague instructions waste rounds.
 
 ## Step 4 — Write the phase summary
 When all rounds are complete, write/update the phase summary:
 - **File:** `{project_dir}/phase-summaries/{phase_slug}.html` (overwrite if exists)
 - **Format:** HTML, max 3 pages, self-contained styling
-- **Contents:**
-  1. Brief summary of current findings / literature / state
-  2. Where the project's goal positions relative to the above
-  3. Suggested directions (more review? start method development? etc.)
+- **Contents:** Follow the summary structure specified in your `_lead.md` —
+  each phase has its own summary template (literature review ≠ method
+  development ≠ paper writing).
 
 The user reads this in a browser to decide what to do next.
 
@@ -352,12 +353,13 @@ def launch_run(
     )
 
     # 8. Write prompt to file (for debugging + to avoid arg-length issues)
-    prompt_file = state_dir(project_dir) / f"run-{run_index}-prompt.md"
+    #    Namespaced by phase so different phases' run-0 logs don't overwrite each other
+    prompt_file = state_dir(project_dir) / f"{phase_slug}-run-{run_index}-prompt.md"
     prompt_file.parent.mkdir(parents=True, exist_ok=True)
     prompt_file.write_text(prompt, encoding="utf-8")
 
     # 9. Spawn research_lead as detached background process
-    log_file = state_dir(project_dir) / f"run-{run_index}-lead.log"
+    log_file = state_dir(project_dir) / f"{phase_slug}-run-{run_index}-lead.log"
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
     # Critical env vars for board scoping + workspace:
