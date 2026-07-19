@@ -30,6 +30,47 @@ def _profile_names() -> list[str]:
     return [a["profile"] for a in _profiles()]
 
 
+def _read_profile_config(profile_name: str) -> dict:
+    """Read a Hermes profile's actual config.yaml and extract model info.
+
+    Returns dict with: model, provider, base_url, config_exists.
+    This reads what Hermes will *actually* use for that profile — independent
+    of what research-hub's config.yaml claims.
+    """
+    import yaml
+    cfg_path = Path.home() / ".hermes" / "profiles" / profile_name / "config.yaml"
+    if not cfg_path.exists():
+        return {"model": None, "provider": None, "base_url": None,
+                "config_exists": False}
+    try:
+        data = yaml.safe_load(cfg_path.read_text()) or {}
+    except Exception:
+        return {"model": None, "provider": None, "base_url": None,
+                "config_exists": True, "config_error": True}
+    m = (data.get("model") or {})
+    # fallback_providers is a JSON string in the profile config; surface the
+    # primary provider names so the user can see the chain at a glance.
+    fallbacks = []
+    fp = data.get("fallback_providers")
+    if isinstance(fp, str) and fp.strip().startswith("["):
+        try:
+            import json
+            for item in json.loads(fp):
+                if isinstance(item, dict):
+                    fb_provider = item.get("provider") or item.get("base_url") or "?"
+                    fb_model = item.get("model")
+                    fallbacks.append({"provider": fb_provider, "model": fb_model})
+        except Exception:
+            pass
+    return {
+        "model": m.get("default"),
+        "provider": m.get("provider"),
+        "base_url": m.get("base_url"),
+        "config_exists": True,
+        "fallbacks": fallbacks,
+    }
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/")
@@ -278,12 +319,20 @@ def activity_panel(project_id: int):
 @app.route("/profiles")
 def profiles_view():
     agents = _profiles()
-    # Attach memory preview if it exists
+    # Attach memory preview + real runtime config from each profile's config.yaml
     home = Path.home()
     for a in agents:
         mem = home / ".hermes" / "profiles" / a["profile"] / "memories" / "MEMORY.md"
         a["memory_exists"] = mem.exists()
         a["memory_size"] = mem.stat().st_size if mem.exists() else 0
+        # Read the ACTUAL model/provider the profile will use
+        rc = _read_profile_config(a["profile"])
+        a["runtime_model"] = rc["model"]
+        a["runtime_provider"] = rc["provider"]
+        a["runtime_base_url"] = rc["base_url"]
+        a["config_exists"] = rc["config_exists"]
+        a["config_error"] = rc.get("config_error", False)
+        a["fallbacks"] = rc.get("fallbacks", [])
     return render_template("profiles.html", agents=agents)
 
 

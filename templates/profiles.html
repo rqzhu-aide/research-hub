@@ -2,35 +2,71 @@
 {% block title %}Agent Profiles — Research Hub{% endblock %}
 {% block content %}
 <header class="project-header">
-  <h1>👥 Agent Profiles</h1>
-  <p class="project-meta">Defined in <code>config.yaml</code>. Each profile is an independent Hermes instance with its own memory.</p>
+  <h1>Agent Profiles</h1>
+  <p class="project-meta">Live model config read from each profile's <code>config.yaml</code>. Each profile is an independent Hermes instance with its own memory.</p>
 </header>
 
 <div class="profiles-grid">
   {% for a in agents %}
   <div class="profile-card">
-    <h3>{{ a.name }}</h3>
+    <div class="profile-card-head">
+      <h3>{{ a.name }}</h3>
+      {% if a.runtime_provider %}
+      <span class="provider-badge provider-{{ a.runtime_provider }}">{{ a.runtime_provider }}</span>
+      {% endif %}
+    </div>
+
     <dl class="profile-meta">
       <dt>Profile</dt><dd><code>{{ a.profile }}</code></dd>
       <dt>Role</dt><dd>{{ a.role }}</dd>
-      <dt>Model</dt><dd>{{ a.model }}</dd>
+
+      {% if not a.config_exists %}
+        <dt>Model</dt><dd><span class="mem-absent">no config.yaml found</span></dd>
+      {% elif a.config_error %}
+        <dt>Model</dt><dd><span class="mem-absent">⚠ config.yaml unreadable</span></dd>
+      {% else %}
+        <dt>Model</dt>
+        <dd>
+          {% if a.runtime_model %}<span class="model-name">{{ a.runtime_model }}</span>
+          {% else %}<span class="mem-absent">— not set —</span>{% endif %}
+        </dd>
+        {% if a.runtime_base_url %}
+        <dt>Endpoint</dt>
+        <dd><code class="base-url">{{ a.runtime_base_url }}</code></dd>
+        {% endif %}
+        {% if a.model and a.runtime_model and a.model != a.runtime_model %}
+        <dt>Hub cfg</dt>
+        <dd><span class="mismatch">config.yaml says <code>{{ a.model }}</code> — profile actually uses <code>{{ a.runtime_model }}</code></span></dd>
+        {% endif %}
+      {% endif %}
+
       <dt>Memory</dt>
       <dd>
         {% if a.memory_exists %}
-          <span class="mem-present">✓ {{ a.memory_size }} bytes</span>
+          <span class="mem-present">{{ a.memory_size | filesizeformat }}</span>
           <a href="{{ url_for('profile_memory', name=a.profile) }}" class="view-link">view</a>
         {% else %}
-          <span class="mem-absent">— empty —</span>
+          <span class="mem-absent">empty</span>
         {% endif %}
       </dd>
     </dl>
+
+    {% if a.fallbacks %}
+    <div class="fallback-chain">
+      <span class="fallback-label">fallbacks</span>
+      {% for fb in a.fallbacks %}
+      <span class="fallback-chip provider-{{ fb.provider }}">
+        {{ fb.provider }}{% if fb.model %} · {{ fb.model }}{% endif %}
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
   </div>
   {% endfor %}
 </div>
 
 <p class="hint">
-  💡 These are the "souls" — each profile's MEMORY.md carries its role + project context.
-  Research Hub writes to these files when you start an idea phase; agents then read them
-  on every turn to stay in character.
+  Each profile's <code>config.yaml</code> is the source of truth for what model it runs.
+  If a profile's model differs from what's listed in the hub's <code>config.yaml</code>, a mismatch note appears — fix it by editing the profile config with <code>hermes -p &lt;profile&gt; config set model.default &lt;model&gt;</code>.
 </p>
 {% endblock %}
