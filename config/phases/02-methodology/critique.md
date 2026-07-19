@@ -1,7 +1,7 @@
 # Critique — Round {{round_num}}/{{max_rounds}} ({{position}})
 
 ## Your role
-You are critiquing the Statistician's method proposal for this round.
+You are critiquing the Theorist's method proposal for this round.
 
 ## Read first
 - The proposal: `phases/02-methodology/statistician/round-{{round_num}}.md`

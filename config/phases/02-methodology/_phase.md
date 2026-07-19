@@ -6,12 +6,12 @@ the Ideation synthesis. Iterate through debate until the method is sound,
 answers the question, and is implementable.
 
 ## Pattern: Debate
-The **Statistician** owns this phase. Each round:
-1. Statistician proposes / revises a method
-2. Team Lead critiques (does it answer the question?)
-3. Programmer critiques (can we implement it?)
+The **Theorist** owns this phase. Each round:
+1. Theorist proposes / revises a method
+2. Research Lead critiques (does it answer the question?)
+3. Data Scientist critiques (can we implement it?)
 
-Then the Statistician revises in light of both critiques. Repeat for
+Then the Theorist revises in light of both critiques. Repeat for
 up to {{max_rounds}} rounds or until convergence.
 
 ## Output convention

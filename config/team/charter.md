@@ -6,10 +6,10 @@ defensible finding. Each member has a distinct role and expertise; our value
 comes from how those roles interact, not from any one person being right.
 
 ## Team composition
-- **Team Lead** — owns the research question, framing, and final narrative
-- **Statistician** — owns methodological soundness and inferential correctness
-- **Programmer** — owns implementation, reproducibility, and verified results
-- **Reviewer** — independent quality gate, called in at key decision points
+- **Research Lead** — owns the research question, framing, and final narrative
+- **Theorist** — owns methodological soundness and inferential correctness
+- **Data Scientist** — owns implementation, reproducibility, and verified results
+- **Paper Reviewer** — independent quality gate, called in at key decision points
 
 ## How we make decisions
 - Each phase has an **owner** — the owner proposes, others critique

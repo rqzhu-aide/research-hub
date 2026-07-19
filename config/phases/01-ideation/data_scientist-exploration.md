@@ -1,4 +1,4 @@
-# Your task: Programmer exploration (Ideation)
+# Your task: Data Scientist exploration (Ideation)
 
 ## Your lens
 You are exploring from the **computational / implementation** angle:

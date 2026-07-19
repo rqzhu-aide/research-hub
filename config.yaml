@@ -9,28 +9,29 @@ hub:
   max_iterations: 10
 
 # Define your agent profiles here (must already exist in Hermes)
+# Role id == profile name (so role references in phases map directly to Hermes profiles)
 agents:
-  - id: "lead"
-    profile: "consultant"
-    name: "Team Lead"
+  - id: "research_lead"
+    profile: "research_lead"
+    name: "Research Lead"
     role: "domain, framing, writing"
     model: "kimi-k2.6"
 
-  - id: "statistician"
-    profile: "method-dev"
-    name: "Statistician"
+  - id: "theorist"
+    profile: "theorist"
+    name: "Theorist"
     role: "methods, math, rigor"
     model: "claude-sonnet-4"
 
-  - id: "programmer"
-    profile: "coder"
-    name: "Programmer"
+  - id: "data_scientist"
+    profile: "data_scientist"
+    name: "Data Scientist"
     role: "implementation, data, reproducibility"
     model: "glm-5.1"
 
-  - id: "reviewer"
-    profile: "reviewer"
-    name: "Reviewer"
+  - id: "paper_reviewer"
+    profile: "paper_reviewer"
+    name: "Paper Reviewer"
     role: "independent quality check (on-demand)"
     model: "deepseek-v4-pro"
 
@@ -43,19 +44,19 @@ phases:
     name: "Ideation"
     description: "Literature exploration + research question formation"
     pattern: parallel
-    synthesizer: lead           # merges the three independent explorations
+    synthesizer: research_lead      # merges the three independent explorations
     members:
-      - role: lead
+      - role: research_lead
         lens: "Domain-significant related work — what questions matter, what's been asked, where the field is"
-        output: "phases/01-ideation/lead-exploration.md"
-      - role: statistician
+        output: "phases/01-ideation/research_lead-exploration.md"
+      - role: theorist
         lens: "Theoretically / methodologically related work — what methods have been used, statistical framings"
-        output: "phases/01-ideation/statistician-exploration.md"
-      - role: programmer
+        output: "phases/01-ideation/theorist-exploration.md"
+      - role: data_scientist
         lens: "Computationally related work — what's been implemented, tools, datasets, reproducibility"
-        output: "phases/01-ideation/programmer-exploration.md"
+        output: "phases/01-ideation/data_scientist-exploration.md"
     synthesis:
-      owner: lead
+      owner: research_lead
       output: "phases/01-ideation/synthesis.md"
       task: "Merge the three explorations into a unified picture. Identify the gap. Propose 1-2 candidate research questions."
 
@@ -63,12 +64,12 @@ phases:
     name: "Methodology"
     description: "Method design — how to rigorously answer the question"
     pattern: debate
-    owner: statistician
-    critics: [lead, programmer]
+    owner: theorist
+    critics: [research_lead, data_scientist]
     owner_lens: "Propose a method that will rigorously answer the research question"
     critic_lenses:
-      lead: "Does it actually answer the research question? Will the result be meaningful?"
-      programmer: "Can we implement this? What's the computational budget? Are the data requirements realistic?"
+      research_lead: "Does it actually answer the research question? Will the result be meaningful?"
+      data_scientist: "Can we implement this? What's the computational budget? Are the data requirements realistic?"
     max_rounds: 3
 
   - slug: "03-implementation"
@@ -76,28 +77,28 @@ phases:
     description: "Build + run — code, experiments, results"
     pattern: sequential
     steps:
-      - role: programmer
+      - role: data_scientist
         lens: "Implement the agreed method. Produce working code + initial results."
         output: "phases/03-implementation/code-and-results/"
-      - role: statistician
+      - role: theorist
         lens: "Verify the numbers. Are tests correct? Is the interpretation of outputs sound?"
-        input_from: programmer
-        output: "phases/03-implementation/statistician-review.md"
-      - role: lead
+        input_from: data_scientist
+        output: "phases/03-implementation/theorist-review.md"
+      - role: research_lead
         lens: "Are we on-goal? Does the output actually answer the research question?"
-        input_from: statistician
-        output: "phases/03-implementation/lead-signoff.md"
+        input_from: theorist
+        output: "phases/03-implementation/research_lead-signoff.md"
 
   - slug: "04-analysis"
     name: "Analysis"
     description: "Interpret results — what do they mean, are they defensible"
     pattern: debate
-    owner: statistician
-    critics: [lead, programmer]
+    owner: theorist
+    critics: [research_lead, data_scientist]
     owner_lens: "Interpret the results with proper rigor — robustness, sensitivity, honest reporting"
     critic_lenses:
-      lead: "What does it mean for the field? Is the narrative coherent?"
-      programmer: "Is it reproducible? Did the code actually do what we claim?"
+      research_lead: "What does it mean for the field? Is the narrative coherent?"
+      data_scientist: "Is it reproducible? Did the code actually do what we claim?"
     max_rounds: 3
 
   - slug: "05-writing"
@@ -105,17 +106,17 @@ phases:
     description: "Compile findings — paper / report draft"
     pattern: sequential
     steps:
-      - role: lead
+      - role: research_lead
         lens: "Draft the paper/report — clear narrative that tells the story"
         output: "phases/05-writing/draft-v1.md"
-      - role: statistician
+      - role: theorist
         lens: "Fact-check every statistical claim. Reporting standards met?"
-        input_from: lead
-        output: "phases/05-writing/statistician-corrections.md"
-      - role: programmer
+        input_from: research_lead
+        output: "phases/05-writing/theorist-corrections.md"
+      - role: data_scientist
         lens: "Verify technical details, reproducibility section, code availability"
-        input_from: statistician
-        output: "phases/05-writing/programmer-corrections.md"
+        input_from: theorist
+        output: "phases/05-writing/data_scientist-corrections.md"
 
 # Legacy workflow stages (kept for backward compat with hub.py task scaffold)
 workflows:

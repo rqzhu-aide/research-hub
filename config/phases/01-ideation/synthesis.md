@@ -1,7 +1,7 @@
 # Your task: Synthesis (Ideation)
 
 ## Your role
-You are the Team Lead. The other three members have explored the space
+You are the Research Lead. The other three members have explored the space
 from their respective lenses. Your job is to merge their explorations
 into a single coherent picture and propose what to do.
 

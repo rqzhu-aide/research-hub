@@ -7,7 +7,7 @@ into a coherent picture that identifies a gap worth pursuing.
 ## Pattern: Parallel
 All three members explore **independently and simultaneously** — you do not
 see each other's work during this phase. After all three explorations are
-complete, the Team Lead synthesizes them into a unified view.
+complete, the Research Lead synthesizes them into a unified view.
 
 ## Output convention
 - Each member writes to: `phases/01-ideation/<role>-exploration.md`

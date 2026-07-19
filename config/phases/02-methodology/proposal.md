@@ -1,7 +1,7 @@
 # Proposal — Round {{round_num}}/{{max_rounds}} ({{position}})
 
 ## Your role
-You are the Statistician, proposing the method for this project.
+You are the Theorist, proposing the method for this project.
 
 ## Round position: {{position}}
 {{position_hint}}

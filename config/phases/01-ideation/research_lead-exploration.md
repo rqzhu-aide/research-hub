@@ -1,4 +1,4 @@
-# Your task: Lead exploration (Ideation)
+# Your task: Research Lead exploration (Ideation)
 
 ## Your lens
 You are exploring from the **domain significance** angle:

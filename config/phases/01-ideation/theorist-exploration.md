@@ -1,4 +1,4 @@
-# Your task: Statistician exploration (Ideation)
+# Your task: Theorist exploration (Ideation)
 
 ## Your lens
 You are exploring from the **theoretical / methodological** angle:
