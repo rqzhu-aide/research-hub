@@ -150,7 +150,7 @@ def new_project():
         flash("Project name is required.", "error")
         return redirect(url_for("new_project"))
     if not brief:
-        flash("Project brief is required.", "error")
+        flash("Project description is required.", "error")
         return redirect(url_for("new_project"))
 
     try:
@@ -215,10 +215,17 @@ def project_view(project_id: int):
     proj_dir = hub.get_project_dir(project_id)
     proj_dir_str = str(proj_dir) if proj_dir else "(not found)"
     settings_content = ""
+    settings_html = ""
     if proj_dir:
         s = proj_dir / "setting.md"
         if s.exists():
             settings_content = s.read_text()
+            # Render markdown for the read-only view
+            try:
+                import markdown as md
+                settings_html = md.markdown(settings_content, extensions=["extra", "sane_lists"])
+            except Exception:
+                settings_html = ""
 
     # Phase configs from config.yaml + phase status
     cfg = hub.load_config()
@@ -238,6 +245,7 @@ def project_view(project_id: int):
         phase_configs=phase_configs,
         phase_states=phase_states,
         settings_content=settings_content,
+        settings_html=settings_html,
         proj_dir=proj_dir_str,
         profiles=_profiles(),
     )

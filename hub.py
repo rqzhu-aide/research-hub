@@ -169,15 +169,15 @@ def create_project(name: str, description: str = "", brief: str = "",
 
 
 def _build_setting_md(name: str, description: str, brief: str) -> str:
-    """Generate setting.md from the user-provided project brief.
+    """Generate setting.md from the user-provided project description.
 
-    The brief is written through largely as-is (the user owns its structure),
-    wrapped with a title and the description if provided.
+    The description is written through largely as-is (the user owns its structure),
+    wrapped with a title and the one-line summary if provided.
     """
     parts = [f"# {name}\n"]
     if description:
         parts.append(f"_{description}_\n")
-    parts.append("## Project Brief\n")
+    parts.append("## Project Description\n")
     parts.append(brief.strip() or "[Describe what this project is about, the focused domain, priorities, and any constraints.]")
     parts.append("")
     return "\n".join(parts)
