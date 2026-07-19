@@ -13,128 +13,136 @@ hub:
 # NOTE: model/provider live in each profile's own config.yaml — not here.
 #       The profiles page reads them live from ~/.hermes/profiles/<name>/config.yaml
 agents:
-  - id: "research_lead"
-    profile: "research_lead"
-    name: "Research Lead"
-    role: "domain, framing, writing"
+- id: "research_lead"
+  profile: "research_lead"
+  name: "Research Lead"
+  role: "domain, framing, writing"
 
-  - id: "theorist"
-    profile: "theorist"
-    name: "Theorist"
-    role: "methods, math, rigor"
+- id: "theorist"
+  profile: "theorist"
+  name: "Theorist"
+  role: "methods, math, rigor"
 
-  - id: "data_scientist"
-    profile: "data_scientist"
-    name: "Data Scientist"
-    role: "implementation, data, reproducibility"
+- id: "data_scientist"
+  profile: "data_scientist"
+  name: "Data Scientist"
+  role: "implementation, data, reproducibility"
 
-  - id: "paper_reviewer"
-    profile: "paper_reviewer"
-    name: "Paper Reviewer"
-    role: "independent quality check (on-demand)"
+- id: "paper_reviewer"
+  profile: "paper_reviewer"
+  name: "Paper Reviewer"
+  role: "independent quality check (on-demand)"
 
 # Phase definitions: each phase declares its interaction pattern.
 #   parallel   = members work independently from their lens, then synthesizer merges
 #   sequential = pipeline A→B→C, each takes previous output as input
 #   debate     = owner proposes, critics critique, owner revises, repeat N rounds
 phases:
-  - slug: "01-ideation"
-    name: "Ideation"
-    description: "Literature exploration + research question formation"
-    pattern: parallel
-    synthesizer: research_lead      # merges the three independent explorations
-    members:
-      - role: research_lead
-        lens: "Domain-significant related work — what questions matter, what's been asked, where the field is"
-        output: "phases/01-ideation/research_lead-exploration.md"
-      - role: theorist
-        lens: "Theoretically / methodologically related work — what methods have been used, statistical framings"
-        output: "phases/01-ideation/theorist-exploration.md"
-      - role: data_scientist
-        lens: "Computationally related work — what's been implemented, tools, datasets, reproducibility"
-        output: "phases/01-ideation/data_scientist-exploration.md"
-    synthesis:
-      owner: research_lead
-      output: "phases/01-ideation/synthesis.md"
-      task: "Merge the three explorations into a unified picture. Identify the gap. Propose 1-2 candidate research questions."
+- slug: "01-ideation"
+  name: "Ideation"
+  description: "Literature exploration + research question formation"
+  pattern: parallel
+  synthesizer: research_lead        # merges the three independent explorations
+  members:
+  - role: research_lead
+    lens: "Domain-significant related work — what questions matter, what's been asked,
+      where the field is"
+    output: "phases/01-ideation/research_lead-exploration.md"
+  - role: theorist
+    lens: "Theoretically / methodologically related work — what methods have been
+      used, statistical framings"
+    output: "phases/01-ideation/theorist-exploration.md"
+  - role: data_scientist
+    lens: "Computationally related work — what's been implemented, tools, datasets,
+      reproducibility"
+    output: "phases/01-ideation/data_scientist-exploration.md"
+  synthesis:
+    owner: research_lead
+    output: "phases/01-ideation/synthesis.md"
+    task: "Merge the three explorations into a unified picture. Identify the gap.
+      Propose 1-2 candidate research questions."
 
-  - slug: "02-methodology"
-    name: "Methodology"
-    description: "Method design — how to rigorously answer the question"
-    pattern: debate
-    owner: theorist
-    critics: [research_lead, data_scientist]
-    owner_lens: "Propose a method that will rigorously answer the research question"
-    critic_lenses:
-      research_lead: "Does it actually answer the research question? Will the result be meaningful?"
-      data_scientist: "Can we implement this? What's the computational budget? Are the data requirements realistic?"
-    max_rounds: 3
+- slug: "02-methodology"
+  name: "Methodology"
+  description: "Method design — how to rigorously answer the question"
+  pattern: debate
+  owner: theorist
+  critics: [research_lead, data_scientist]
+  owner_lens: "Propose a method that will rigorously answer the research question"
+  critic_lenses:
+    research_lead: "Does it actually answer the research question? Will the result
+      be meaningful?"
+    data_scientist: "Can we implement this? What's the computational budget? Are the
+      data requirements realistic?"
+  max_rounds: 3
 
-  - slug: "03-implementation"
-    name: "Implementation"
-    description: "Build + run — code, experiments, results"
-    pattern: sequential
-    steps:
-      - role: data_scientist
-        lens: "Implement the agreed method. Produce working code + initial results."
-        output: "phases/03-implementation/code-and-results/"
-      - role: theorist
-        lens: "Verify the numbers. Are tests correct? Is the interpretation of outputs sound?"
-        input_from: data_scientist
-        output: "phases/03-implementation/theorist-review.md"
-      - role: research_lead
-        lens: "Are we on-goal? Does the output actually answer the research question?"
-        input_from: theorist
-        output: "phases/03-implementation/research_lead-signoff.md"
+- slug: "03-implementation"
+  name: "Implementation"
+  description: "Build + run — code, experiments, results"
+  pattern: sequential
+  steps:
+  - role: data_scientist
+    lens: "Implement the agreed method. Produce working code + initial results."
+    output: "phases/03-implementation/code-and-results/"
+  - role: theorist
+    lens: "Verify the numbers. Are tests correct? Is the interpretation of outputs
+      sound?"
+    input_from: data_scientist
+    output: "phases/03-implementation/theorist-review.md"
+  - role: research_lead
+    lens: "Are we on-goal? Does the output actually answer the research question?"
+    input_from: theorist
+    output: "phases/03-implementation/research_lead-signoff.md"
 
-  - slug: "04-analysis"
-    name: "Analysis"
-    description: "Interpret results — what do they mean, are they defensible"
-    pattern: debate
-    owner: theorist
-    critics: [research_lead, data_scientist]
-    owner_lens: "Interpret the results with proper rigor — robustness, sensitivity, honest reporting"
-    critic_lenses:
-      research_lead: "What does it mean for the field? Is the narrative coherent?"
-      data_scientist: "Is it reproducible? Did the code actually do what we claim?"
-    max_rounds: 3
+- slug: "04-analysis"
+  name: "Analysis"
+  description: "Interpret results — what do they mean, are they defensible"
+  pattern: debate
+  owner: theorist
+  critics: [research_lead, data_scientist]
+  owner_lens: "Interpret the results with proper rigor — robustness, sensitivity,
+    honest reporting"
+  critic_lenses:
+    research_lead: "What does it mean for the field? Is the narrative coherent?"
+    data_scientist: "Is it reproducible? Did the code actually do what we claim?"
+  max_rounds: 3
 
-  - slug: "05-writing"
-    name: "Writing"
-    description: "Compile findings — paper / report draft"
-    pattern: sequential
-    steps:
-      - role: research_lead
-        lens: "Draft the paper/report — clear narrative that tells the story"
-        output: "phases/05-writing/draft-v1.md"
-      - role: theorist
-        lens: "Fact-check every statistical claim. Reporting standards met?"
-        input_from: research_lead
-        output: "phases/05-writing/theorist-corrections.md"
-      - role: data_scientist
-        lens: "Verify technical details, reproducibility section, code availability"
-        input_from: theorist
-        output: "phases/05-writing/data_scientist-corrections.md"
+- slug: "05-writing"
+  name: "Writing"
+  description: "Compile findings — paper / report draft"
+  pattern: sequential
+  steps:
+  - role: research_lead
+    lens: "Draft the paper/report — clear narrative that tells the story"
+    output: "phases/05-writing/draft-v1.md"
+  - role: theorist
+    lens: "Fact-check every statistical claim. Reporting standards met?"
+    input_from: research_lead
+    output: "phases/05-writing/theorist-corrections.md"
+  - role: data_scientist
+    lens: "Verify technical details, reproducibility section, code availability"
+    input_from: theorist
+    output: "phases/05-writing/data_scientist-corrections.md"
 
 # Legacy workflow stages (kept for backward compat with hub.py task scaffold)
 workflows:
   default:
-    - stage: "ideation"
-      agent: "lead"
-      description: "Draft research questions and initial approach"
-    - stage: "methodology"
-      agent: "statistician"
-      description: "Develop mathematical framework and algorithms"
-      depends_on: ["ideation"]
-    - stage: "implementation"
-      agent: "programmer"
-      description: "Implement methods and run simulations"
-      depends_on: ["methodology"]
-    - stage: "validation"
-      agent: "reviewer"
-      description: "Review results and validate correctness"
-      depends_on: ["implementation"]
-    - stage: "synthesis"
-      agent: "lead"
-      description: "Compile findings into summary/paper draft"
-      depends_on: ["validation"]
+  - stage: "ideation"
+    agent: "lead"
+    description: "Draft research questions and initial approach"
+  - stage: "methodology"
+    agent: "statistician"
+    description: "Develop mathematical framework and algorithms"
+    depends_on: ["ideation"]
+  - stage: "implementation"
+    agent: "programmer"
+    description: "Implement methods and run simulations"
+    depends_on: ["methodology"]
+  - stage: "validation"
+    agent: "reviewer"
+    description: "Review results and validate correctness"
+    depends_on: ["implementation"]
+  - stage: "synthesis"
+    agent: "lead"
+    description: "Compile findings into summary/paper draft"
+    depends_on: ["validation"]

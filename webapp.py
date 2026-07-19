@@ -73,6 +73,59 @@ def _read_profile_config(profile_name: str) -> dict:
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+
+def list_hermes_profiles() -> list[str]:
+    """All available Hermes profile names (dirs with a config.yaml under ~/.hermes/profiles/)."""
+    profiles_dir = Path.home() / ".hermes" / "profiles"
+    if not profiles_dir.is_dir():
+        return []
+    return sorted(
+        entry.name for entry in profiles_dir.iterdir()
+        if entry.is_dir() and (entry / "config.yaml").exists()
+    )
+
+
+def _set_agent_profile(agent_id: str, new_profile: str) -> bool:
+    """Reassign an agent role to a different Hermes profile in config.yaml.
+
+    Uses ruamel round-trip so comments and formatting are preserved.
+    Returns True if the agent was found and updated.
+    """
+    from ruamel.yaml import YAML
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    path = hub.CONFIG_PATH
+    data = yaml.load(path.read_text())
+    found = False
+    for agent in data.get("agents", []):
+        if agent.get("id") == agent_id:
+            agent["profile"] = new_profile
+            found = True
+            break
+    if not found:
+        return False
+    import io
+    buf = io.StringIO()
+    yaml.dump(data, buf)
+    path.write_text(buf.getvalue())
+    return True
+
+
+def _enrich_agent(a: dict) -> None:
+    """Attach memory + live runtime config to an agent dict (in place)."""
+    home = Path.home()
+    mem = home / ".hermes" / "profiles" / a["profile"] / "memories" / "MEMORY.md"
+    a["memory_exists"] = mem.exists()
+    a["memory_size"] = mem.stat().st_size if mem.exists() else 0
+    rc = _read_profile_config(a["profile"])
+    a["runtime_model"] = rc["model"]
+    a["runtime_provider"] = rc["provider"]
+    a["runtime_base_url"] = rc["base_url"]
+    a["config_exists"] = rc["config_exists"]
+    a["config_error"] = rc.get("config_error", False)
+    a["fallbacks"] = rc.get("fallbacks", [])
+
+
 @app.route("/")
 def index():
     projects = hub.list_projects()
@@ -319,21 +372,31 @@ def activity_panel(project_id: int):
 @app.route("/profiles")
 def profiles_view():
     agents = _profiles()
-    # Attach memory preview + real runtime config from each profile's config.yaml
-    home = Path.home()
     for a in agents:
-        mem = home / ".hermes" / "profiles" / a["profile"] / "memories" / "MEMORY.md"
-        a["memory_exists"] = mem.exists()
-        a["memory_size"] = mem.stat().st_size if mem.exists() else 0
-        # Read the ACTUAL model/provider the profile will use
-        rc = _read_profile_config(a["profile"])
-        a["runtime_model"] = rc["model"]
-        a["runtime_provider"] = rc["provider"]
-        a["runtime_base_url"] = rc["base_url"]
-        a["config_exists"] = rc["config_exists"]
-        a["config_error"] = rc.get("config_error", False)
-        a["fallbacks"] = rc.get("fallbacks", [])
-    return render_template("profiles.html", agents=agents)
+        _enrich_agent(a)
+    return render_template("profiles.html", agents=agents,
+                           all_profiles=list_hermes_profiles())
+
+
+@app.route("/agent/<agent_id>/profile", methods=["POST"])
+def assign_agent_profile(agent_id: str):
+    """Reassign an agent role to a different Hermes profile (saved to config.yaml),
+    then return the refreshed card so HTMX can swap it in."""
+    new_profile = (request.form.get("profile") or "").strip()
+    if not new_profile:
+        return "missing profile", 400
+    if new_profile not in list_hermes_profiles():
+        return "unknown profile", 400
+    if not _set_agent_profile(agent_id, new_profile):
+        return "unknown agent", 400
+    cfg = hub.load_config()
+    agent = hub.get_agent(cfg, agent_id)
+    if not agent:
+        return "agent vanished", 404
+    agent = dict(agent)
+    _enrich_agent(agent)
+    return render_template("_profile_card.html", a=agent,
+                           all_profiles=list_hermes_profiles())
 
 
 @app.route("/profiles/<name>/memory")

@@ -8,56 +8,7 @@
 
 <div class="profiles-grid">
   {% for a in agents %}
-  <div class="profile-card">
-    <div class="profile-card-head">
-      <h3>{{ a.name }}</h3>
-      {% if a.runtime_provider %}
-      <span class="provider-badge provider-{{ a.runtime_provider }}">{{ a.runtime_provider }}</span>
-      {% endif %}
-    </div>
-
-    <dl class="profile-meta">
-      <dt>Profile</dt><dd><code>{{ a.profile }}</code></dd>
-      <dt>Role</dt><dd>{{ a.role }}</dd>
-
-      {% if not a.config_exists %}
-        <dt>Model</dt><dd><span class="mem-absent">no config.yaml found</span></dd>
-      {% elif a.config_error %}
-        <dt>Model</dt><dd><span class="mem-absent">⚠ config.yaml unreadable</span></dd>
-      {% else %}
-        <dt>Model</dt>
-        <dd>
-          {% if a.runtime_model %}<span class="model-name">{{ a.runtime_model }}</span>
-          {% else %}<span class="mem-absent">— not set —</span>{% endif %}
-        </dd>
-        {% if a.runtime_base_url %}
-        <dt>Endpoint</dt>
-        <dd><code class="base-url">{{ a.runtime_base_url }}</code></dd>
-        {% endif %}
-      {% endif %}
-
-      <dt>Memory</dt>
-      <dd>
-        {% if a.memory_exists %}
-          <span class="mem-present">{{ a.memory_size | filesizeformat }}</span>
-          <a href="{{ url_for('profile_memory', name=a.profile) }}" class="view-link">view</a>
-        {% else %}
-          <span class="mem-absent">empty</span>
-        {% endif %}
-      </dd>
-    </dl>
-
-    {% if a.fallbacks %}
-    <div class="fallback-chain">
-      <span class="fallback-label">fallbacks</span>
-      {% for fb in a.fallbacks %}
-      <span class="fallback-chip provider-{{ fb.provider }}">
-        {{ fb.provider }}{% if fb.model %} · {{ fb.model }}{% endif %}
-      </span>
-      {% endfor %}
-    </div>
-    {% endif %}
-  </div>
+    {% include "_profile_card.html" %}
   {% endfor %}
 </div>
 
