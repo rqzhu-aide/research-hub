@@ -392,65 +392,6 @@ def open_folder(project_id: int):
         return str(e), 500
 
 
-@app.route("/project/<int:project_id>/agents", methods=["POST"])
-def setup_agents(project_id: int):
-    proposer = request.form.get("proposer", "").strip()
-    critic = request.form.get("critic", "").strip()
-    manager = request.form.get("manager", "").strip()
-    try:
-        max_rounds = int(request.form.get("max_rounds", "3"))
-    except ValueError:
-        max_rounds = 3
-
-    if not proposer or not critic:
-        flash("Proposer and Critic profiles are required.", "error")
-        return redirect(url_for("project_view", project_id=project_id))
-
-    try:
-        phase_id = hub.setup_idea_phase(project_id, proposer, critic, manager, max_rounds)
-        flash(f"Idea phase set up (phase #{phase_id}). Kanban board + task chain created.", "success")
-    except Exception as e:
-        traceback.print_exc()
-        flash(f"Setup failed: {e}", "error")
-    return redirect(url_for("project_view", project_id=project_id))
-
-
-@app.route("/project/<int:project_id>/progress")
-def progress_panel(project_id: int):
-    """HTMX-polled partial: rounds table."""
-    idea_status = hub.poll_idea_phase(project_id)
-    return render_template("_progress_panel.html", idea_status=idea_status, project_id=project_id)
-
-
-@app.route("/project/<int:project_id>/activity")
-def activity_panel(project_id: int):
-    """HTMX-polled partial: activity log derived from rounds."""
-    idea_status = hub.get_idea_status(project_id)
-    events = []
-    if idea_status:
-        for r in idea_status.get("rounds", []):
-            for role in ("proposer", "critic"):
-                status = r.get(f"{role}_status", "pending")
-                completed = r.get(f"{role}_completed_at")
-                started = r.get(f"{role}_started_at")
-                if status == "completed" and completed:
-                    events.append({
-                        "ts": completed,
-                        "round": r["round_number"],
-                        "role": role,
-                        "msg": f"Round {r['round_number']} {role} completed",
-                    })
-                elif status == "running" and started:
-                    events.append({
-                        "ts": started,
-                        "round": r["round_number"],
-                        "role": role,
-                        "msg": f"Round {r['round_number']} {role} started",
-                    })
-        events.sort(key=lambda e: e["ts"], reverse=True)
-    return render_template("_activity_panel.html", events=events[:20])
-
-
 @app.route("/profiles")
 def profiles_view():
     agents = _profiles()
@@ -486,14 +427,6 @@ def profile_memory(name: str):
     mem = Path.home() / ".hermes" / "profiles" / name / "memories" / "MEMORY.md"
     content = mem.read_text() if mem.exists() else f"(No MEMORY.md found for profile '{name}')"
     return render_template("profile_memory.html", name=name, content=content)
-
-
-@app.route("/project/<int:project_id>/round/<int:round_num>/<role>")
-def round_output(project_id: int, round_num: int, role: str):
-    content = hub.view_round_output(project_id, round_num, role) or "(No output yet)"
-    return render_template("round_output.html",
-                           project_id=project_id, round_num=round_num,
-                           role=role, content=content)
 
 
 if __name__ == "__main__":
