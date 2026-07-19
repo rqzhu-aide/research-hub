@@ -1,37 +1,27 @@
 # Phase: Literature Review
 
 ## Goal
-Build a comprehensive, organized bibliography for the project — first an
-initial survey, then (as the project matures) deep targeted searches that
-keep the references current and relevant to what's actually been proposed.
+Build a comprehensive, organized bibliography for the project — broad survey
+at first, targeted re-scans as the project matures.
 
 ## Gating
-**None.** Literature review can run at any time — at project start, and at
-any later point when the project has matured.
+**None.** Can run at any time.
 
-## Two modes
-- **Run (initial scan):** broad survey from each agent's lens — classical
-  works, recent high-impact papers, and papers directly relevant to the
-  project's stated goals.
-- **Deep run (re-scan):** context-aware targeted search. Each agent first
-  inspects the current project state (proposed method, theory, code, data),
-  then pulls in papers that directly relate to what has actually been done.
+## Pattern
+**Parallel.** All three members search independently from their own lens; the
+research lead orchestrates and synthesizes.
 
 ## Folder
-All outputs land in `references/literature-review/`. Each run creates its
-own numbered subfolder so history accumulates rather than overwrites:
-- `references/literature-review/run/01/`, `…/02/`, …
-- `references/literature-review/deep-run/01/`, `…/02/`, …
+All outputs land in `references/literature-review/run/NN/`:
+- `round-01/<role>.md`, `round-02/<role>.md`, … — per-round outputs
+- `summary.md` — the lead's final summary for the run
 
-## Profiles
-`research_lead`, `theorist`, `data_scientist` — each searches in parallel
-from their own lens. The three lenses are complementary, not overlapping:
-- **research_lead** — domain significance (what field, what matters)
-- **theorist** — theoretical / methodological foundations
-- **data_scientist** — computational / implementation landscape
+## Files in this folder
+- `_lead.md` — how the research_lead runs this phase. **Read first if you are the lead.**
+- `research_lead.md`, `theorist.md`, `data_scientist.md` — member task files (the protocol).
 
-## When to use which mode
-- **Run** at project start, or when entering a new sub-area.
-- **Deep run** after Method Development / Theoretical Justification have
-  produced concrete proposals, so the targeted search has something to
-  target. A deep run with nothing to inspect degenerates into a regular run.
+## On "modes"
+There is no separate deep-run mode. Every run uses the same machinery — the
+lead assesses project state and composes per-member directives accordingly.
+An initial survey vs. a targeted re-scan differ only in the lead's twist,
+not in code path or task files.

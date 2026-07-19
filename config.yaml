@@ -51,11 +51,12 @@ agents:
 #                   debate     = owner proposes, critics critique, repeat
 #   gated_by    — phases that must reach 'completed' before this can start
 #                   empty list = runnable at any time
-#   modes       — distinct run types within this phase:
-#                   [run]              — single mode (the default)
-#                   [run, deep_run]    — two modes (e.g. lit review)
 #   folder      — where this phase's outputs land (relative to project root)
 #   members     — roles that participate; FIRST is the primary contributor
+#
+# Note: there is no "modes" field. Every phase has one run machinery; the
+# research_lead adapts per-run direction by reading project state and the
+# user's feedback. See config/phases/<slug>/_lead.md for the lead's playbook.
 # ─────────────────────────────────────────────────────────────────────
 phases:
 - slug: "01-literature-review"
@@ -63,7 +64,6 @@ phases:
   description: "Survey and organize relevant literature"
   pattern: parallel
   gated_by: []
-  modes: [run, deep_run]
   folder: "references/"
   members: [research_lead, theorist, data_scientist]
 
@@ -72,7 +72,6 @@ phases:
   description: "Design and specify the proposed method"
   pattern: debate
   gated_by: ["01-literature-review"]
-  modes: [run]
   folder: "ideas/"
   members: [theorist, research_lead, data_scientist]
 
@@ -81,7 +80,6 @@ phases:
   description: "Develop proofs, bounds, and guarantees"
   pattern: sequential
   gated_by: ["02-method-development"]
-  modes: [run]
   folder: "draft/theory/"
   members: [theorist, research_lead]
 
@@ -90,7 +88,6 @@ phases:
   description: "Implement, test, and validate numerically"
   pattern: sequential
   gated_by: ["02-method-development"]
-  modes: [run]
   folder: "numerical/"
   members: [data_scientist, theorist, research_lead]
 
@@ -99,7 +96,6 @@ phases:
   description: "Analyze results and interpret findings"
   pattern: debate
   gated_by: ["04-numerical-validation"]
-  modes: [run]
   folder: "draft/analysis/"
   members: [theorist, research_lead, data_scientist]
 
@@ -108,6 +104,5 @@ phases:
   description: "Compile findings into manuscript"
   pattern: sequential
   gated_by: ["05-data-analysis"]
-  modes: [run]
   folder: "draft/"
   members: [research_lead, theorist, data_scientist, paper_reviewer]

@@ -21,7 +21,7 @@ YAML schema (kept deliberately simple — pure state, no rules):
       01-literature-review:
         status: running                 # pending | running | completed | failed
         runs:
-        - mode: run                     # phase-specific (e.g. run | deep_run)
+        - mode: initial survey          # freeform label the lead picks for UI display
           rounds_requested: 3
           user_feedback: "Prioritize Bayesian methods."
           started:  '2026-07-18T15:00:00Z'
@@ -39,6 +39,11 @@ YAML schema (kept deliberately simple — pure state, no rules):
       02-method-development:
         status: pending
         runs: []
+
+Note on `mode`: it is a freeform label (e.g. "initial survey", "targeted
+re-scan", "follow-up") that the research_lead picks when starting a run,
+purely for display. It does NOT select a code path — every run uses the same
+machinery. The lead's per-round `lead_directive` captures the actual steering.
 
 Run lifecycle (auto-advancing rounds):
     idx = start_run(...)         # create run with N rounds requested
