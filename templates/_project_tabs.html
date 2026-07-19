@@ -1,0 +1,37 @@
+{# Tab bar + active tab content — included by project.html, returned by HTMX tab clicks. #}
+<nav class="tab-bar" role="tablist">
+  <a class="tab {{ 'active' if active_tab == 'overview' else '' }}"
+     role="tab"
+     hx-get="{{ url_for('project_view', project_id=project.id, tab='overview') }}"
+     hx-target="#project-tabs"
+     hx-swap="innerHTML"
+     hx-push-url="true">
+    Overview
+  </a>
+  {% for pc in phase_configs %}
+  <a class="tab {{ 'active' if active_tab == pc.slug else '' }}"
+     role="tab"
+     hx-get="{{ url_for('project_view', project_id=project.id, tab=pc.slug) }}"
+     hx-target="#project-tabs"
+     hx-swap="innerHTML"
+     hx-push-url="true">
+    {{ pc.name }}
+    {% set summ = phase_summaries | selectattr('slug','equalto',pc.slug) | first %}
+    {% if summ %}
+      {% if summ.status == 'completed' %}<span class="tab-dot tab-dot-done">●</span>
+      {% elif summ.status == 'running' or summ.tasks_running > 0 %}<span class="tab-dot tab-dot-run">●</span>
+      {% elif summ.status == 'failed' %}<span class="tab-dot tab-dot-fail">●</span>
+      {% elif summ.started %}<span class="tab-dot tab-dot-active">●</span>
+      {% endif %}
+    {% endif %}
+  </a>
+  {% endfor %}
+</nav>
+
+<div class="tab-content">
+  {% if active_tab == 'overview' %}
+    {% include "_tab_overview.html" %}
+  {% else %}
+    {% include "_tab_phase.html" %}
+  {% endif %}
+</div>

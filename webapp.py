@@ -202,14 +202,19 @@ def change_workspace():
 
 
 @app.route("/project/<int:project_id>")
-def project_view(project_id: int):
+def project_view(project_id: int, tab: str = "overview"):
+    """Project page shell — renders the tab bar + the requested tab content.
+    The default tab is 'overview'. Phase tabs use their slug (e.g. '01-ideation').
+    """
+    tab = request.args.get("tab", "overview")
     proj = hub.get_project(project_id)
     if not proj:
         flash(f"Project #{project_id} not found", "error")
         return redirect(url_for("index"))
     proj = dict(proj)
     projects = [dict(p) for p in hub.list_projects()]
-    phases = [dict(p) for p in hub.get_phases(project_id)]
+    cfg = hub.load_config()
+    phase_configs = hub.get_phases_config(cfg)
 
     # Project directory path + setting.md content
     proj_dir = hub.get_project_dir(project_id)
@@ -220,35 +225,40 @@ def project_view(project_id: int):
         s = proj_dir / "setting.md"
         if s.exists():
             settings_content = s.read_text()
-            # Render markdown for the read-only view
             try:
                 import markdown as md
                 settings_html = md.markdown(settings_content, extensions=["extra", "sane_lists"])
             except Exception:
                 settings_html = ""
 
-    # Phase configs from config.yaml + phase status
-    cfg = hub.load_config()
-    phase_configs = hub.get_phases_config(cfg)
+    # All phase summaries (for overview) + phase status for phase tabs
+    phase_summaries = hub.get_all_phase_summaries(project_id)
 
-    # For each phase config, check if it's been started
-    phase_states = {}
-    for pc in phase_configs:
-        status = hub.get_phase_status(project_id, pc["slug"])
-        phase_states[pc["slug"]] = status
+    # If a phase tab is requested, load its full status
+    phase_status = None
+    phase_cfg = None
+    if tab != "overview":
+        phase_cfg = hub.get_phase_config(cfg, tab)
+        if phase_cfg:
+            phase_status = hub.get_phase_status(project_id, tab)
 
-    return render_template(
-        "project.html",
+    ctx = dict(
         project=proj,
         projects=projects,
-        phases=phases,
         phase_configs=phase_configs,
-        phase_states=phase_states,
+        phase_summaries=phase_summaries,
+        active_tab=tab,
         settings_content=settings_content,
         settings_html=settings_html,
         proj_dir=proj_dir_str,
+        phase_cfg=phase_cfg,
+        phase_status=phase_status,
         profiles=_profiles(),
     )
+    # HTMX tab clicks return just the tab content partial
+    if request.headers.get("HX-Request") == "true":
+        return render_template("_project_tabs.html", **ctx)
+    return render_template("project.html", **ctx)
 
 
 @app.route("/project/<int:project_id>/phase/<phase_slug>")

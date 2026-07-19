@@ -1,0 +1,101 @@
+{# ─── Phase tab: design + start + live progress ─── #}
+{% if not phase_cfg %}
+  <p class="hint">Phase not found in config.</p>
+{% else %}
+<div class="grid">
+  {# ─── Phase design + start ─── #}
+  <section class="panel">
+    <div class="panel-head">
+      <h3>{{ phase_cfg.name }} <small>{{ phase_cfg.slug }}</small></h3>
+      <span class="pattern-badge pattern-{{ phase_cfg.pattern }}">{{ phase_cfg.pattern }}</span>
+    </div>
+    <p class="pattern-desc">{{ phase_cfg.description }}</p>
+
+    {% if phase_cfg.pattern == 'parallel' %}
+    <p class="pattern-desc"><strong>Parallel</strong> — members explore independently, then synthesizer merges.</p>
+    <table class="design-table">
+      <thead><tr><th>Member</th><th>Lens</th></tr></thead>
+      <tbody>
+        {% for m in phase_cfg.members %}
+        <tr>
+          <td><strong>{{ m.role }}</strong></td>
+          <td>{{ m.lens }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if phase_cfg.synthesis %}
+    <div class="synthesis-box">
+      <strong>Synthesis ({{ phase_cfg.synthesis.owner }}):</strong>
+      {{ phase_cfg.synthesis.task }}
+    </div>
+    {% endif %}
+
+    {% elif phase_cfg.pattern == 'sequential' %}
+    <p class="pattern-desc"><strong>Sequential</strong> — pipeline, each step takes the previous as input.</p>
+    <ol class="pipeline">
+      {% for step in phase_cfg.steps %}
+      <li>
+        <strong>{{ step.role }}</strong>
+        {% if step.input_from %}<small>(input from {{ step.input_from }})</small>{% endif %}
+        <br><span class="lens-text">{{ step.lens }}</span>
+      </li>
+      {% endfor %}
+    </ol>
+
+    {% elif phase_cfg.pattern == 'debate' %}
+    <p class="pattern-desc"><strong>Debate</strong> — owner proposes, critics critique, repeat {{ phase_cfg.max_rounds }} rounds.</p>
+    <table class="design-table">
+      <tr>
+        <td><strong>Owner</strong></td>
+        <td>{{ phase_cfg.owner }} — {{ phase_cfg.owner_lens }}</td>
+      </tr>
+      {% for role, lens in phase_cfg.critic_lenses.items() %}
+      <tr>
+        <td><strong>Critic</strong></td>
+        <td>{{ role }} — {{ lens }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+
+    {# Start button #}
+    {% if not phase_status or not phase_status.tasks %}
+    <form action="{{ url_for('start_phase', project_id=project.id, phase_slug=phase_cfg.slug) }}" method="post">
+      <button type="submit" class="btn btn-primary btn-large"
+              onclick="return confirm('Start {{ phase_cfg.name }}? This creates kanban tasks and writes agent memories.')">
+        Start {{ phase_cfg.name }}
+      </button>
+    </form>
+    {% else %}
+    <p class="status-line">Phase is active — see progress below.</p>
+    {% endif %}
+  </section>
+
+  {# ─── Progress panel (HTMX-polled) ─── #}
+  <section class="panel" id="progress-panel"
+           hx-get="{{ url_for('phase_progress', project_id=project.id, phase_slug=phase_cfg.slug) }}"
+           hx-trigger="every 2s"
+           hx-swap="innerHTML">
+    {% include '_phase_progress.html' %}
+  </section>
+
+  {# ─── Activity ─── #}
+  <section class="panel">
+    <div class="panel-head"><h3>Activity</h3></div>
+    {% if phase_status and phase_status.tasks %}
+    <ul class="activity-log">
+      {% for t in phase_status.tasks %}
+        {% if t.status == 'running' %}
+        <li><span class="event-msg event-{{ t.role }}">🔄 {{ t.role }} is working ({{ t.task_type }})</span></li>
+        {% elif t.status == 'completed' %}
+        <li><span class="event-msg event-{{ t.role }}">✅ {{ t.role }} completed ({{ t.task_type }})</span></li>
+        {% endif %}
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="hint">No activity yet. Start the phase to see live progress.</p>
+    {% endif %}
+  </section>
+</div>
+{% endif %}

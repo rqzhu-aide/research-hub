@@ -538,11 +538,11 @@ select:focus, input:focus {
 .htmx-indicator { opacity: 0; transition: opacity var(--t-med); }
 
 /* ═══ Project page layout ═════════════════════════════════ */
-.project-layout {
+.overview-layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1.2fr 1fr;
   gap: 18px;
-  margin-top: 18px;
+  margin-top: 4px;
 }
 .header-row {
   display: flex;
@@ -567,6 +567,122 @@ select:focus, input:focus {
   color: var(--text-secondary); background: transparent;
   padding: 0;
 }
+
+/* ═══ Tab bar ═════════════════════════════════════════════ */
+.tab-bar {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.tab {
+  padding: 9px 14px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-dim);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast), background var(--t-fast);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+}
+.tab:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+.tab-dot {
+  font-size: 7px;
+  line-height: 1;
+}
+.tab-dot-done { color: var(--success); }
+.tab-dot-run { color: var(--accent); animation: pulse 1.5s ease-in-out infinite; }
+.tab-dot-fail { color: var(--error); }
+.tab-dot-active { color: var(--warning); }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.tab-content { min-height: 300px; }
+
+/* ═══ Phase summary cards (overview right column) ═════════ */
+.summary-list {
+  display: flex; flex-direction: column; gap: 8px;
+}
+.summary-card {
+  display: block;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  border-radius: var(--r-md);
+  text-decoration: none;
+  color: var(--text);
+  transition: all var(--t-fast);
+  cursor: pointer;
+}
+.summary-card:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+.summary-status-completed { border-left-color: var(--success); }
+.summary-status-running { border-left-color: var(--accent); }
+.summary-status-active { border-left-color: var(--warning); }
+.summary-status-failed { border-left-color: var(--error); }
+.summary-status-pending { border-left-color: transparent; }
+
+.summary-card-head {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 8px;
+}
+.summary-num {
+  background: var(--bg-hover); color: var(--accent);
+  width: 22px; height: 22px; border-radius: var(--r-sm);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 600; font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.summary-name {
+  flex: 1;
+  font-weight: 600; font-size: 12.5px;
+  letter-spacing: -0.01em;
+}
+.summary-stats {
+  display: flex; flex-wrap: wrap;
+  align-items: center; gap: 6px 10px;
+  padding-left: 32px;
+}
+.stat-pill {
+  font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 2px 8px; border-radius: var(--r-pill);
+  border: 1px solid;
+}
+.stat-pending { color: var(--text-faint); border-color: var(--border); background: transparent; }
+.stat-completed { color: var(--success); border-color: rgba(38,208,124,0.35); background: var(--success-soft); }
+.stat-running { color: var(--accent); border-color: var(--accent-border); background: var(--accent-soft); }
+.stat-active { color: var(--warning); border-color: rgba(242,201,76,0.35); background: var(--warning-soft); }
+.stat-failed { color: var(--error); border-color: rgba(235,87,87,0.35); background: var(--error-soft); }
+.stat-line {
+  font-size: 11px; color: var(--text-dim);
+  font-family: 'JetBrains Mono', monospace;
+}
+.stat-line.stat-running { color: var(--accent); }
+.stat-line.stat-failed { color: var(--error); }
 
 /* ═══ Phase launcher ══════════════════════════════════════ */
 .phase-list { display: flex; flex-direction: column; gap: 8px; }

@@ -1376,6 +1376,63 @@ def get_phase_status(project_id: int, phase_slug: str) -> Optional[dict]:
         "pattern": phase_cfg.get("pattern", "debate"),
     }
 
+
+def get_phase_summary(project_id: int, phase_slug: str) -> dict:
+    """Lightweight summary for the overview — always returns a dict, even if
+    the phase has not been started yet (status 'pending', zero counts).
+
+    Fields:
+        slug, name, pattern, status, tasks_total, tasks_completed,
+        tasks_running, tasks_failed, current_round, max_rounds,
+        started (bool), started_at, completed_at
+    """
+    cfg = load_config()
+    phase_cfg = get_phase_config(cfg, phase_slug) or {}
+    base = {
+        "slug": phase_slug,
+        "name": phase_cfg.get("name", phase_slug),
+        "pattern": phase_cfg.get("pattern", "?"),
+        "description": phase_cfg.get("description", ""),
+        "status": "pending",
+        "tasks_total": 0,
+        "tasks_completed": 0,
+        "tasks_running": 0,
+        "tasks_failed": 0,
+        "current_round": 0,
+        "max_rounds": phase_cfg.get("rounds", 1),
+        "started": False,
+        "started_at": None,
+        "completed_at": None,
+    }
+    st = get_phase_status(project_id, phase_slug)
+    if not st or not st.get("phase"):
+        return base
+    ph = st["phase"]
+    tasks = st.get("tasks", [])
+    completed = [t for t in tasks if t["status"] == "completed"]
+    running = [t for t in tasks if t["status"] == "running"]
+    failed = [t for t in tasks if t["status"] == "failed"]
+    rounds_seen = [t["round_num"] for t in tasks if t.get("round_num")]
+    base.update({
+        "status": ph.get("status", "pending"),
+        "tasks_total": len(tasks),
+        "tasks_completed": len(completed),
+        "tasks_running": len(running),
+        "tasks_failed": len(failed),
+        "current_round": max(rounds_seen) if rounds_seen else ph.get("current_round", 0),
+        "max_rounds": ph.get("max_rounds", base["max_rounds"]),
+        "started": True,
+        "started_at": ph.get("created_at"),
+        "completed_at": ph.get("updated_at") if ph.get("status") == "completed" else None,
+    })
+    return base
+
+
+def get_all_phase_summaries(project_id: int) -> list[dict]:
+    """Summary for every configured phase (in config order), for the overview."""
+    cfg = load_config()
+    return [get_phase_summary(project_id, pc["slug"]) for pc in get_phases_config(cfg)]
+
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 def main():
