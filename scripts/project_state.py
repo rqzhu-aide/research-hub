@@ -19,19 +19,34 @@ YAML schema (kept deliberately simple — pure state, no rules):
       created: 2026-07-18T14:30:00Z
     phases:
       01-literature-review:
-        status: completed              # pending | running | completed | failed
+        status: running                 # pending | running | completed | failed
         runs:
-          - mode: run                  # phase-specific (e.g. run | deep_run)
-            started:  2026-07-18T15:00:00Z
-            completed: 2026-07-18T15:12:34Z
+        - mode: run                     # phase-specific (e.g. run | deep_run)
+          rounds_requested: 3
+          user_feedback: "Prioritize Bayesian methods."
+          started:  '2026-07-18T15:00:00Z'
+          completed: null               # null until final summary lands
+          rounds:
+          - n: 1
+            started:  '2026-07-18T15:00:00Z'
+            completed:'2026-07-18T15:08:00Z'
+            lead_directive: "Initial scan. User wants Bayesian focus."
             agents: [research_lead, theorist, data_scientist]
-          - mode: deep_run
-            started:  2026-07-18T18:00:00Z
-            completed: 2026-07-18T18:08:21Z
-            agents: [research_lead, theorist, data_scientist]
+            outputs: [references/literature-review/run/01/round-01/]
+          - n: 2
+            ...
+          final_summary: null           # path to summary.md once run closes
       02-method-development:
         status: pending
         runs: []
+
+Run lifecycle (auto-advancing rounds):
+    idx = start_run(...)         # create run with N rounds requested
+    for r in 1..N:
+        rn  = start_round(...)   # lead stamps directive + agents
+        ...members work...
+        complete_round(...)      # stamp completed + record outputs
+    complete_run(..., summary)   # stamp run completed + final summary path
 
 Gating rules are NOT stored here — they live in config.yaml's phases section.
 This file only records what happened. The can_run() helper takes the gating
@@ -146,27 +161,34 @@ def init(
 
 
 # ---------------------------------------------------------------------------
-# Run lifecycle
+# Run lifecycle  (run → rounds → complete)
 # ---------------------------------------------------------------------------
 
 def start_run(
     project_dir: str | Path,
     phase_slug: str,
     mode: str,
-    agents: list[str],
+    rounds_requested: int = 1,
+    user_feedback: str = "",
 ) -> int:
     """
-    Begin a new run of a phase. Appends a run entry with `started` set and
-    `completed` null, marks the phase `running`, and returns the run's index
-    (0-based) so the caller can later call complete_run() with it.
+    Begin a new run of a phase. Creates the run envelope (mode, requested
+    round count, user feedback, empty rounds list), marks the phase `running`,
+    and returns the run's 0-based index for later round/complete calls.
+
+    This does NOT start round 1 — call start_round() to open each round so
+    the lead's directive and agent roster are recorded per-round.
     """
     data = load(project_dir)
     phase = data["phases"].setdefault(phase_slug, {"status": "pending", "runs": []})
     run = {
         "mode": mode,
+        "rounds_requested": rounds_requested,
+        "user_feedback": user_feedback,
         "started": _now_iso(),
         "completed": None,
-        "agents": list(agents),
+        "rounds": [],
+        "final_summary": None,
     }
     phase["runs"].append(run)
     phase["status"] = "running"
@@ -174,23 +196,76 @@ def start_run(
     return len(phase["runs"]) - 1
 
 
+def start_round(
+    project_dir: str | Path,
+    phase_slug: str,
+    run_index: int,
+    lead_directive: str,
+    agents: list[str],
+) -> int:
+    """
+    Open the next round within a run. Appends a round entry with `started`
+    set, records the lead's directive for this round and the agent roster,
+    and returns the 1-based round number.
+    """
+    data = load(project_dir)
+    run = _get_run(data, phase_slug, run_index)
+    round_n = len(run["rounds"]) + 1
+    run["rounds"].append({
+        "n": round_n,
+        "started": _now_iso(),
+        "completed": None,
+        "lead_directive": lead_directive,
+        "agents": list(agents),
+        "outputs": [],
+    })
+    _save(project_dir, data)
+    return round_n
+
+
+def complete_round(
+    project_dir: str | Path,
+    phase_slug: str,
+    run_index: int,
+    round_n: int,
+    outputs: list[str] | None = None,
+) -> None:
+    """Stamp a round completed and record the output paths its members produced."""
+    data = load(project_dir)
+    run = _get_run(data, phase_slug, run_index)
+    idx = round_n - 1
+    if idx < 0 or idx >= len(run["rounds"]):
+        raise KeyError(f"run {run_index} of {phase_slug!r} has no round {round_n}")
+    run["rounds"][idx]["completed"] = _now_iso()
+    run["rounds"][idx]["outputs"] = list(outputs or [])
+    _save(project_dir, data)
+
+
 def complete_run(
     project_dir: str | Path,
     phase_slug: str,
     run_index: int,
+    final_summary: str | None = None,
     status: str = "completed",
 ) -> None:
     """
-    Mark a run finished: sets `completed`, and updates the phase status to
-    `status` (default 'completed'; pass 'failed' if the run errored out).
+    Close a run: stamp `completed`, record the final-summary path, and set the
+    phase status (default 'completed'; pass 'failed' if the run errored out).
     """
     data = load(project_dir)
-    phase = data["phases"].get(phase_slug)
-    if not phase or run_index >= len(phase["runs"]):
-        raise KeyError(f"phase {phase_slug!r} has no run index {run_index}")
-    phase["runs"][run_index]["completed"] = _now_iso()
-    phase["status"] = status
+    run = _get_run(data, phase_slug, run_index)
+    run["completed"] = _now_iso()
+    run["final_summary"] = final_summary
+    data["phases"][phase_slug]["status"] = status
     _save(project_dir, data)
+
+
+def _get_run(data: dict, phase_slug: str, run_index: int) -> dict:
+    """Look up a run dict within loaded state. Raises KeyError if missing."""
+    phase = data["phases"].get(phase_slug)
+    if not phase or run_index < 0 or run_index >= len(phase.get("runs", [])):
+        raise KeyError(f"phase {phase_slug!r} has no run index {run_index}")
+    return phase["runs"][run_index]
 
 
 # ---------------------------------------------------------------------------
@@ -213,6 +288,28 @@ def last_run(project_dir: str | Path, phase_slug: str) -> dict | None:
     """Return the most recent run for a phase, or None if it has never run."""
     runs = get_runs(project_dir, phase_slug)
     return runs[-1] if runs else None
+
+
+def get_run(project_dir: str | Path, phase_slug: str, run_index: int) -> dict:
+    """Return a specific run dict (0-based index). Raises KeyError if missing."""
+    data = load(project_dir)
+    return _get_run(data, phase_slug, run_index)
+
+
+def current_round(
+    project_dir: str | Path,
+    phase_slug: str,
+    run_index: int,
+) -> dict | None:
+    """
+    Return the round currently in progress (started but not completed) within
+    a run, or None if the run has no open round.
+    """
+    run = get_run(project_dir, phase_slug, run_index)
+    for rnd in run.get("rounds", []):
+        if rnd.get("completed") is None:
+            return rnd
+    return None
 
 
 def all_phases(project_dir: str | Path) -> dict:
