@@ -1,6 +1,7 @@
-{# ─── Overview tab: description + phase summary statistics ─── #}
+{# ─── Overview tab: description + visual phase roadmap ─── #}
 <div class="overview-layout">
-  {# Left: project description (view/edit) #}
+
+  {# ═══ Left: project description (view/edit) ═══ #}
   <section class="panel goal-panel" id="desc-panel">
     <div class="panel-head">
       <h3>Project Description <small>setting.md</small></h3>
@@ -30,45 +31,63 @@
     </form>
   </section>
 
-  {# Right: phase summary cards #}
-  <section class="panel phase-panel">
+  {# ═══ Right: visual phase roadmap ═══ #}
+  <section class="panel phase-roadmap-panel">
     <div class="panel-head">
-      <h3>Phase Summary</h3>
+      <h3>Research Roadmap</h3>
     </div>
-    <p class="hint">Click a phase to view its details. Statistics update as each phase progresses.</p>
 
-    <div class="summary-list">
+    <div class="roadmap">
       {% for s in phase_summaries %}
-      <a class="summary-card summary-status-{{ s.status }}"
+      <a class="roadmap-node roadmap-{{ s.status }} {{ 'roadmap-active' if s.is_active else '' }}
+                {{ 'roadmap-gated' if not s.can_run and s.status == 'pending' else '' }}"
          hx-get="{{ url_for('project_view', project_id=project.id, tab=s.slug) }}"
          hx-target="#project-tabs"
          hx-swap="innerHTML"
          hx-push-url="true">
-        <div class="summary-card-head">
-          <span class="summary-num">{{ loop.index }}</span>
-          <span class="summary-name">{{ s.name }}</span>
-          <span class="pattern-badge pattern-{{ s.pattern }}">{{ s.pattern }}</span>
-        </div>
 
-        <div class="summary-stats">
-          {% if not s.started %}
-            <span class="stat-pill stat-pending">not started</span>
+        {# Node circle with number/status icon #}
+        <div class="roadmap-circle">
+          {% if s.status == 'completed' %}
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3.5,8.5 6.5,11.5 12.5,4.5"/>
+            </svg>
+          {% elif s.is_active %}
+            <span class="roadmap-pulse"></span>
           {% else %}
-            <span class="stat-pill stat-{{ s.status }}">{{ s.status }}</span>
-            {% if s.tasks_total %}
-            <span class="stat-line">{{ s.tasks_completed }}/{{ s.tasks_total }} tasks done</span>
-            {% endif %}
-            {% if s.max_rounds > 1 %}
-            <span class="stat-line">round {{ s.current_round }}/{{ s.max_rounds }}</span>
-            {% endif %}
-            {% if s.tasks_running > 0 %}
-            <span class="stat-line stat-running">{{ s.tasks_running }} running</span>
-            {% endif %}
-            {% if s.tasks_failed > 0 %}
-            <span class="stat-line stat-failed">{{ s.tasks_failed }} failed</span>
-            {% endif %}
+            {{ s.number }}
           {% endif %}
         </div>
+
+        {# Node content #}
+        <div class="roadmap-content">
+          <div class="roadmap-name-row">
+            <span class="roadmap-name">{{ s.name }}</span>
+            {% if s.is_active %}<span class="roadmap-live-tag">RUNNING</span>{% endif %}
+          </div>
+          <div class="roadmap-stats">
+            {% if s.status == 'completed' %}
+              <span class="rm-stat rm-stat-done">
+                {{ s.run_count }} run{{ '' if s.run_count == 1 else 's' }} ·
+                {% if s.last_run_rounds %}{{ s.last_run_rounds }} rounds{% endif %}
+              </span>
+              {% if s.summary_path %}
+              <span class="rm-stat rm-stat-link">summary available</span>
+              {% endif %}
+            {% elif s.is_active %}
+              <span class="rm-stat rm-stat-running">in progress…</span>
+            {% elif not s.can_run %}
+              <span class="rm-stat rm-stat-gated">locked</span>
+            {% else %}
+              <span class="rm-stat rm-stat-pending">ready to start</span>
+            {% endif %}
+          </div>
+        </div>
+
+        {# Connector line to next node #}
+        {% if not loop.last %}
+        <div class="roadmap-connector {{ 'connector-done' if s.status == 'completed' else '' }}"></div>
+        {% endif %}
       </a>
       {% endfor %}
     </div>

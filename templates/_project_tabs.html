@@ -16,12 +16,13 @@
      hx-swap="innerHTML"
      hx-push-url="true">
     {{ pc.name }}
+    {# Status dot from new state model #}
     {% set summ = phase_summaries | selectattr('slug','equalto',pc.slug) | first %}
     {% if summ %}
-      {% if summ.status == 'completed' %}<span class="tab-dot tab-dot-done">●</span>
-      {% elif summ.status == 'running' or summ.tasks_running > 0 %}<span class="tab-dot tab-dot-run">●</span>
-      {% elif summ.status == 'failed' %}<span class="tab-dot tab-dot-fail">●</span>
-      {% elif summ.started %}<span class="tab-dot tab-dot-active">●</span>
+      {% if summ.is_active %}<span class="tab-dot tab-dot-run"></span>
+      {% elif summ.status == 'completed' %}<span class="tab-dot tab-dot-done"></span>
+      {% elif summ.run_count > 0 %}<span class="tab-dot tab-dot-active"></span>
+      {% elif not summ.can_run %}<span class="tab-dot tab-dot-locked"></span>
       {% endif %}
     {% endif %}
   </a>

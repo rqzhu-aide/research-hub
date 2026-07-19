@@ -1,0 +1,74 @@
+{# ─── Live run progress partial (HTMX-polled) ─── #}
+{% if not phase_data %}
+  <div class="run-progress-empty">
+    <p class="hint">No data available.</p>
+  </div>
+{% elif phase_data.run_active and phase_data.run_status %}
+  {# ─── Run in progress ─── #}
+  {% set rs = phase_data.run_status %}
+  <div class="run-active-card">
+    <div class="run-active-header">
+      <span class="run-pulse"></span>
+      <span class="run-active-label">Run #{{ rs.run_number }} in progress</span>
+      <span class="run-mode-badge">{{ rs.mode }}</span>
+    </div>
+
+    {# Round progress dots #}
+    <div class="round-track">
+      {% for i in range(rs.rounds_requested) %}
+        {% if loop.index0 < rs.rounds_completed %}
+          <span class="round-dot round-dot-done" title="Round {{ loop.index }} — complete"></span>
+        {% elif loop.index0 == rs.rounds_completed %}
+          <span class="round-dot round-dot-active" title="Round {{ loop.index }} — in progress"></span>
+        {% else %}
+          <span class="round-dot round-dot-pending" title="Round {{ loop.index }} — pending"></span>
+        {% endif %}
+        {% if not loop.last %}<span class="round-connector"></span>{% endif %}
+      {% endfor %}
+    </div>
+
+    <div class="round-progress-text">
+      Round {{ rs.rounds_completed + (1 if rs.rounds_completed < rs.rounds_requested else 0) }}
+      of {{ rs.rounds_requested }}
+      {% if rs.rounds_completed < rs.rounds_requested %}
+        <span class="round-status-text">— research_lead is coordinating</span>
+      {% else %}
+        <span class="round-status-text">— finalizing summary</span>
+      {% endif %}
+    </div>
+
+    {% if rs.user_feedback %}
+    <div class="run-feedback-preview">
+      <span class="feedback-label">Your feedback:</span>
+      <span class="feedback-text">{{ rs.user_feedback[:120] }}{% if rs.user_feedback|length > 120 %}…{% endif %}</span>
+    </div>
+    {% endif %}
+  </div>
+{% elif phase_data.summary_path %}
+  {# ─── Run completed, summary available ─── #}
+  <div class="run-done-card">
+    <div class="run-done-icon">✓</div>
+    <div class="run-done-body">
+      <div class="run-done-label">Phase complete</div>
+      <div class="run-done-count">
+        {{ phase_data.run_history | length }} run{{ '' if phase_data.run_history | length == 1 else 's' }} completed
+      </div>
+    </div>
+    <a href="{{ url_for('phase_summary', project_id=project_id, phase_slug=phase_slug) }}"
+       class="btn btn-primary btn-summary-link" target="_blank">
+      View Summary →
+    </a>
+  </div>
+{% else %}
+  {# ─── Not started ─── #}
+  <div class="run-idle-card">
+    <div class="run-idle-icon">○</div>
+    <div class="run-idle-text">
+      {% if phase_data.can_run %}
+        Ready to start — configure and launch below.
+      {% else %}
+        <span class="gating-warning">⚠ {{ phase_data.gating_reason }}</span>
+      {% endif %}
+    </div>
+  </div>
+{% endif %}

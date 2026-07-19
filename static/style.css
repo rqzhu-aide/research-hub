@@ -1059,3 +1059,603 @@ ol.np-guide {
   outline-offset: 2px;
   border-radius: var(--r-sm);
 }
+
+
+/* ═══════════════════════════════════════════════════════════
+   PHASE TAB — NEW DESIGN
+   Start-run form, live progress, round indicators
+   ═══════════════════════════════════════════════════════════ */
+
+/* ─── Phase layout (two-column) ─── */
+.phase-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+@media (max-width: 900px) {
+  .phase-layout { grid-template-columns: 1fr; }
+}
+
+.phase-info-panel, .phase-progress-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Phase title row ─── */
+.phase-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.phase-title-row h3 { margin: 0; font-size: 15px; }
+
+.phase-number-badge {
+  width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--grad-accent);
+  color: #fff;
+  font-size: 13px; font-weight: 700;
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-glow);
+  flex-shrink: 0;
+}
+
+.phase-description {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin: 8px 0 16px;
+  line-height: 1.5;
+}
+
+/* ─── Phase details grid ─── */
+.phase-details-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding: 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.detail-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.detail-label {
+  color: var(--text-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  min-width: 90px;
+  padding-top: 2px;
+  flex-shrink: 0;
+}
+.detail-value {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.detail-mono {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--accent-bright);
+  background: var(--accent-soft);
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+}
+
+/* Member chips */
+.member-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.member-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--bg-active);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* Gating detail */
+.gating-detail code {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--warning-bright);
+  font-size: 11px;
+  background: var(--warning-soft);
+  padding: 1px 5px;
+  border-radius: var(--r-sm);
+}
+
+/* ═══ START-RUN FORM ═══ */
+.start-run-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+  background: linear-gradient(180deg, var(--accent-soft) 0%, transparent 100%);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--r-lg);
+}
+.form-header h4 {
+  margin: 0 0 2px;
+  font-size: 14px;
+  color: var(--text);
+}
+.form-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.form-row { display: flex; flex-direction: column; gap: 6px; }
+.form-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.form-help {
+  font-weight: 400;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+/* Rounds selector */
+.rounds-selector {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.rounds-btn {
+  width: 36px; height: 36px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: 14px; font-weight: 600;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: all var(--t-fast);
+}
+.rounds-btn:hover {
+  border-color: var(--accent-border);
+  color: var(--text);
+}
+.rounds-btn.active {
+  background: var(--grad-accent);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: var(--shadow-glow);
+}
+.rounds-hidden { display: none; }
+
+/* Textarea */
+.form-textarea {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  resize: vertical;
+  transition: border-color var(--t-fast);
+}
+.form-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--shadow-focus);
+}
+.form-textarea::placeholder { color: var(--text-faint); }
+
+/* Launch button */
+.btn-launch {
+  align-self: flex-start;
+  font-size: 13px;
+  padding: 10px 20px;
+  margin-top: 4px;
+}
+
+/* Disabled form states */
+.start-form-disabled {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+}
+.form-disabled-banner, .form-gated-banner {
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.form-disabled-banner {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  color: var(--accent-bright);
+}
+.form-gated-banner {
+  background: var(--warning-soft);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: var(--warning-bright);
+}
+
+/* ═══ RUN PROGRESS (partial) ═══ */
+.run-progress-empty { padding: 20px; text-align: center; }
+
+/* Active run card */
+.run-active-card {
+  padding: 16px;
+  background: linear-gradient(135deg, var(--accent-soft) 0%, transparent 60%);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--r-lg);
+}
+.run-active-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.run-pulse {
+  width: 8px; height: 8px;
+  background: var(--accent-bright);
+  border-radius: 50%;
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+.run-active-label {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text);
+}
+.run-mode-badge {
+  margin-left: auto;
+  padding: 2px 8px;
+  background: var(--bg-active);
+  color: var(--text-secondary);
+  border-radius: var(--r-pill);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* Round track */
+.round-track {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 12px 0 8px;
+}
+.round-dot {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: all var(--t-med);
+}
+.round-dot-done {
+  background: var(--grad-success);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
+}
+.round-dot-active {
+  background: var(--grad-accent);
+  box-shadow: var(--shadow-glow);
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+.round-dot-pending {
+  background: var(--bg-active);
+  border: 2px solid var(--border-strong);
+}
+.round-connector {
+  flex: 1;
+  height: 2px;
+  background: var(--border);
+  margin: 0 2px;
+}
+.round-progress-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+.round-status-text {
+  color: var(--text-dim);
+}
+
+.run-feedback-preview {
+  margin-top: 12px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: 11px;
+}
+.feedback-label {
+  color: var(--text-dim);
+  margin-right: 6px;
+}
+.feedback-text {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* Done card */
+.run-done-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  background: var(--success-soft);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: var(--r-lg);
+}
+.run-done-icon {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--grad-success);
+  color: #fff;
+  font-size: 16px; font-weight: 700;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.run-done-body { flex: 1; }
+.run-done-label {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 13px;
+}
+.run-done-count {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin-top: 2px;
+}
+.btn-summary-link {
+  font-size: 12px;
+  padding: 7px 14px;
+  white-space: nowrap;
+}
+
+/* Idle card */
+.run-idle-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+}
+.run-idle-icon {
+  font-size: 20px;
+  color: var(--text-faint);
+}
+.run-idle-text {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.gating-warning {
+  color: var(--warning-bright);
+  font-weight: 500;
+}
+
+/* Live indicator */
+.live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent-bright);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.live-dot {
+  width: 6px; height: 6px;
+  background: var(--accent-bright);
+  border-radius: 50%;
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+/* ═══ RUN HISTORY ═══ */
+.run-history-panel { margin-top: 16px; }
+.run-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.run-history-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  transition: border-color var(--t-fast);
+}
+.run-history-item:hover {
+  border-color: var(--border-strong);
+}
+.run-history-num {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--accent-bright);
+  min-width: 30px;
+}
+.run-history-body { flex: 1; }
+.run-history-meta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: 11px;
+}
+.run-history-mode {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.run-history-rounds {
+  color: var(--text-dim);
+}
+.run-history-time {
+  color: var(--text-faint);
+  font-family: 'JetBrains Mono', monospace;
+}
+.run-history-link {
+  font-size: 11px;
+  color: var(--accent-bright);
+  text-decoration: none;
+  margin-top: 4px;
+  display: inline-block;
+}
+.run-history-link:hover { text-decoration: underline; }
+
+/* ═══════════════════════════════════════════════════════════
+   ROADMAP (Overview tab)
+   ═══════════════════════════════════════════════════════════ */
+.phase-roadmap-panel { max-height: none; }
+
+.roadmap {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.roadmap-node {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 10px;
+  text-decoration: none;
+  color: inherit;
+  border-radius: var(--r-md);
+  transition: background var(--t-fast);
+  position: relative;
+  cursor: pointer;
+}
+.roadmap-node:hover {
+  background: var(--bg-hover);
+}
+
+/* Circle */
+.roadmap-circle {
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border: 2px solid var(--border-strong);
+  border-radius: 50%;
+  font-size: 12px; font-weight: 700;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  background: var(--bg);
+  transition: all var(--t-med);
+  position: relative;
+  z-index: 1;
+}
+
+/* States */
+.roadmap-completed .roadmap-circle {
+  background: var(--grad-success);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.4);
+}
+.roadmap-active .roadmap-circle {
+  background: var(--grad-accent);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: var(--shadow-glow);
+}
+.roadmap-pending .roadmap-circle {
+  border-color: var(--border);
+  color: var(--text-faint);
+}
+.roadmap-gated .roadmap-circle {
+  border-color: var(--border);
+  color: var(--text-faint);
+  opacity: 0.6;
+}
+
+/* Pulse for active */
+.roadmap-pulse {
+  width: 10px; height: 10px;
+  background: #fff;
+  border-radius: 50%;
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+/* Content */
+.roadmap-content {
+  flex: 1;
+  padding-top: 3px;
+}
+.roadmap-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.roadmap-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.roadmap-active .roadmap-name { color: var(--accent-bright); }
+.roadmap-gated .roadmap-name { color: var(--text-dim); }
+
+.roadmap-live-tag {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--accent-bright);
+  background: var(--accent-soft);
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  letter-spacing: 0.05em;
+}
+
+.roadmap-stats {
+  margin-top: 2px;
+}
+.rm-stat {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.rm-stat-done { color: var(--success-bright); }
+.rm-stat-running { color: var(--accent-bright); font-weight: 500; }
+.rm-stat-pending { color: var(--text-faint); }
+.rm-stat-gated { color: var(--warning-bright); }
+.rm-stat-link { color: var(--text-dim); margin-left: 6px; }
+
+/* Connector line */
+.roadmap-connector {
+  position: absolute;
+  left: 24px;
+  top: 40px;
+  width: 2px;
+  height: calc(100% - 12px);
+  background: var(--border);
+}
+.roadmap-connector.connector-done {
+  background: var(--success);
+  opacity: 0.5;
+}
+
+/* Tab dot — locked variant */
+.tab-dot-locked { color: var(--text-faint); opacity: 0.5; }
+
+/* ═══ Animations ═══ */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+/* Overview layout — make roadmap wider */
+.overview-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 900px) {
+  .overview-layout { grid-template-columns: 1fr; }
+}
+

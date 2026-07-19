@@ -232,15 +232,17 @@ def project_view(project_id: int, tab: str = "overview"):
                 settings_html = ""
 
     # All phase summaries (for overview) + phase status for phase tabs
-    phase_summaries = hub.get_all_phase_summaries(project_id)
+    # NEW: read from .log/project.yaml via web_phase_data
+    from scripts.web_phase_data import prepare_overview_data, prepare_phase_data
+    phase_summaries = prepare_overview_data(Path(proj_dir_str), phase_configs) if proj_dir else []
 
-    # If a phase tab is requested, load its full status
-    phase_status = None
+    # If a phase tab is requested, load its full data
+    phase_data = None
     phase_cfg = None
     if tab != "overview":
         phase_cfg = hub.get_phase_config(cfg, tab)
-        if phase_cfg:
-            phase_status = hub.get_phase_status(project_id, tab)
+        if phase_cfg and proj_dir:
+            phase_data = prepare_phase_data(proj_dir, project_id, phase_cfg, phase_configs)
 
     ctx = dict(
         project=proj,
@@ -252,7 +254,7 @@ def project_view(project_id: int, tab: str = "overview"):
         settings_html=settings_html,
         proj_dir=proj_dir_str,
         phase_cfg=phase_cfg,
-        phase_status=phase_status,
+        phase_data=phase_data,
         profiles=_profiles(),
     )
     # HTMX tab clicks return just the tab content partial
@@ -298,24 +300,66 @@ def phase_view(project_id: int, phase_slug: str):
 
 @app.route("/project/<int:project_id>/phase/<phase_slug>/start", methods=["POST"])
 def start_phase(project_id: int, phase_slug: str):
-    """Start a phase — creates task chain via setup_phase()."""
+    """Start a phase run — launches research_lead via launch_run()."""
+    from scripts.launch_run import launch_run
+    proj_dir = hub.get_project_dir(project_id)
+    if not proj_dir:
+        flash("Project directory not found", "error")
+        return redirect(url_for("project_view", project_id=project_id, tab=phase_slug))
+
+    rounds = int(request.form.get("rounds", 1))
+    rounds = max(1, min(rounds, 10))  # clamp 1-10
+    feedback = request.form.get("feedback", "").strip()
+
     try:
-        phase_id = hub.setup_phase(project_id, phase_slug)
-        flash(f"Phase started (phase #{phase_id}). Task chain created on kanban.", "success")
+        result = launch_run(
+            project_dir=str(proj_dir),
+            project_id=project_id,
+            phase_slug=phase_slug,
+            user_feedback=feedback,
+            rounds_requested=rounds,
+        )
+        flash(f"Run #{result['run_index']+1} started — research_lead is working "
+              f"({rounds} round{'s' if rounds != 1 else ''}).", "success")
     except Exception as e:
         traceback.print_exc()
-        flash(f"Phase setup failed: {e}", "error")
-    return redirect(url_for("phase_view", project_id=project_id, phase_slug=phase_slug))
+        flash(f"Run failed to start: {e}", "error")
+    return redirect(url_for("project_view", project_id=project_id, tab=phase_slug))
 
 
 @app.route("/project/<int:project_id>/phase/<phase_slug>/progress")
 def phase_progress(project_id: int, phase_slug: str):
-    """HTMX-polled partial: phase task status."""
-    hub.poll_phase(project_id, phase_slug)
-    phase_status = hub.get_phase_status(project_id, phase_slug)
-    return render_template("_phase_progress.html",
-                           phase_status=phase_status, project_id=project_id,
-                           phase_slug=phase_slug)
+    """HTMX-polled partial: live run status."""
+    from scripts.launch_run import get_run_status
+    from scripts.web_phase_data import prepare_phase_data
+    proj_dir = hub.get_project_dir(project_id)
+    cfg = hub.load_config()
+    phase_cfg = hub.get_phase_config(cfg, phase_slug)
+    if not proj_dir or not phase_cfg:
+        return render_template("_run_progress.html", phase_data=None)
+
+    phase_data = prepare_phase_data(proj_dir, project_id, phase_cfg,
+                                    hub.get_phases_config(cfg))
+    return render_template("_run_progress.html", phase_data=phase_data,
+                           project_id=project_id, phase_slug=phase_slug)
+
+
+@app.route("/project/<int:project_id>/phase/<phase_slug>/summary")
+def phase_summary(project_id: int, phase_slug: str):
+    """Serve the phase summary HTML file (lead-authored)."""
+    proj_dir = hub.get_project_dir(project_id)
+    if not proj_dir:
+        flash("Project directory not found", "error")
+        return redirect(url_for("project_view", project_id=project_id))
+
+    summary_file = proj_dir / "phase-summaries" / f"{phase_slug}.html"
+    if not summary_file.exists():
+        flash("Summary not yet written for this phase.", "error")
+        return redirect(url_for("project_view", project_id=project_id, tab=phase_slug))
+
+    # Serve the raw HTML — lead controls full styling
+    from flask import send_file
+    return send_file(str(summary_file), mimetype="text/html")
 
 
 @app.route("/project/<int:project_id>/settings", methods=["POST"])

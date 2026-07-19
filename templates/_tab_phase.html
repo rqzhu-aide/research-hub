@@ -1,101 +1,174 @@
-{# ─── Phase tab: design + start + live progress ─── #}
-{% if not phase_cfg %}
-  <p class="hint">Phase not found in config.</p>
+{# ─── Phase tab: info + start-run form + live progress + summary ─── #}
+{% set pd = phase_data %}
+{% if not pd or not pd.phase_cfg %}
+  <p class="hint">Phase configuration not found.</p>
 {% else %}
-<div class="grid">
-  {# ─── Phase design + start ─── #}
-  <section class="panel">
+{% set pc = pd.phase_cfg %}
+
+<div class="phase-layout">
+
+  {# ═══ Left column: phase info + start form ═══ #}
+  <section class="panel phase-info-panel">
     <div class="panel-head">
-      <h3>{{ phase_cfg.name }} <small>{{ phase_cfg.slug }}</small></h3>
-      <span class="pattern-badge pattern-{{ phase_cfg.pattern }}">{{ phase_cfg.pattern }}</span>
-    </div>
-    <p class="pattern-desc">{{ phase_cfg.description }}</p>
-
-    {% if phase_cfg.pattern == 'parallel' %}
-    <p class="pattern-desc"><strong>Parallel</strong> — members explore independently, then synthesizer merges.</p>
-    <table class="design-table">
-      <thead><tr><th>Member</th><th>Lens</th></tr></thead>
-      <tbody>
-        {% for m in phase_cfg.members %}
-        <tr>
-          <td><strong>{{ m.role }}</strong></td>
-          <td>{{ m.lens }}</td>
-        </tr>
+      <div class="phase-title-row">
+        {% set ns = namespace(n='') %}
+        {% for pcfg in phase_configs %}
+          {% if pcfg.slug == pc.slug %}{% set ns.n = loop.index %}{% endif %}
         {% endfor %}
-      </tbody>
-    </table>
-    {% if phase_cfg.synthesis %}
-    <div class="synthesis-box">
-      <strong>Synthesis ({{ phase_cfg.synthesis.owner }}):</strong>
-      {{ phase_cfg.synthesis.task }}
+        <span class="phase-number-badge">{{ ns.n }}</span>
+        <h3>{{ pc.name }}</h3>
+        <span class="pattern-badge pattern-{{ pc.pattern }}">{{ pc.pattern }}</span>
+      </div>
     </div>
-    {% endif %}
 
-    {% elif phase_cfg.pattern == 'sequential' %}
-    <p class="pattern-desc"><strong>Sequential</strong> — pipeline, each step takes the previous as input.</p>
-    <ol class="pipeline">
-      {% for step in phase_cfg.steps %}
-      <li>
-        <strong>{{ step.role }}</strong>
-        {% if step.input_from %}<small>(input from {{ step.input_from }})</small>{% endif %}
-        <br><span class="lens-text">{{ step.lens }}</span>
-      </li>
-      {% endfor %}
-    </ol>
+    <p class="phase-description">{{ pc.description }}</p>
 
-    {% elif phase_cfg.pattern == 'debate' %}
-    <p class="pattern-desc"><strong>Debate</strong> — owner proposes, critics critique, repeat {{ phase_cfg.max_rounds }} rounds.</p>
-    <table class="design-table">
-      <tr>
-        <td><strong>Owner</strong></td>
-        <td>{{ phase_cfg.owner }} — {{ phase_cfg.owner_lens }}</td>
-      </tr>
-      {% for role, lens in phase_cfg.critic_lenses.items() %}
-      <tr>
-        <td><strong>Critic</strong></td>
-        <td>{{ role }} — {{ lens }}</td>
-      </tr>
-      {% endfor %}
-    </table>
-    {% endif %}
+    {# Phase details grid #}
+    <div class="phase-details-grid">
+      <div class="detail-item">
+        <span class="detail-label">Pattern</span>
+        <span class="detail-value">
+          {% if pc.pattern == 'parallel' %}Members work independently
+          {% elif pc.pattern == 'sequential' %}Pipeline — each takes previous as input
+          {% elif pc.pattern == 'debate' %}Owner proposes, critics critique, iterate
+          {% endif %}
+        </span>
+      </div>
+      <div class="detail-item">
+        <span class="detail-label">Output folder</span>
+        <code class="detail-value detail-mono">{{ pc.folder }}</code>
+      </div>
+      <div class="detail-item">
+        <span class="detail-label">Team members</span>
+        <span class="detail-value member-chips">
+          {% for m in pc.members %}
+          <span class="member-chip">{{ m }}</span>
+          {% endfor %}
+        </span>
+      </div>
+      {% if pc.gated_by %}
+      <div class="detail-item">
+        <span class="detail-label">Requires</span>
+        <span class="detail-value gating-detail">
+          {% for g in pc.gated_by %}<code>{{ g }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+          to be completed
+        </span>
+      </div>
+      {% endif %}
+    </div>
 
-    {# Start button #}
-    {% if not phase_status or not phase_status.tasks %}
-    <form action="{{ url_for('start_phase', project_id=project.id, phase_slug=phase_cfg.slug) }}" method="post">
-      <button type="submit" class="btn btn-primary btn-large"
-              onclick="return confirm('Start {{ phase_cfg.name }}? This creates kanban tasks and writes agent memories.')">
-        Start {{ phase_cfg.name }}
-      </button>
-    </form>
+    {# ─── Start-run form ─── #}
+    {% if pd.run_active %}
+      <div class="start-form-disabled">
+        <div class="form-disabled-banner">
+          <span class="run-pulse"></span>
+          A run is currently in progress. Check progress on the right.
+        </div>
+      </div>
+    {% elif not pd.can_run %}
+      <div class="start-form-disabled">
+        <div class="form-gated-banner">
+          ⚠ Cannot start yet — {{ pd.gating_reason }}
+        </div>
+      </div>
     {% else %}
-    <p class="status-line">Phase is active — see progress below.</p>
+      <form action="{{ url_for('start_phase', project_id=project.id, phase_slug=pc.slug) }}"
+            method="post" class="start-run-form" id="start-run-form">
+        <div class="form-header">
+          <h4>Start a run</h4>
+          <p class="form-hint">The research_lead will orchestrate the team.</p>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">
+            Rounds
+            <span class="form-help">How many rounds? (1 = single pass, 3+ = iterative refinement)</span>
+          </label>
+          <div class="rounds-selector">
+            <button type="button" class="rounds-btn {% if 1 == 1 %}active{% endif %}" data-rounds="1">1</button>
+            <button type="button" class="rounds-btn" data-rounds="2">2</button>
+            <button type="button" class="rounds-btn active" data-rounds="3">3</button>
+            <button type="button" class="rounds-btn" data-rounds="5">5</button>
+            <input type="number" name="rounds" id="rounds-input" value="3" min="1" max="10" class="rounds-hidden">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label" for="feedback">
+            Feedback for this run
+            <span class="form-help">Optional — steer the team's focus. E.g. "focus on Bayesian methods"</span>
+          </label>
+          <textarea name="feedback" id="feedback" rows="3"
+                    class="form-textarea"
+                    placeholder="e.g., Prioritize recent work on variational inference. Ignore anything pre-2015."></textarea>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-large btn-launch">
+          ▶ Start {{ pc.name }}
+        </button>
+      </form>
     {% endif %}
   </section>
 
-  {# ─── Progress panel (HTMX-polled) ─── #}
-  <section class="panel" id="progress-panel"
-           hx-get="{{ url_for('phase_progress', project_id=project.id, phase_slug=phase_cfg.slug) }}"
-           hx-trigger="every 2s"
-           hx-swap="innerHTML">
-    {% include '_phase_progress.html' %}
+  {# ═══ Right column: live progress (HTMX-polled) ═══ #}
+  <section class="panel phase-progress-panel">
+    <div class="panel-head">
+      <h3>Progress</h3>
+      {% if pd.run_active %}
+      <span class="live-indicator"><span class="live-dot"></span> LIVE</span>
+      {% endif %}
+    </div>
+    <div id="progress-content"
+         {% if pd.run_active %}
+         hx-get="{{ url_for('phase_progress', project_id=project.id, phase_slug=pc.slug) }}"
+         hx-trigger="every 3s"
+         hx-swap="innerHTML"
+         {% endif %}>
+      {% include '_run_progress.html' %}
+    </div>
   </section>
 
-  {# ─── Activity ─── #}
-  <section class="panel">
-    <div class="panel-head"><h3>Activity</h3></div>
-    {% if phase_status and phase_status.tasks %}
-    <ul class="activity-log">
-      {% for t in phase_status.tasks %}
-        {% if t.status == 'running' %}
-        <li><span class="event-msg event-{{ t.role }}">🔄 {{ t.role }} is working ({{ t.task_type }})</span></li>
-        {% elif t.status == 'completed' %}
-        <li><span class="event-msg event-{{ t.role }}">✅ {{ t.role }} completed ({{ t.task_type }})</span></li>
-        {% endif %}
-      {% endfor %}
-    </ul>
-    {% else %}
-    <p class="hint">No activity yet. Start the phase to see live progress.</p>
-    {% endif %}
-  </section>
 </div>
+
+{# ─── Run history (below, only if runs exist) ─── #}
+{% if pd.run_history and pd.run_history | length > 0 %}
+<section class="panel run-history-panel">
+  <div class="panel-head">
+    <h3>Run History</h3>
+    <span class="panel-count">{{ pd.run_history | length }} run{{ '' if pd.run_history | length == 1 else 's' }}</span>
+  </div>
+  <div class="run-history-list">
+    {% for run in pd.run_history %}
+    <div class="run-history-item">
+      <div class="run-history-num">#{{ run.number }}</div>
+      <div class="run-history-body">
+        <div class="run-history-meta">
+          <span class="run-history-mode">{{ run.mode }}</span>
+          <span class="run-history-rounds">{{ run.rounds_completed }}/{{ run.rounds_requested }} rounds</span>
+          {% if run.completed %}
+          <span class="run-history-time">{{ run.completed[:10] }}</span>
+          {% endif %}
+        </div>
+        {% if run.final_summary %}
+        <a href="{{ url_for('phase_summary', project_id=project.id, phase_slug=pc.slug) }}"
+           class="run-history-link" target="_blank">View summary →</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<script>
+// Rounds selector buttons
+document.querySelectorAll('.rounds-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.rounds-btn').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    document.getElementById('rounds-input').value = this.dataset.rounds;
+  });
+});
+</script>
+
 {% endif %}
