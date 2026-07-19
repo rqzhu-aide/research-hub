@@ -570,11 +570,16 @@ select:focus, input:focus {
   gap: 6px;
 }
 .path-value {
-  font-size: 11px; word-break: break-all;
+  font-size: 11px;
   color: var(--text-secondary); background: transparent;
   padding: 0;
   flex: 1;
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
 }
 .open-folder-icon {
   flex-shrink: 0;
