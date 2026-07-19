@@ -160,6 +160,22 @@ def _build_lead_prompt(
 
     # Completion command
     launcher = Path(__file__).resolve()
+
+    # Round-tracking CLI commands (Issue 4 fix — lead records each round)
+    round_start_cmd = (
+        f"python3 {launcher} round-start"
+        f" --project-dir {project_dir}"
+        f" --phase {phase_slug}"
+        f" --run-index {run_index}"
+    )
+    round_complete_cmd = (
+        f"python3 {launcher} round-complete"
+        f" --project-dir {project_dir}"
+        f" --phase {phase_slug}"
+        f" --run-index {run_index}"
+    )
+
+    # Completion command
     complete_cmd = (
         f"python3 {launcher} complete"
         f" --project-dir {project_dir}"
@@ -170,17 +186,20 @@ def _build_lead_prompt(
 
     prompt = f"""# You are the Research Lead orchestrating: {phase_name}
 
-## Step 0 — Set up your environment
-```bash
-cd {project_dir}
-hermes kanban boards switch {board_slug}
-```
+## Environment (already set up for you)
+- **Working directory:** `{project_dir}` (you are already here)
+- **Kanban board:** `{board_slug}` (already scoped via env var — all kanban
+  commands go to this board automatically; do NOT run `hermes kanban boards switch`)
+- **Your project:** read `setting.md` for the research goal and constraints
 
 ## Step 1 — Read your playbook (REQUIRED before doing anything)
 Read these files carefully — they ARE your instructions:
 - `{phases_src}/_lead.md` — how to orchestrate THIS phase
 - `{phases_src}/_phase.md` — phase overview, folder, pattern
 - `setting.md` — the project goal and constraints
+
+Do NOT create your own task files or config directories. The playbook already
+exists at the paths above. Read them and follow them.
 
 ## Step 2 — Read cross-phase context
 Prior phase summaries (if any):
@@ -189,39 +208,63 @@ Prior phase summaries (if any):
 These tell you what has been done in earlier phases. Use them to steer
 your team's work in THIS phase.
 
-## Step 3 — Run the phase
+## Step 3 — Run the phase ({rounds_requested} round{"s" if rounds_requested != 1 else ""})
 - **Pattern:** {pattern}
   {"(members work independently in parallel — create all their tasks at once)" if pattern == "parallel" else "(pipeline — each member takes the previous one's output)" if pattern == "sequential" else "(owner proposes, critics critique, iterate)"}
-- **Rounds requested:** {rounds_requested}
 - **User feedback:** {user_feedback if user_feedback else "(none provided)"}
 
 ### Your team
 {members_block}
 
-For each member, create a kanban task:
+### For EACH round (1 to {rounds_requested}):
+
+**A. Record the round start** (so the system tracks progress):
+```bash
+{round_start_cmd} \\
+  --round N \\
+  --directive "Your one-line summary of this round's focus" \\
+  --agents research_lead,theorist,data_scientist
+```
+
+**B. Create a kanban task for each member** (note: title is POSITIONAL,
+and you MUST use `--workspace dir:{project_dir}` so outputs persist):
 ```bash
 hermes kanban create \\
+  "{phase_name} — Round N — <Role>" \\
   --assignee <profile-name> \\
-  --title "<phase> — Round N — <role>" \\
-  --body "Read your task file: config/phases/{phase_slug}/<role>.md
+  --workspace dir:{project_dir} \\
+  --body "Read your task file: {phases_src}/<role>.md
 
 Additional directive for this round: <your specific twist here>
 
-Write your output to: {folder}run/{run_n:02d}/round-NN/<role>.md
+Write your output to: {project_dir}/{folder}run/{run_n:02d}/round-NN/<role>.md
 
-Cross-phase context: read phase-summaries/*.html for what prior phases found."
+Cross-phase context: read {project_dir}/phase-summaries/*.html for prior phases."
 ```
 
-Wait for all member tasks to complete before starting the next round.
-Check with: `hermes kanban list --status done`
+**C. Wait for all tasks to complete** — do NOT poll in a sleep loop.
+Use `hermes kanban watch` to stream completion events, or check periodically:
+```bash
+hermes kanban list --status done
+```
+The dispatcher ticks every ~60s. Expect each round to take 3-8 minutes.
+
+**D. Record the round completion** with the output paths:
+```bash
+{round_complete_cmd} \\
+  --round N \\
+  --outputs "{project_dir}/{folder}run/{run_n:02d}/round-01/theorist.md,{project_dir}/{folder}run/{run_n:02d}/round-01/data_scientist.md"
+```
+(List every output file the members produced, comma-separated, absolute paths.)
 
 ### Between rounds
-Read all member outputs from the round. Identify gaps. Compose new
-directives for the next round that fill those gaps. Be specific.
+Read all member outputs from the round (they're in `{project_dir}/{folder}run/{run_n:02d}/round-NN/`).
+Identify gaps. Compose new directives for the next round that fill those gaps.
+Be specific — "find papers citing X" not "look harder".
 
 ## Step 4 — Write the phase summary
 When all rounds are complete, write/update the phase summary:
-- **File:** `phase-summaries/{phase_slug}.html` (overwrite if exists)
+- **File:** `{project_dir}/phase-summaries/{phase_slug}.html` (overwrite if exists)
 - **Format:** HTML, max 3 pages, self-contained styling
 - **Contents:**
   1. Brief summary of current findings / literature / state
@@ -317,6 +360,15 @@ def launch_run(
     log_file = state_dir(project_dir) / f"run-{run_index}-lead.log"
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
+    # Critical env vars for board scoping + workspace:
+    #   HERMES_KANBAN_BOARD  — scopes ALL kanban ops to this project's board,
+    #                          no manual `boards switch` needed (which doesn't
+    #                          persist across terminal() calls anyway)
+    #   HERMES_KANBAN_WORKSPACE — sets the lead's own working dir so relative
+    #                             paths in its outputs resolve correctly
+    spawn_env = os.environ.copy()
+    spawn_env["HERMES_KANBAN_BOARD"] = board_slug
+
     proc = subprocess.Popen(
         [
             "hermes", "--profile", "research_lead",
@@ -328,6 +380,7 @@ def launch_run(
         stdin=subprocess.DEVNULL,
         start_new_session=True,  # detach from parent (survives webapp restart)
         cwd=str(project_dir),
+        env=spawn_env,
     )
 
     # 10. Record PID in state for monitoring
@@ -383,6 +436,66 @@ def _complete(
     print(f"  Summary: {summary_path}")
 
 
+def _round_start(
+    project_dir: str | Path,
+    phase_slug: str,
+    run_index: int,
+    round_num: int,
+    directive: str,
+    agents: str,
+) -> None:
+    """Record the start of a round. Called by the lead via CLI.
+
+    Usage:
+        python3 launch_run.py round-start \\
+            --project-dir ... --phase ... --run-index 0 \\
+            --round 1 --directive "Initial scan, focus on Bayes" \\
+            --agents research_lead,theorist,data_scientist
+    """
+    from project_state import start_round, complete_round
+    project_dir = Path(project_dir).resolve()
+    agents_list = [a.strip() for a in agents.split(",") if a.strip()]
+    # If round already exists (idempotent re-run), do nothing
+    state = load(project_dir)
+    try:
+        run = state["phases"][phase_slug]["runs"][run_index]
+        existing = [r for r in run.get("rounds", []) if r.get("n") == round_num]
+        if existing:
+            print(f"[launch_run] Round {round_num} already recorded, skipping.")
+            return
+    except (KeyError, IndexError):
+        pass
+    actual_n = start_round(project_dir, phase_slug, run_index, directive, agents_list)
+    print(f"[launch_run] Round {actual_n} started for '{phase_slug}' run {run_index}.")
+    print(f"  Directive: {directive[:100]}{'...' if len(directive) > 100 else ''}")
+    print(f"  Agents: {', '.join(agents_list)}")
+
+
+def _round_complete(
+    project_dir: str | Path,
+    phase_slug: str,
+    run_index: int,
+    round_num: int,
+    outputs: str,
+) -> None:
+    """Record the completion of a round. Called by the lead via CLI.
+
+    Usage:
+        python3 launch_run.py round-complete \\
+            --project-dir ... --phase ... --run-index 0 \\
+            --round 1 \\
+            --outputs "/abs/path/theorist.md,/abs/path/data_scientist.md"
+    """
+    from project_state import complete_round
+    project_dir = Path(project_dir).resolve()
+    outputs_list = [o.strip() for o in outputs.split(",") if o.strip()]
+    complete_round(project_dir, phase_slug, run_index, round_num, outputs=outputs_list)
+    print(f"[launch_run] Round {round_num} completed for '{phase_slug}' run {run_index}.")
+    print(f"  Outputs ({len(outputs_list)}):")
+    for o in outputs_list:
+        print(f"    - {o}")
+
+
 # ---------------------------------------------------------------------------
 # Status query (for webapp polling)
 # ---------------------------------------------------------------------------
@@ -433,6 +546,24 @@ if __name__ == "__main__":
     p_complete.add_argument("--summary", required=True)
     p_complete.add_argument("--status", default="completed")
 
+    # round-start subcommand (called by the lead before dispatching a round)
+    p_rstart = sub.add_parser("round-start", help="Record the start of a round")
+    p_rstart.add_argument("--project-dir", required=True)
+    p_rstart.add_argument("--phase", required=True)
+    p_rstart.add_argument("--run-index", type=int, required=True)
+    p_rstart.add_argument("--round", type=int, required=True)
+    p_rstart.add_argument("--directive", required=True, help="Lead's directive for this round")
+    p_rstart.add_argument("--agents", required=True, help="Comma-separated agent names")
+
+    # round-complete subcommand (called by the lead after a round's tasks finish)
+    p_rcomp = sub.add_parser("round-complete", help="Record the completion of a round")
+    p_rcomp.add_argument("--project-dir", required=True)
+    p_rcomp.add_argument("--phase", required=True)
+    p_rcomp.add_argument("--run-index", type=int, required=True)
+    p_rcomp.add_argument("--round", type=int, required=True)
+    p_rcomp.add_argument("--outputs", required=True,
+                         help="Comma-separated absolute output paths")
+
     # status subcommand (for debugging / webapp)
     p_status = sub.add_parser("status", help="Show current run status")
     p_status.add_argument("--project-dir", required=True)
@@ -442,6 +573,12 @@ if __name__ == "__main__":
     if args.command == "complete":
         _complete(args.project_dir, args.phase, args.run_index,
                   args.summary, args.status)
+    elif args.command == "round-start":
+        _round_start(args.project_dir, args.phase, args.run_index,
+                     args.round, args.directive, args.agents)
+    elif args.command == "round-complete":
+        _round_complete(args.project_dir, args.phase, args.run_index,
+                        args.round, args.outputs)
     elif args.command == "status":
         info = get_run_status(args.project_dir)
         print(json.dumps(info, indent=2))
