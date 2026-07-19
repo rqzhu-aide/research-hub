@@ -139,11 +139,15 @@ def _build_lead_prompt(
     # Determine run number for folder naming (1-based)
     run_n = run_index + 1
 
+    # Hub source directory (absolute paths for playbook files)
+    hub_dir = _HUB_CONFIG.parent  # /home/tez/product/research-hub
+    phases_src = hub_dir / "config" / "phases" / phase_slug
+
     # Build members section
     member_lines = []
     for m in members:
         role = m if isinstance(m, str) else m.get("role", m)
-        task_file = f"config/phases/{phase_slug}/{role}.md"
+        task_file = f"{phases_src}/{role}.md"
         member_lines.append(f"  - **{role}** → task file: `{task_file}`")
     members_block = "\n".join(member_lines)
 
@@ -174,8 +178,8 @@ hermes kanban boards switch {board_slug}
 
 ## Step 1 — Read your playbook (REQUIRED before doing anything)
 Read these files carefully — they ARE your instructions:
-- `config/phases/{phase_slug}/_lead.md` — how to orchestrate THIS phase
-- `config/phases/{phase_slug}/_phase.md` — phase overview, folder, pattern
+- `{phases_src}/_lead.md` — how to orchestrate THIS phase
+- `{phases_src}/_phase.md` — phase overview, folder, pattern
 - `setting.md` — the project goal and constraints
 
 ## Step 2 — Read cross-phase context
