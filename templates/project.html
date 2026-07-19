@@ -12,14 +12,19 @@
     </div>
     <div class="proj-path-box">
       <span class="path-label">Project root</span>
-      <code class="path-value">{{ proj_dir }}</code>
-      {% if proj_dir and proj_dir != '(not found)' %}
-      <button type="button" class="btn btn-sm open-folder-btn"
-              title="Open in file browser"
-              onclick="openFolder({{ project.id }})">
-        Open Folder
-      </button>
-      {% endif %}
+      <div class="path-row">
+        <code class="path-value">{{ proj_dir }}</code>
+        {% if proj_dir and proj_dir != '(not found)' %}
+        <button type="button" class="open-folder-icon"
+                title="Open Folder"
+                aria-label="Open folder in file browser"
+                onclick="openFolder({{ project.id }})">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1.5 4.5C1.5 3.67 2.17 3 3 3h3l1.5 1.5H13c.83 0 1.5.67 1.5 1.5v6c0 .83-.67 1.5-1.5 1.5H3c-.83 0-1.5-.67-1.5-1.5v-7.5z"/>
+          </svg>
+        </button>
+        {% endif %}
+      </div>
     </div>
   </div>
 </header>
@@ -32,8 +37,7 @@
 <script>
 async function openFolder(projectId) {
   const btn = event.target.closest('button');
-  const originalText = btn.innerText;
-  btn.innerText = 'Opening…';
+  btn.style.opacity = '0.5';
   btn.disabled = true;
   try {
     const res = await fetch(`/project/${projectId}/open-folder`, { method: 'POST' });
@@ -44,7 +48,7 @@ async function openFolder(projectId) {
   } catch (e) {
     alert('Network error: ' + e.message);
   } finally {
-    btn.innerText = originalText;
+    btn.style.opacity = '';
     btn.disabled = false;
   }
 }
