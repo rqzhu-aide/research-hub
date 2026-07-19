@@ -16,24 +16,61 @@ import subprocess
 import re
 
 HUB_DIR = Path(__file__).parent.resolve()
-DB_PATH = HUB_DIR / "hub.db"
 CONFIG_PATH = HUB_DIR / "config.yaml"
-PROJECTS_DIR = HUB_DIR / "projects"
+SCHEMA_PATH = HUB_DIR / "schema.sql"
+CONFIG_DIR = HUB_DIR / "config"                     # souls, phases, team (stays with app)
 TEMPLATES_DIR = HUB_DIR / "exploration-templates"   # legacy
-CONFIG_DIR = HUB_DIR / "config"                     # new: souls, phases, team
+
+# Workspace paths resolved from config.yaml (hub.workspace_dir).
+# Defaults to the app dir for backward compatibility.
+
+_workspace_cache: Optional[Path] = None
+
+
+def _resolve_workspace() -> Path:
+    """Resolve workspace_dir from config. Cached after first access."""
+    global _workspace_cache
+    if _workspace_cache is not None:
+        return _workspace_cache
+    try:
+        with open(CONFIG_PATH) as f:
+            import yaml
+            cfg = yaml.safe_load(f)
+        ws = (cfg or {}).get("hub", {}).get("workspace_dir")
+        if ws:
+            _workspace_cache = Path(ws).expanduser().resolve()
+        else:
+            _workspace_cache = HUB_DIR
+    except Exception:
+        _workspace_cache = HUB_DIR
+    return _workspace_cache
+
+
+def get_workspace_dir() -> Path:
+    """Root directory for projects + DB. Set via config.yaml hub.workspace_dir."""
+    return _resolve_workspace()
+
+
+def get_db_path() -> Path:
+    return get_workspace_dir() / "hub.db"
+
+
+def get_projects_dir() -> Path:
+    return get_workspace_dir() / "projects"
+
 
 # ── DB helpers ───────────────────────────────────────────────────────────────
 
 def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(get_db_path())
     conn.row_factory = sqlite3.Row
     return conn
 
 def init_db():
     with get_db() as conn:
-        schema = (HUB_DIR / "schema.sql").read_text()
+        schema = SCHEMA_PATH.read_text()
         conn.executescript(schema)
-    print("[hub] Database initialized.")
+    print(f"[hub] Database initialized at {get_db_path()}")
 
 # ── Config ───────────────────────────────────────────────────────────────────
 
@@ -86,45 +123,63 @@ def get_agent_display_name(cfg: dict, agent_id: str) -> str:
 # ── Project lifecycle ────────────────────────────────────────────────────────
 
 def create_project(name: str, description: str = "", goal: str = "",
-                   workflow: str = "default", max_iterations: int = 10) -> int:
-    cfg = load_config()
+                   constraints: str = "", max_iterations: int = 10) -> int:
+    """
+    Create a new project with a clean folder structure.
+
+    Folder layout created:
+        <workspace>/projects/project-NNN-<slug>/
+        ├── setting.md          ← goal, constraints, success criteria
+        ├── inputs/             ← user drops source materials here
+        ├── outputs/            ← final deliverables land here
+        └── logs/               ← phase transcripts
+
+    Phase folders (phases/01-ideation/, etc.) are created just-in-time
+    when you start each phase, not upfront.
+    """
+    # Ensure workspace + projects dir exist
+    get_projects_dir().mkdir(parents=True, exist_ok=True)
+
+    # Ensure DB exists
+    init_db()
+
     with get_db() as conn:
         cur = conn.execute(
-            "INSERT INTO projects (name, description, goal, workflow_name, max_iterations) VALUES (?, ?, ?, ?, ?)",
-            (name, description, goal, workflow, max_iterations)
+            "INSERT INTO projects (name, description, goal, max_iterations) VALUES (?, ?, ?, ?)",
+            (name, description, goal, max_iterations)
         )
         project_id = cur.lastrowid
 
-        # Assign agents from config to this project
-        for agent in get_agents(cfg):
-            conn.execute(
-                "INSERT INTO project_agents (project_id, agent_id, profile) VALUES (?, ?, ?)",
-                (project_id, agent["id"], agent["profile"])
-            )
+    # Create clean project folder
+    slug = name.replace(" ", "_").replace("/", "-").lower()
+    proj_dir = get_projects_dir() / f"project-{project_id:03d}-{slug}"
+    proj_dir.mkdir(parents=True, exist_ok=True)
+    (proj_dir / "inputs").mkdir(exist_ok=True)
+    (proj_dir / "outputs").mkdir(exist_ok=True)
+    (proj_dir / "logs").mkdir(exist_ok=True)
 
-        # Create project workspace
-        proj_dir = PROJECTS_DIR / f"project-{project_id:03d}-{name.replace(' ', '_').lower()}"
-        proj_dir.mkdir(parents=True, exist_ok=True)
-        (proj_dir / "inputs").mkdir(exist_ok=True)
-        (proj_dir / "outputs").mkdir(exist_ok=True)
-        (proj_dir / "logs").mkdir(exist_ok=True)
-
-        # Create workflow tasks
-        stages = get_workflow(cfg, workflow)
-        for i, stage in enumerate(stages):
-            task_dir = proj_dir / f"stage-{i:02d}-{stage['stage']}"
-            task_dir.mkdir(exist_ok=True)
-            depends = stage.get("depends_on", [])
-            depends_str = ",".join(depends) if isinstance(depends, list) else depends
-            conn.execute(
-                """INSERT INTO tasks (project_id, stage, agent_id, description, depends_on, input_dir, output_dir)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (project_id, stage["stage"], stage["agent"], stage.get("description", ""),
-                 depends_str, str(task_dir / "inputs"), str(task_dir / "outputs"))
-            )
+    # Generate setting.md from user input
+    setting_content = _build_setting_md(name, description, goal, constraints)
+    (proj_dir / "setting.md").write_text(setting_content)
 
     print(f"[hub] Created project #{project_id}: {name}")
+    print(f"      Folder: {proj_dir}")
     return project_id
+
+
+def _build_setting_md(name: str, description: str, goal: str, constraints: str) -> str:
+    """Generate a setting.md file from user-provided project info."""
+    parts = [f"# {name}\n"]
+    if description:
+        parts.append(f"## Description\n{description}\n")
+    parts.append(f"## Goal\n{goal or '[Describe the overarching research goal]'}\n")
+    if constraints:
+        parts.append(f"## Constraints\n{constraints}\n")
+    parts.append(
+        "## Success Criteria\n"
+        "[What does a good outcome look like? What would confirm we succeeded?]\n"
+    )
+    return "\n".join(parts)
 
 def list_projects() -> List[sqlite3.Row]:
     with get_db() as conn:
@@ -318,7 +373,7 @@ def get_phases(project_id: int) -> List[sqlite3.Row]:
 def get_project_dir(project_id: int) -> Optional[Path]:
     """Find the project workspace directory."""
     pattern = f"project-{project_id:03d}-*"
-    matches = list(PROJECTS_DIR.glob(pattern))
+    matches = list(get_projects_dir().glob(pattern))
     if matches:
         return matches[0]
     return None

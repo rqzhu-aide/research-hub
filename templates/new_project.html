@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}New Project — Research Hub{% endblock %}
+{% block content %}
+
+<header class="project-header">
+  <h1>✨ New Project</h1>
+  <p class="project-meta">Create a new research project. A clean folder will be created for it.</p>
+</header>
+
+<div class="new-project-form">
+  <form action="{{ url_for('new_project') }}" method="post" class="project-form">
+    <div class="form-field">
+      <label for="name">Project name <span class="req">*</span></label>
+      <input type="text" id="name" name="name" required
+             placeholder="e.g., Constrained RL for Robotics"
+             class="form-input">
+      <small class="hint">This becomes the folder name (slugified).</small>
+    </div>
+
+    <div class="form-field">
+      <label for="description">Short description</label>
+      <input type="text" id="description" name="description"
+             placeholder="One-line summary"
+             class="form-input">
+    </div>
+
+    <div class="form-field">
+      <label for="goal">Research goal <span class="req">*</span></label>
+      <textarea id="goal" name="goal" rows="3" required
+                placeholder="What are we trying to learn? One sentence or a short paragraph."
+                class="form-textarea"></textarea>
+    </div>
+
+    <div class="form-field">
+      <label for="constraints">Constraints</label>
+      <textarea id="constraints" name="constraints" rows="4"
+                placeholder="Data limitations, compute budget, time constraints, prior work, assumptions..."
+                class="form-textarea"></textarea>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary btn-large">✨ Create Project</button>
+      <a href="{{ url_for('index') }}" class="btn">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<p class="hint" style="margin-top: 24px;">
+  💡 What gets created:<br>
+  <code>{{ workspace_dir if workspace_dir is defined else '~' }}/projects/project-NNN-<i>name</i>/</code> with
+  <code>setting.md</code>, <code>inputs/</code>, <code>outputs/</code>, <code>logs/</code>.
+</p>
+
+{% endblock %}

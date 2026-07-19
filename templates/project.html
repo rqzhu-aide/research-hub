@@ -1,100 +1,67 @@
 {% extends "base.html" %}
 {% block title %}{{ project.name }} — Research Hub{% endblock %}
 {% block content %}
-{% set project_id = project.id %}
 
 <header class="project-header">
-  <div>
-    <h1>{{ project.name }}</h1>
-    <p class="project-meta">
-      #{{ project.id }} · status: <strong>{{ project.status }}</strong> ·
-      iteration {{ project.current_iteration }}/{{ project.max_iterations }}
-    </p>
-    {% if project.goal %}
-    <p class="project-goal">🎯 {{ project.goal }}</p>
-    {% endif %}
+  <div class="header-row">
+    <div>
+      <h1>{{ project.name }}</h1>
+      <p class="project-meta">
+        #{{ project.id }} · <strong>{{ project.status }}</strong>
+        {% if project.description %} · {{ project.description }}{% endif %}
+      </p>
+    </div>
+    <div class="proj-path-box">
+      <span class="path-label">📁 Project root</span>
+      <code class="path-value">{{ proj_dir }}</code>
+    </div>
   </div>
 </header>
 
-<div class="phase-bar">
-  {% for ph in phases %}
-  <span class="phase-chip phase-{{ ph.status }}" title="{{ ph.description or '' }}">
-    {{ ph.slug }}: {{ ph.name or ph.slug }} ({{ ph.status }})
-  </span>
-  {% else %}
-  <span class="phase-chip phase-pending">No phases yet</span>
-  {% endfor %}
-</div>
-
-<div class="grid">
-  <!-- ─── Settings editor ─────────────────────────────────── -->
-  <section class="panel">
-    <h3>📋 Project Settings <small>(goal, constraints, success criteria)</small></h3>
+<div class="project-layout">
+  {# ─── Left column: Goal editor ─────────────────────────── #}
+  <section class="panel goal-panel">
+    <h3>📋 Project Goal & Constraints <small>(setting.md)</small></h3>
+    <p class="hint">This is the brief every agent reads. Edit the goal, task, constraints, and success criteria here.</p>
     <form action="{{ url_for('save_settings', project_id=project.id) }}" method="post">
       <textarea name="settings_content" class="settings-editor"
-                placeholder="Describe research goal, task, constraints, team settings...">{{ settings_content }}</textarea>
-      <button type="submit" class="btn btn-primary">Save Settings</button>
+                placeholder="# Goal&#10;What are we trying to learn?&#10;&#10;## Constraints&#10;Data, compute, time limits...">{{ settings_content }}</textarea>
+      <button type="submit" class="btn btn-primary">💾 Save Goal</button>
     </form>
     {% if not settings_content.strip() %}
-    <p class="hint">Tip: fill in Goal, Task, Constraints, Success Criteria. This gets injected into each agent's MEMORY.md.</p>
+    <p class="hint" style="color: var(--warning);">⚠ No goal set yet — fill this in before starting any phase.</p>
     {% endif %}
   </section>
 
-  <!-- ─── Agent panel ─────────────────────────────────────── -->
-  <section class="panel">
-    <h3>🤖 Agent Setup <small>(who debates, how many rounds)</small></h3>
-    <form action="{{ url_for('setup_agents', project_id=project.id) }}" method="post" class="agent-form">
-      <label>Proposer
-        <select name="proposer">
-          {% for a in profiles %}
-          <option value="{{ a.profile }}">{{ a.name }} ({{ a.profile }} · {{ a.model }})</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Critic
-        <select name="critic">
-          {% for a in profiles %}
-          <option value="{{ a.profile }}">{{ a.name }} ({{ a.profile }} · {{ a.model }})</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Manager <small>(optional)</small>
-        <select name="manager">
-          <option value="">— none —</option>
-          {% for a in profiles %}
-          <option value="{{ a.profile }}">{{ a.name }} ({{ a.profile }})</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Max rounds
-        <input type="number" name="max_rounds" value="3" min="1" max="10">
-      </label>
-      <button type="submit" class="btn btn-primary"
-              onclick="return confirm('Set up idea phase? This writes MEMORY.md entries and creates kanban tasks.')">
-        ▶ Start Idea Phase
-      </button>
-    </form>
-    {% if idea_status and idea_status.proposer_profile %}
-    <p class="status-line">
-      Active: <strong>{{ idea_status.proposer_profile }}</strong> ↔ <strong>{{ idea_status.critic_profile }}</strong>
-    </p>
-    {% endif %}
-  </section>
+  {# ─── Right column: Phase launcher ─────────────────────── #}
+  <section class="panel phase-panel">
+    <h3>🚀 Research Phases</h3>
+    <p class="hint">Click a phase to view its design and start it. Phases run in order — each builds on the last.</p>
 
-  <!-- ─── Progress panel (HTMX-polled) ────────────────────── -->
-  <section class="panel" id="progress-panel"
-           hx-get="{{ url_for('progress_panel', project_id=project.id) }}"
-           hx-trigger="every 2s"
-           hx-swap="innerHTML">
-    {% include '_progress_panel.html' %}
-  </section>
-
-  <!-- ─── Activity panel (HTMX-polled) ────────────────────── -->
-  <section class="panel" id="activity-panel"
-           hx-get="{{ url_for('activity_panel', project_id=project.id) }}"
-           hx-trigger="every 3s"
-           hx-swap="innerHTML">
-    {% include '_activity_panel.html' %}
+    <div class="phase-list">
+      {% for pc in phase_configs %}
+      {% set state = phase_states.get(pc.slug) %}
+      {% set is_started = state and state.tasks %}
+      {% set phase_status = state.phase.status if state and state.phase else 'pending' %}
+      <a href="{{ url_for('phase_view', project_id=project.id, phase_slug=pc.slug) }}"
+         class="phase-row phase-status-{{ phase_status }}">
+        <span class="phase-num">{{ loop.index }}</span>
+        <div class="phase-info">
+          <div class="phase-title">{{ pc.name }}</div>
+          <div class="phase-desc">{{ pc.description }}</div>
+          <div class="phase-pattern">
+            <span class="pattern-badge pattern-{{ pc.pattern }}">{{ pc.pattern }}</span>
+            {% if is_started %}
+              <span class="phase-progress">{{ state.tasks | selectattr('status','equalto','completed') | list | length }}/{{ state.tasks | length }} tasks done</span>
+            {% elif phase_status == 'pending' %}
+              <span class="phase-not-started">not started</span>
+            {% endif %}
+          </div>
+        </div>
+        <span class="phase-arrow">→</span>
+      </a>
+      {% endfor %}
+    </div>
   </section>
 </div>
 

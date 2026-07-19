@@ -24,7 +24,9 @@
         {% endfor %}
       </nav>
       <div class="sidebar-footer">
+        <a href="{{ url_for('new_project') }}" class="nav-link">✨ New Project</a>
         <a href="{{ url_for('profiles_view') }}" class="nav-link">👥 Agent Profiles</a>
+        <a href="{{ url_for('hub_settings') }}" class="nav-link">⚙️ Settings</a>
       </div>
     </aside>
 

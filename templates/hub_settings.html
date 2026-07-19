@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Hub Settings — Research Hub{% endblock %}
+{% block content %}
+
+<header class="project-header">
+  <h1>⚙️ Hub Settings</h1>
+  <p class="project-meta">Where projects and the database live.</p>
+</header>
+
+<div class="settings-grid">
+  <section class="panel">
+    <h3>📁 Workspace</h3>
+    <dl class="settings-list">
+      <dt>Workspace directory</dt>
+      <dd><code>{{ workspace_dir }}</code></dd>
+      <dt>Projects directory</dt>
+      <dd><code>{{ projects_dir }}</code></dd>
+      <dt>Database</dt>
+      <dd><code>{{ db_path }}</code></dd>
+      <dt>Existing projects</dt>
+      <dd>{{ project_count }}</dd>
+    </dl>
+
+    <h4 style="margin-top: 20px;">Change workspace</h4>
+    <form action="{{ url_for('change_workspace') }}" method="post" class="inline-form">
+      <input type="text" name="workspace_dir" value="{{ workspace_dir }}"
+             class="form-input" placeholder="/path/to/workspace">
+      <button type="submit" class="btn btn-primary">Update</button>
+    </form>
+    <p class="hint">
+      ⚠ Changing the workspace creates future projects in the new location.
+      Existing projects stay where they are. Server restart required.
+    </p>
+  </section>
+
+  <section class="panel">
+    <h3>📋 Config Preview</h3>
+    <pre class="config-preview">hub:
+{% for key, val in hub_config.items() %}  {{ key }}: {{ val }}
+{% endfor %}</pre>
+  </section>
+</div>
+
+{% endblock %}

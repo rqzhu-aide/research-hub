@@ -3,9 +3,9 @@
 
 hub:
   name: "My Research Hub"
-  db_path: "./hub.db"
-  projects_dir: "./projects"
-  logs_dir: "./logs"
+  workspace_dir: "~/research"    # where projects + database live (separate from app)
+  # projects:    ~/research/projects/project-NNN-<slug>/
+  # database:    ~/research/hub.db
   max_iterations: 10
 
 # Define your agent profiles here (must already exist in Hermes)

@@ -41,6 +41,70 @@ def index():
     return render_template("index.html", projects=[], profiles=_profiles())
 
 
+@app.route("/project/new", methods=["GET", "POST"])
+def new_project():
+    """Create a new project via web form."""
+    if request.method == "GET":
+        return render_template("new_project.html", projects=[dict(p) for p in hub.list_projects()])
+
+    # POST: create the project
+    name = request.form.get("name", "").strip()
+    description = request.form.get("description", "").strip()
+    goal = request.form.get("goal", "").strip()
+    constraints = request.form.get("constraints", "").strip()
+
+    if not name:
+        flash("Project name is required.", "error")
+        return redirect(url_for("new_project"))
+
+    try:
+        pid = hub.create_project(name, description, goal, constraints)
+        flash(f"Project '{name}' created (#{pid}).", "success")
+        return redirect(url_for("project_view", project_id=pid))
+    except Exception as e:
+        traceback.print_exc()
+        flash(f"Failed to create project: {e}", "error")
+        return redirect(url_for("new_project"))
+
+
+@app.route("/settings")
+def hub_settings():
+    """Hub settings: view/change workspace directory."""
+    cfg = hub.load_config()
+    ws_dir = hub.get_workspace_dir()
+    projects = [dict(p) for p in hub.list_projects()]
+    return render_template("hub_settings.html",
+                           workspace_dir=str(ws_dir),
+                           projects_dir=str(hub.get_projects_dir()),
+                           db_path=str(hub.get_db_path()),
+                           hub_config=cfg.get("hub", {}),
+                           projects=projects,
+                           project_count=len(projects))
+
+
+@app.route("/settings/workspace", methods=["POST"])
+def change_workspace():
+    """Change the workspace directory."""
+    new_ws = request.form.get("workspace_dir", "").strip()
+    if not new_ws:
+        flash("Workspace directory cannot be empty.", "error")
+        return redirect(url_for("hub_settings"))
+    try:
+        # Update config.yaml
+        import yaml
+        cfg_path = hub.CONFIG_PATH
+        with open(cfg_path) as f:
+            cfg = yaml.safe_load(f)
+        cfg.setdefault("hub", {})["workspace_dir"] = new_ws
+        with open(cfg_path, "w") as f:
+            yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+        flash(f"Workspace changed to {new_ws}. Restart the server to pick up the change.", "success")
+    except Exception as e:
+        traceback.print_exc()
+        flash(f"Failed to change workspace: {e}", "error")
+    return redirect(url_for("hub_settings"))
+
+
 @app.route("/project/<int:project_id>")
 def project_view(project_id: int):
     proj = hub.get_project(project_id)
@@ -51,17 +115,24 @@ def project_view(project_id: int):
     projects = [dict(p) for p in hub.list_projects()]
     phases = [dict(p) for p in hub.get_phases(project_id)]
 
-    # Read setting.md if it exists
+    # Project directory path + setting.md content
     proj_dir = hub.get_project_dir(project_id)
+    proj_dir_str = str(proj_dir) if proj_dir else "(not found)"
     settings_content = ""
     if proj_dir:
         s = proj_dir / "setting.md"
         if s.exists():
             settings_content = s.read_text()
 
-    # Get phase configs from config.yaml
+    # Phase configs from config.yaml + phase status
     cfg = hub.load_config()
     phase_configs = hub.get_phases_config(cfg)
+
+    # For each phase config, check if it's been started
+    phase_states = {}
+    for pc in phase_configs:
+        status = hub.get_phase_status(project_id, pc["slug"])
+        phase_states[pc["slug"]] = status
 
     return render_template(
         "project.html",
@@ -69,7 +140,9 @@ def project_view(project_id: int):
         projects=projects,
         phases=phases,
         phase_configs=phase_configs,
+        phase_states=phase_states,
         settings_content=settings_content,
+        proj_dir=proj_dir_str,
         profiles=_profiles(),
     )
 
