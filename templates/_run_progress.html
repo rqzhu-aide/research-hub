@@ -1,74 +1,194 @@
-{# ─── Live run progress partial (HTMX-polled) ─── #}
-{% if not phase_data %}
-  <div class="run-progress-empty">
-    <p class="hint">No data available.</p>
+{% set pd = phase_data | default({}) %}
+{% set current = pd.latest_run | default(pd.run_status | default(none)) %}
+{% set pc = pd.phase_cfg | default({}) %}
+{% set progress_run_id = current.id | default(current.run_id | default(current.number | default(current.run_number | default('active')))) if current else '' %}
+{% set progress_status = current.status | default('completed') if current else 'idle' %}
+{% set progress_completed = current.rounds_completed | default(current.completed_rounds | default(0)) if current else 0 %}
+{% set progress_requested = current.rounds_requested | default(current.requested_rounds | default(1)) if current else 1 %}
+{% set checkpoint_state = 'not-applicable' %}
+{% set checkpoint_digest = '' %}
+{% if pc.slug == '04-numerical-validation' and current and current.protocol_checkpoint_required %}
+  {% if current.protocol_checkpoint %}
+    {% set checkpoint_state = 'sealed' %}
+    {% set checkpoint_digest = current.protocol_checkpoint.sha256 | default('not-recorded') %}
+  {% else %}
+    {% set checkpoint_state = 'pending' %}
+  {% endif %}
+{% endif %}
+
+<div id="run-progress-region" class="run-progress-region"
+     data-run-active="{{ 'true' if pd and pd.run_active else 'false' }}"
+     data-progress-status-signature="{{ progress_run_id }}|{{ progress_status }}|{{ progress_completed }}|{{ progress_requested }}|{{ checkpoint_state }}|{{ checkpoint_digest }}"
+     {% if pd and pd.run_active %}data-run-poll-url="{{ url_for('phase_progress', project_id=project.id | default(project_id), phase_slug=pc.slug | default(phase_slug), project_identity=project_identity) }}"{% endif %}>
+<p class="sr-only" data-progress-announcement>
+  {% if pd and pd.run_active and current %}Run {{ current.number | default(current.run_number | default('')) }} technical status {{ current.status | replace('_', ' ') }}. {{ progress_completed }} of {{ progress_requested }} work units completed.
+  {% elif current %}Run {{ current.number | default(current.run_number | default('')) }} technical status {{ current.status | default('completed') | replace('_', ' ') }}.
+  {% else %}No active run.
+  {% endif %}
+  {% if checkpoint_state == 'pending' %} Phase 4 protocol checkpoint pending. Main results must not be generated yet.
+  {% elif checkpoint_state == 'sealed' %} Phase 4 protocol checkpoint sealed with SHA-256 {{ checkpoint_digest }}. Main-result work may proceed.
+  {% endif %}
+</p>
+{% if not pd %}
+  <div class="inline-error" role="alert">
+    <strong>Progress is unavailable.</strong>
+    <span>Refresh the phase. If the problem continues, inspect the application log.</span>
   </div>
-{% elif phase_data.run_active and phase_data.run_status %}
-  {# ─── Run in progress ─── #}
-  {% set rs = phase_data.run_status %}
-  <div class="run-active-card">
+{% elif pd.run_active and current %}
+  {% set run_id = current.id | default(current.run_id | default(current.number | default(current.run_number | default('active')))) %}
+  {% set requested = current.rounds_requested | default(current.requested_rounds | default(1)) %}
+  {% set completed = current.rounds_completed | default(current.completed_rounds | default(0)) %}
+  {% set current_round_record = current.current_round | default(none) %}
+  {% set current_round = current_round_record.n | default(current_round_record.number | default(current_round_record)) if current_round_record else none %}
+  {% set cleanup_pending = current.status == 'stopping' %}
+  <div class="run-active-card{% if cleanup_pending %} run-cleanup-card{% endif %}">
     <div class="run-active-header">
-      <span class="run-pulse"></span>
-      <span class="run-active-label">Run #{{ rs.run_number }} in progress</span>
-      <span class="run-mode-badge">{{ rs.mode }}</span>
+      <span class="{{ 'status-marker status-stopping' if cleanup_pending else 'run-pulse' }}" aria-hidden="true"></span>
+      <div>
+        <strong>Run {{ current.number | default(current.run_number | default(run_id)) }} {{ 'cleanup is pending' if cleanup_pending else 'is in progress' }}</strong>
+        {% set run_started = current.started_at | default(current.started | default('')) %}
+        {% set cleanup_started = current.cleanup_started_at | default('') %}
+        <small>
+          {% if cleanup_pending %}Cleanup requested {% if cleanup_started %}<time datetime="{{ cleanup_started }}">{{ cleanup_started }}</time>{% else %}time not recorded{% endif %}
+          {% else %}Started {% if run_started %}<time datetime="{{ run_started }}">{{ run_started }}</time>{% else %}time not recorded{% endif %}
+          {% endif %}
+        </small>
+      </div>
+      <span class="run-mode-badge">{{ 'cleanup' if cleanup_pending else current.mode | default(pc.pattern | default('run')) }}</span>
     </div>
 
-    {# Round progress dots #}
-    <div class="round-track">
-      {% for i in range(rs.rounds_requested) %}
-        {% if loop.index0 < rs.rounds_completed %}
-          <span class="round-dot round-dot-done" title="Round {{ loop.index }} — complete"></span>
-        {% elif loop.index0 == rs.rounds_completed %}
-          <span class="round-dot round-dot-active" title="Round {{ loop.index }} — in progress"></span>
-        {% else %}
-          <span class="round-dot round-dot-pending" title="Round {{ loop.index }} — pending"></span>
-        {% endif %}
-        {% if not loop.last %}<span class="round-connector"></span>{% endif %}
-      {% endfor %}
-    </div>
-
-    <div class="round-progress-text">
-      Round {{ rs.rounds_completed + (1 if rs.rounds_completed < rs.rounds_requested else 0) }}
-      of {{ rs.rounds_requested }}
-      {% if rs.rounds_completed < rs.rounds_requested %}
-        <span class="round-status-text">— research_lead is coordinating</span>
+    {% if pc.slug == '04-numerical-validation' and current.protocol_checkpoint_required %}
+      {% if current.protocol_checkpoint %}
+      {% set protocol_data = current.protocol_checkpoint.data | default({}) %}
+      {% set protocol_files = protocol_data.protocol_files | default([]) %}
+      <p class="form-help">Protocol checkpoint sealed at <time datetime="{{ current.protocol_checkpoint.sealed_at }}">{{ current.protocol_checkpoint.sealed_at }}</time>, covering {{ protocol_files | length }} prespecified file{{ '' if protocol_files | length == 1 else 's' }}.</p>
+      {% set protocol_checkpoint = current.protocol_checkpoint %}
+      {% include '_protocol_checkpoint.html' %}
       {% else %}
-        <span class="round-status-text">— finalizing summary</span>
+      <p class="form-help" role="status"><strong>Protocol checkpoint pending.</strong> The data analyst must complete the isolated protocol task. Research Hub then verifies and seals the study design and listed protocol files before any main-result task begins.</p>
       {% endif %}
-    </div>
+    {% endif %}
 
-    {% if rs.user_feedback %}
+    {% if cleanup_pending %}
+      <div class="cleanup-pending-notice" role="alert">
+        <strong>The project launch lock is still held.</strong>
+        <p>Research Hub could not confirm that every local worker and Hermes task stopped. No new phase can start until cleanup succeeds or you explicitly verify external shutdown and release the lock.</p>
+        {% if current.cleanup_reason | default('') %}
+        <p><span>Recorded reason:</span> {{ current.cleanup_reason }}</p>
+        {% endif %}
+      </div>
+      <div class="progress-heading cleanup-progress-summary">
+        <span><strong>{{ completed }}</strong> of {{ requested }} rounds completed before cleanup</span>
+        <span>Target outcome: {{ current.cleanup_outcome | default('failed') }}</span>
+      </div>
+    {% elif pc.pattern == 'sequential' and pd.stages | default(pc.stages | default([])) %}
+      {% set active_stages = pd.stages | default(pc.stages) %}
+      {% set stage_rounds = current.rounds | default([]) %}
+      <ol class="live-stage-list" aria-label="Stage progress">
+        {% for stage in active_stages %}
+          {% set stage_round = stage_rounds[loop.index0] if loop.index0 < stage_rounds | length else none %}
+          {% set stage_status = stage.status | default('completed' if stage_round and stage_round.completed else 'running' if stage_round and stage_round.started else 'pending') %}
+          <li class="stage-{{ stage_status }}">
+            <span class="status-marker" aria-hidden="true"></span>
+            <span><strong>{{ stage.name | default(stage.role | default('Stage ' ~ loop.index)) }}</strong><small>{{ stage_status | replace('_', ' ') }}</small></span>
+          </li>
+        {% endfor %}
+      </ol>
+    {% else %}
+      <div class="progress-heading">
+        <span><strong>{{ completed }}</strong> of {{ requested }} rounds complete</span>
+        {% if current_round %}<span>Working on round {{ current_round }}</span>{% endif %}
+      </div>
+      <progress value="{{ completed }}" max="{{ requested }}">{{ completed }} of {{ requested }}</progress>
+      <div class="round-track" aria-hidden="true">
+        {% for index in range(requested) %}
+          {% set number = index + 1 %}
+          <span class="round-chip {% if number <= completed %}is-complete{% elif current_round and number == current_round %}is-current{% elif not current_round and number == completed + 1 %}is-current{% endif %}">{{ number }}</span>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if not cleanup_pending and current.status_message | default(current.activity | default(none)) %}
+    <p class="activity-message"><span class="run-pulse" aria-hidden="true"></span>{{ current.status_message | default(current.activity) }}</p>
+    {% elif not cleanup_pending %}
+    <p class="activity-message"><span class="run-pulse" aria-hidden="true"></span>The research lead is coordinating the configured plan.</p>
+    {% endif %}
+
+    {% if current.user_feedback | default(current.feedback | default('')) %}
     <div class="run-feedback-preview">
-      <span class="feedback-label">Your feedback:</span>
-      <span class="feedback-text">{{ rs.user_feedback[:120] }}{% if rs.user_feedback|length > 120 %}…{% endif %}</span>
+      <span>Your direction</span>
+      <p>{{ current.user_feedback | default(current.feedback) }}</p>
     </div>
     {% endif %}
-  </div>
-{% elif phase_data.summary_path %}
-  {# ─── Run completed, summary available ─── #}
-  <div class="run-done-card">
-    <div class="run-done-icon">✓</div>
-    <div class="run-done-body">
-      <div class="run-done-label">Phase complete</div>
-      <div class="run-done-count">
-        {{ phase_data.run_history | length }} run{{ '' if phase_data.run_history | length == 1 else 's' }} completed
-      </div>
+
+    {% if pd.approval_context_report and pd.approval_context_report.changed_sources %}
+    <div class="override-warning" role="status">
+      <strong>Accepted context changed after this run launched.</strong>
+      <p>The run is still using its frozen inputs. Review the changed sources, then decide whether to let it finish or cancel and rerun.</p>
+      <ul class="compact-list">
+        {% for item in pd.approval_context_report.changed_sources %}
+        <li>{{ item.phase }}: {{ item.reason }}</li>
+        {% endfor %}
+      </ul>
     </div>
-    <a href="{{ url_for('phase_summary', project_id=project_id, phase_slug=phase_slug) }}"
-       class="btn btn-primary btn-summary-link" target="_blank">
-      View Summary →
-    </a>
-  </div>
-{% else %}
-  {# ─── Not started ─── #}
-  <div class="run-idle-card">
-    <div class="run-idle-icon">○</div>
-    <div class="run-idle-text">
-      {% if phase_data.can_run %}
-        Ready to start — configure and launch below.
+    {% endif %}
+
+    <div class="active-run-actions">
+      <a class="btn btn-sm" href="{{ url_for('run_log', project_id=project.id | default(project_id), phase_slug=pc.slug | default(phase_slug), run_id=run_id) }}"
+         target="_blank" rel="noopener" data-progress-focus="live-log">{{ 'Inspect run log' if cleanup_pending else 'Open live log' }}</a>
+      {% if cleanup_pending %}
+      <form action="{{ url_for('retry_cleanup', project_id=project.id | default(project_id), phase_slug=pc.slug | default(phase_slug), run_id=run_id) }}"
+            method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="project_identity" value="{{ project_identity }}">
+        <button type="submit" class="btn btn-warning btn-sm">Retry cleanup</button>
+      </form>
       {% else %}
-        <span class="gating-warning">⚠ {{ phase_data.gating_reason }}</span>
+      <form action="{{ url_for('cancel_run', project_id=project.id | default(project_id), phase_slug=pc.slug | default(phase_slug), run_id=run_id) }}"
+            method="post" data-confirm="Cancel this run? Completed work will remain in its immutable record.">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="project_identity" value="{{ project_identity }}">
+        <button type="submit" class="btn btn-danger btn-sm">Cancel run</button>
+      </form>
       {% endif %}
     </div>
+
+    {% if cleanup_pending %}
+    <details class="cleanup-recovery-control" data-progress-details="cleanup-recovery">
+      <summary class="btn btn-warning btn-sm" data-progress-focus="cleanup-recovery">Release after manual verification</summary>
+      <form action="{{ url_for('recover_cleanup', project_id=project.id | default(project_id), phase_slug=pc.slug | default(phase_slug), run_id=run_id) }}"
+            method="post" class="cleanup-recovery-form"
+            data-confirm="Release the project lock based on your manual verification? This does not stop any process or Hermes task."
+            data-unsaved-guard
+            data-draft-key="project-{{ project.id | default(project_id) }}-phase-{{ pc.slug | default(phase_slug) }}-cleanup-{{ run_id }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="project_identity" value="{{ project_identity }}">
+        <p>This is a recovery override. Use it only after checking outside Research Hub that the worker and every Hermes task for this run have stopped.</p>
+        <label class="form-label" for="cleanup-note-{{ run_id }}">Verification note <span>required, saved in history</span></label>
+        <textarea id="cleanup-note-{{ run_id }}" name="recovery_note" class="form-textarea" rows="3" maxlength="5000" required
+                  placeholder="What did you check, and how did you confirm that no work remains active?"></textarea>
+        <label class="check-row">
+          <input type="checkbox" name="confirm_external_stopped" value="1" required>
+          <span>I verified that the local worker and all Hermes tasks for this run have stopped.</span>
+        </label>
+        <button type="submit" class="btn btn-danger btn-sm">Release project lock</button>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+{% elif current %}
+  {% set terminal_status = current.status | default(pd.state.status | default('completed')) %}
+  <div class="terminal-run-card state-edge-{{ terminal_status }}">
+    <span class="status-marker status-{{ terminal_status }}" aria-hidden="true"></span>
+    <div>
+      <strong>Run {{ current.number | default(current.run_number | default('')) }} is {{ terminal_status | replace('_', ' ') }}.</strong>
+      <p>The run has stopped. Review controls and immutable history are available on the full phase panel.</p>
+    </div>
+  </div>
+{% else %}
+  <div class="inline-empty">
+    <strong>No active run.</strong>
+    <span>Nothing starts until you configure and launch this phase.</span>
   </div>
 {% endif %}
+</div>

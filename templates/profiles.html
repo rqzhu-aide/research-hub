@@ -1,18 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Agent Profiles — Research Hub{% endblock %}
+{% block title %}Agent profiles | Research Hub{% endblock %}
 {% block content %}
-<header class="project-header">
-  <h1>Agent Profiles</h1>
-  <p class="project-meta">Live model config read from each profile's <code>config.yaml</code>. Each profile is an independent Hermes instance with its own memory.</p>
+<header class="project-header compact-header">
+  <p class="eyebrow">Runtime roles</p>
+  <h1>Agent profiles</h1>
+  <p class="project-meta">Each role maps to an independent Hermes profile with its own model configuration and memory.</p>
 </header>
 
+{% if agents %}
 <div class="profiles-grid">
-  {% for a in agents %}
-    {% include "_profile_card.html" %}
-  {% endfor %}
+  {% for a in agents %}{% include "_profile_card.html" %}{% endfor %}
 </div>
+{% else %}
+<div class="inline-empty"><strong>No agent profiles found.</strong><span>Configure Hermes profiles before launching research work.</span></div>
+{% endif %}
 
-<p class="hint">
-  Each profile's <code>config.yaml</code> is the source of truth for what model it runs — the hub reads it live. To change a profile's model, edit it directly: <code>hermes -p &lt;profile&gt; config set model.default &lt;model&gt;</code>.
-</p>
+<p class="page-note">Runtime model settings are read from each profile's <code>config.yaml</code>. Reassigning a role changes future runs only.</p>
 {% endblock %}

@@ -1,174 +1,896 @@
-{# ─── Phase tab: info + start-run form + live progress + summary ─── #}
-{% set pd = phase_data %}
-{% if not pd or not pd.phase_cfg %}
-  <p class="hint">Phase configuration not found.</p>
+{% set pd = phase_data | default({}) %}
+{% set pc = pd.phase_cfg | default(phase_cfg | default({})) %}
+
+{% if not pc or not pc.slug %}
+<section class="panel inline-error" role="alert">
+  <strong>Phase configuration is unavailable.</strong>
+  <span>Return to the project overview and choose a configured phase.</span>
+</section>
 {% else %}
-{% set pc = pd.phase_cfg %}
+  {% set state = pd.state | default({}) %}
+  {% set history = pd.run_history | default([]) %}
+  {% set latest = pd.latest_run | default(pd.run_status | default(none)) %}
+  {% if not latest and history %}{% set latest = history | first %}{% endif %}
+  {% set approved = pd.approved_run | default(none) %}
+  {% set latest_identity = latest.id | default(latest.run_id | default(latest.number | default(latest.run_number | default('latest')))) if latest else none %}
+  {% set approved_identity = approved.id | default(approved.run_id | default(approved.number | default(approved.run_number | default('approved')))) if approved else none %}
+  {% set run_active = pd.run_active | default(false) %}
+  {% set active_elsewhere = pd.active_elsewhere | default(false) %}
+  {% set active_reference = pd.project_active_run | default(active_elsewhere) %}
+  {% set can_start = pd.can_start | default(pd.can_run | default(true)) %}
+  {% set prereq = pd.prerequisite_report | default({}) %}
+  {% set prereqs_ok = prereq.satisfied | default(prereq.ok | default(pd.can_run | default(true))) %}
+  {% set rounds_policy = pd.rounds_policy | default(pc.rounds | default({})) %}
+  {% set round_default = rounds_policy.default | default(1) %}
+  {% set round_min = rounds_policy.min | default(1) %}
+  {% set round_max = rounds_policy.max | default(10) %}
+  {% set stages = pd.stages | default(pc.stages | default(pc.steps | default([]))) %}
+  {% set plan_view = pd.plan_view | default({}) %}
+  {% set plan_frozen = plan_view.frozen | default(false) %}
+  {% set plan_pattern = plan_view.pattern | default(pc.pattern | default('phase'), true) %}
+  {% set plan_folder = plan_view.folder | default(pc.folder | default('project workspace'), true) %}
+  {% set plan_members = plan_view.members | default(pc.members | default([]), true) %}
+  {% set is_theory_phase = pc.slug == '03-theoretical-justification' %}
+  {% set method_bound_phase = pc.slug in ['03-theoretical-justification', '04-numerical-validation'] %}
+  {% set approved_method = pd.approved_method_selection | default(none) %}
+  {% set proof_audit_config = pc.proof_audit | default({}) %}
+  {% set proof_audit_stage = proof_audit_config.stage | default({}) %}
+  {% set unattended_tools = run_permissions.unattended_tools | default(true) %}
+  {% set stale_reason = pd.stale_reason | default(state.stale_reason | default(none)) %}
+  {% set phase_status = pd.decision_state | default(state.status | default('pending')) %}
+  {% set recovery_only = pd.recovery_only | default(pc.recovery_only | default(false)) %}
 
-<div class="phase-layout">
-
-  {# ═══ Left column: phase info + start form ═══ #}
-  <section class="panel phase-info-panel">
-    <div class="panel-head">
-      <div class="phase-title-row">
-        {% set ns = namespace(n='') %}
-        {% for pcfg in phase_configs %}
-          {% if pcfg.slug == pc.slug %}{% set ns.n = loop.index %}{% endif %}
-        {% endfor %}
-        <span class="phase-number-badge">{{ ns.n }}</span>
-        <h3>{{ pc.name }}</h3>
-        <span class="pattern-badge pattern-{{ pc.pattern }}">{{ pc.pattern }}</span>
-      </div>
+<header class="phase-decision-header">
+  <div>
+    <p class="eyebrow">{{ 'Phase recovery record' if recovery_only else 'Phase control' }}</p>
+    <div class="phase-heading-row">
+      <h2>{{ pc.name }}</h2>
+      <span class="state-badge state-{{ phase_status }}"><i class="status-marker" aria-hidden="true"></i>{{ phase_status | replace('_', ' ') }}</span>
+      <span class="pattern-badge pattern-{{ plan_pattern }}">{{ plan_pattern }}</span>
     </div>
-
-    <p class="phase-description">{{ pc.description }}</p>
-
-    {# Phase details grid #}
-    <div class="phase-details-grid">
-      <div class="detail-item">
-        <span class="detail-label">Pattern</span>
-        <span class="detail-value">
-          {% if pc.pattern == 'parallel' %}Members work independently
-          {% elif pc.pattern == 'sequential' %}Pipeline — each takes previous as input
-          {% elif pc.pattern == 'debate' %}Owner proposes, critics critique, iterate
-          {% endif %}
-        </span>
-      </div>
-      <div class="detail-item">
-        <span class="detail-label">Output folder</span>
-        <code class="detail-value detail-mono">{{ pc.folder }}</code>
-      </div>
-      <div class="detail-item">
-        <span class="detail-label">Team members</span>
-        <span class="detail-value member-chips">
-          {% for m in pc.members %}
-          <span class="member-chip">{{ m }}</span>
-          {% endfor %}
-        </span>
-      </div>
-      {% if pc.gated_by %}
-      <div class="detail-item">
-        <span class="detail-label">Requires</span>
-        <span class="detail-value gating-detail">
-          {% for g in pc.gated_by %}<code>{{ g }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
-          to be completed
-        </span>
-      </div>
-      {% endif %}
-    </div>
-
-    {# ─── Start-run form ─── #}
-    {% if pd.run_active %}
-      <div class="start-form-disabled">
-        <div class="form-disabled-banner">
-          <span class="run-pulse"></span>
-          A run is currently in progress. Check progress on the right.
-        </div>
-      </div>
-    {% elif not pd.can_run %}
-      <div class="start-form-disabled">
-        <div class="form-gated-banner">
-          ⚠ Cannot start yet — {{ pd.gating_reason }}
-        </div>
-      </div>
-    {% else %}
-      <form action="{{ url_for('start_phase', project_id=project.id, phase_slug=pc.slug) }}"
-            method="post" class="start-run-form" id="start-run-form">
-        <div class="form-header">
-          <h4>Start a run</h4>
-          <p class="form-hint">The research_lead will orchestrate the team.</p>
-        </div>
-
-        <div class="form-row">
-          <label class="form-label">
-            Rounds
-            <span class="form-help">How many rounds? (1 = single pass, 3+ = iterative refinement)</span>
-          </label>
-          <div class="rounds-selector">
-            <button type="button" class="rounds-btn {% if 1 == 1 %}active{% endif %}" data-rounds="1">1</button>
-            <button type="button" class="rounds-btn" data-rounds="2">2</button>
-            <button type="button" class="rounds-btn active" data-rounds="3">3</button>
-            <button type="button" class="rounds-btn" data-rounds="5">5</button>
-            <input type="number" name="rounds" id="rounds-input" value="3" min="1" max="10" class="rounds-hidden">
-          </div>
-        </div>
-
-        <div class="form-row">
-          <label class="form-label" for="feedback">
-            Feedback for this run
-            <span class="form-help">Optional — steer the team's focus. E.g. "focus on Bayesian methods"</span>
-          </label>
-          <textarea name="feedback" id="feedback" rows="3"
-                    class="form-textarea"
-                    placeholder="e.g., Prioritize recent work on variational inference. Ignore anything pre-2015."></textarea>
-        </div>
-
-        <button type="submit" class="btn btn-primary btn-large btn-launch">
-          ▶ Start {{ pc.name }}
-        </button>
-      </form>
-    {% endif %}
-  </section>
-
-  {# ═══ Right column: live progress (HTMX-polled) ═══ #}
-  <section class="panel phase-progress-panel">
-    <div class="panel-head">
-      <h3>Progress</h3>
-      {% if pd.run_active %}
-      <span class="live-indicator"><span class="live-dot"></span> LIVE</span>
-      {% endif %}
-    </div>
-    <div id="progress-content"
-         {% if pd.run_active %}
-         hx-get="{{ url_for('phase_progress', project_id=project.id, phase_slug=pc.slug) }}"
-         hx-trigger="every 3s"
-         hx-swap="innerHTML"
-         {% endif %}>
-      {% include '_run_progress.html' %}
-    </div>
-  </section>
-
-</div>
-
-{# ─── Run history (below, only if runs exist) ─── #}
-{% if pd.run_history and pd.run_history | length > 0 %}
-<section class="panel run-history-panel">
-  <div class="panel-head">
-    <h3>Run History</h3>
-    <span class="panel-count">{{ pd.run_history | length }} run{{ '' if pd.run_history | length == 1 else 's' }}</span>
+    <p>{{ pc.description }}</p>
   </div>
-  <div class="run-history-list">
-    {% for run in pd.run_history %}
-    <div class="run-history-item">
-      <div class="run-history-num">#{{ run.number }}</div>
-      <div class="run-history-body">
-        <div class="run-history-meta">
-          <span class="run-history-mode">{{ run.mode }}</span>
-          <span class="run-history-rounds">{{ run.rounds_completed }}/{{ run.rounds_requested }} rounds</span>
-          {% if run.completed %}
-          <span class="run-history-time">{{ run.completed[:10] }}</span>
-          {% endif %}
-        </div>
-        {% if run.final_summary %}
-        <a href="{{ url_for('phase_summary', project_id=project.id, phase_slug=pc.slug) }}"
-           class="run-history-link" target="_blank">View summary →</a>
-        {% endif %}
-      </div>
-    </div>
-    {% endfor %}
+  <div class="user-control-seal">
+    {% if recovery_only %}
+    <strong>Recovery only</strong>
+    <span>This removed phase cannot be launched. Its existing records remain available.</span>
+    {% else %}
+    <strong>Manual control</strong>
+    <span>This phase runs only when you launch it. No later phase starts automatically.</span>
+    {% endif %}
+  </div>
+</header>
+
+{% if recovery_only %}
+<section class="notice notice-stale" role="status">
+  <div>
+    <strong>This phase is no longer in the current configuration.</strong>
+    <p>The plan shown here comes from the {{ pd.recovery_source | default('project state fallback') }}. You can inspect summaries, logs, and history, or cancel an active run. Restore the phase configuration before starting another run.</p>
   </div>
 </section>
 {% endif %}
 
-<script>
-// Rounds selector buttons
-document.querySelectorAll('.rounds-btn').forEach(btn => {
-  btn.addEventListener('click', function() {
-    document.querySelectorAll('.rounds-btn').forEach(b => b.classList.remove('active'));
-    this.classList.add('active');
-    document.getElementById('rounds-input').value = this.dataset.rounds;
-  });
-});
-</script>
+{% if stale_reason %}
+<section class="notice notice-stale" role="status">
+  <div>
+    <strong>The approved result needs reassessment.</strong>
+    <p>{{ stale_reason }}</p>
+  </div>
+  {% if not recovery_only %}<a href="#launch-run" class="btn btn-sm">Configure a new run</a>{% endif %}
+</section>
+{% endif %}
+
+<div class="phase-layout">
+  <section class="panel phase-plan-panel" aria-labelledby="run-plan-heading"{% if is_theory_phase and not plan_frozen %} data-theory-plan-display{% endif %}>
+    <div class="panel-head">
+      <div>
+        <p class="section-kicker">What will happen</p>
+        <h2 id="run-plan-heading">Run plan</h2>
+      </div>
+      <code class="folder-code">{{ plan_folder }}</code>
+    </div>
+
+    <dl class="phase-facts">
+      {% if is_theory_phase or pc.slug == '06-paper-writing' or plan_frozen %}
+      <div>
+        <dt>{{ 'Active frozen plan' if plan_frozen else 'Selected plan' }}</dt>
+        <dd{% if is_theory_phase and not plan_frozen %} data-theory-plan-summary aria-live="polite" aria-atomic="true"{% endif %}>{{ plan_view.variant | default('Standard theory' if is_theory_phase else 'Full manuscript writing and independent review') }}{% if plan_frozen and stages %}, {{ stages | length }} stage{{ '' if stages | length == 1 else 's' }}{% elif is_theory_phase %}, {{ stages | length }} stages{% endif %}</dd>
+      </div>
+      {% endif %}
+      <div>
+        <dt>Work pattern</dt>
+        <dd>
+          {% if plan_pattern == 'sequential' %}Fixed handoffs. Each stage receives the prior stage's output.
+          {% elif plan_pattern == 'debate' %}A proposal is challenged and revised for the chosen number of critique rounds.
+          {% elif plan_pattern == 'parallel' %}Independent investigations are compared and synthesized for each chosen pass.
+          {% else %}The research lead coordinates the configured team.
+          {% endif %}
+        </dd>
+      </div>
+      <div>
+        <dt>Participants</dt>
+        <dd class="member-chips">
+          {% for member in plan_members %}
+          {% set member_role = member.role | default(member) %}
+          <span class="member-chip"{% if is_theory_phase and not plan_frozen %} data-theory-member="{{ member_role }}"{% if member_role == 'paper_reviewer' %} hidden{% endif %}{% endif %}>{{ member_role | replace('_', ' ') }}</span>
+          {% else %}
+          <span class="muted">No participants configured</span>
+          {% endfor %}
+        </dd>
+      </div>
+    </dl>
+
+    {% if stages %}
+    <div class="stage-plan" aria-label="Fixed stage plan">
+      <h3>{{ 'Fixed stage sequence' if plan_pattern == 'sequential' else 'Run stages' }}</h3>
+      <ol>
+        {% for stage in stages %}
+        <li{% if is_theory_phase and not plan_frozen %} data-theory-standard-stage{% endif %}>
+          <span class="stage-index">{{ loop.index }}</span>
+          <span class="stage-copy">
+            <strong>{{ stage.name | default(stage.title | default(stage.role | default('Stage ' ~ loop.index))) }}</strong>
+            <small>{{ stage.description | default(stage.lens | default('')) }}</small>
+          </span>
+          {% if stage.role | default(none) %}<code>{{ stage.role | replace('_', ' ') }}</code>{% endif %}
+        </li>
+        {% endfor %}
+        {% if is_theory_phase and not plan_frozen %}
+        <li data-theory-audit-stage hidden>
+          <span class="stage-index" data-theory-audit-index>{{ (stages | length) + 1 }}</span>
+          <span class="stage-copy">
+            <strong>{{ proof_audit_stage.name | default('Audit the final theoretical analysis independently') }}</strong>
+            <small>{{ proof_audit_stage.description | default('Check the exact sealed theory artifact, assumptions, proof dependencies, and central conclusions without revising the theory.') }}</small>
+          </span>
+          <code>{{ proof_audit_stage.role | default('paper_reviewer') | replace('_', ' ') }}</code>
+        </li>
+        {% endif %}
+      </ol>
+    </div>
+    {% endif %}
+
+    <div class="prerequisite-box {{ 'is-ready' if prereqs_ok else 'needs-override' }}">
+      <div class="prerequisite-title">
+        <span class="status-marker" aria-hidden="true"></span>
+        <strong>{{ 'Prerequisites available' if prereqs_ok else 'Prerequisites need your attention' }}</strong>
+      </div>
+      {% if prereq.message | default(none) %}
+        <p>{{ prereq.message }}</p>
+      {% elif pd.gating_reason | default(none) %}
+        <p>{{ pd.gating_reason }}</p>
+      {% elif pc.gated_by | default([]) %}
+        <p>Uses approved results from {{ pc.gated_by | join(', ') }}.</p>
+      {% else %}
+        <p>This phase has no configured prerequisites.</p>
+      {% endif %}
+      {% if prereq.requirements | default([]) %}
+      <ul class="compact-list">
+        {% for item in prereq.requirements %}
+        <li>
+          <strong>{{ item.name | default(item.phase) }}:</strong>
+          {% if item.satisfied %}approved run <code>{{ item.approved_run }}</code>, current
+          {% else %}{{ item.reason | default('not available') }}{% if item.approved_run %}, run <code>{{ item.approved_run }}</code>{% endif %}
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if method_bound_phase %}
+      <div class="method-selection-summary">
+        <strong>Method identity for this run</strong>
+        {% if approved_method %}
+        <p>Current approved Phase 02 selection: <code>{{ approved_method.stable_id }}</code>, version <code>{{ approved_method.version }}</code>, from run <code>{{ approved_method.source_run_id }}</code>.</p>
+        {% else %}
+        <p>No current approved Phase 02 method identity is available. A standard Phase 03 or Phase 04 run must name a run-specific method ID and version.</p>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel decision-panel" id="launch-run" aria-labelledby="launch-heading">
+    <div class="panel-head">
+      <div>
+        <p class="section-kicker">Your decision</p>
+        <h2 id="launch-heading">{{ 'Active run' if run_active else 'Recovery controls' if recovery_only else 'Configure a run' }}</h2>
+      </div>
+      {% if run_active %}<span class="live-indicator{% if latest and latest.status == 'stopping' %} needs-attention{% endif %}"><i aria-hidden="true"></i> {{ 'cleanup pending' if latest and latest.status == 'stopping' else 'live' }}</span>{% endif %}
+    </div>
+
+    {% if run_active %}
+      {% if pd.active_conflict | default(false) %}
+      <div class="override-warning" role="alert">
+        <strong>Multiple legacy runs are marked active.</strong>
+        <p>This project cannot launch another run until the conflicting records are resolved. Cancel this run here, then review the remaining active phase.</p>
+      </div>
+      {% endif %}
+      {% include "_run_progress.html" %}
+    {% elif active_elsewhere %}
+      <div class="inline-warning" role="status">
+        {% if active_reference.conflict | default(false) %}
+        <strong>Multiple legacy runs are marked active.</strong>
+        <p>Open either affected phase and cancel one run. Once only one remains, you can monitor or cancel it normally before launching this phase.</p>
+        <ul class="compact-list">
+          {% for item in active_reference.runs | default([]) %}
+          <li><a href="{{ url_for('project_view', project_id=project.id, tab=item.phase_slug) }}">{{ item.phase_slug }}</a>, run <code>{{ item.run_id }}</code></li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <strong>Another phase is currently running.</strong>
+        <p>Only one project run can be active at a time. You can monitor or cancel it before launching this phase.</p>
+        {% if active_reference.phase_slug | default(none) %}
+        <a class="btn btn-sm" href="{{ url_for('project_view', project_id=project.id, tab=active_reference.phase_slug) }}">Open active phase</a>
+        {% endif %}
+        {% endif %}
+      </div>
+    {% elif recovery_only %}
+      <div class="inline-warning" role="status">
+        <strong>Launching is disabled for this removed phase.</strong>
+        <p>Existing evidence stays available below. Restore a valid phase definition in <code>config.yaml</code> before creating another run.</p>
+      </div>
+    {% else %}
+      <form action="{{ url_for('start_phase', project_id=project.id, phase_slug=pc.slug) }}"
+            method="post" class="start-run-form" data-confirm="Launch this run now?" data-unsaved-guard
+            data-draft-key="project-{{ project.id }}-phase-{{ pc.slug }}-launch">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="project_identity" value="{{ project_identity }}">
+        <input type="hidden" name="phase_plan_version" value="{{ pd.phase_plan_version | default('') }}">
+        <input type="hidden" name="prerequisite_report_version" value="{{ pd.prerequisite_report_version }}">
+        {% if latest and latest.status == 'awaiting_review' %}
+        <input type="hidden" name="rerun_from" value="{{ latest_identity }}">
+        <div class="inline-warning" role="status">
+          <strong>The newest result is still awaiting your decision.</strong>
+          <p>Launching here records that result as revision requested and creates a separate run. Any approved baseline remains selected.</p>
+          <label class="check-row" for="replace-awaiting-{{ pc.slug }}">
+            <input type="checkbox" id="replace-awaiting-{{ pc.slug }}" name="replace_awaiting_review" value="1" required>
+            <span>I choose to replace the result awaiting my decision with this new run.</span>
+          </label>
+        </div>
+        {% endif %}
+
+        {% if not prereqs_ok %}
+        <div class="override-warning" role="alert">
+          <strong>The configured prerequisites are not all approved.</strong>
+          <p>You can still run this phase, but the result may rely on incomplete or stale inputs.</p>
+          <label class="check-row" for="override-prerequisites-{{ pc.slug }}">
+            <input type="checkbox" id="override-prerequisites-{{ pc.slug }}" name="override_prerequisites" value="1" required>
+            <span>I understand the missing context and choose to override the prerequisite warning for this run.</span>
+          </label>
+        </div>
+        {% endif %}
+
+        {% if method_bound_phase %}
+        <fieldset class="form-row method-selection-control" data-method-selection-control>
+          <legend class="form-label">Exact method for this run</legend>
+          {% if approved_method %}
+          <p class="form-help">Leave both fields blank to use the approved Phase 02 selection shown above. Enter both fields to study a different, explicitly identified method in this run.</p>
+          {% else %}
+          <p class="form-help">Enter both fields for a standard theoretical-analysis or numerical-validation run. An audit-only Phase 03 run uses its sealed source artifact and does not require a new method selection.</p>
+          {% endif %}
+          <div class="form-row two-column-fields">
+            <label for="method-id-{{ pc.slug }}">Stable method ID
+              <input class="form-input" id="method-id-{{ pc.slug }}" name="run_specific_method_id" type="text" maxlength="200" autocomplete="off" spellcheck="false" placeholder="method-family/variant">
+            </label>
+            <label for="method-version-{{ pc.slug }}">Method version
+              <input class="form-input" id="method-version-{{ pc.slug }}" name="run_specific_method_version" type="text" maxlength="200" autocomplete="off" spellcheck="false" placeholder="v1.0">
+            </label>
+          </div>
+        </fieldset>
+        {% endif %}
+
+        <div class="notice {{ 'notice-stale' if unattended_tools else 'inline-error' }}" role="status">
+          {% if unattended_tools %}
+          <strong>This run uses tools without further confirmation prompts.</strong>
+          <p>The agents are instructed to work in this project and are not authorized to approve results or start another phase. The Hermes process still inherits the filesystem and network access of your operating-system account, so configure that environment accordingly.</p>
+          {% else %}
+          <strong>Background agent tools are disabled.</strong>
+          <p>Enable <code>hub.allow_unattended_tools</code> in the hub configuration before launching a Web UI run.</p>
+          {% endif %}
+        </div>
+
+        {% if pc.pattern == 'sequential' %}
+        <div class="form-row fixed-plan-choice">
+          <span class="form-label">Execution plan</span>
+          <strong id="stage-count-{{ pc.slug }}" data-stage-count data-base-stage-count="{{ stages | length }}" aria-live="polite" aria-atomic="true">{{ stages | length }} fixed stage{{ '' if stages | length == 1 else 's' }}</strong>
+          <input type="hidden" name="rounds" value="{{ round_default }}">
+          {% if is_theory_phase %}
+          {% set audit_sources = pd.theory_audit_sources | default([]) %}
+          <fieldset class="plan-options" data-theory-plan-control>
+            <legend class="sr-only">Choose the Phase 03 execution plan</legend>
+            <label class="check-row" for="theory-standard-{{ pc.slug }}">
+              <input type="radio" id="theory-standard-{{ pc.slug }}" name="theory_plan" value="standard" data-theory-plan="standard" aria-describedby="stage-count-{{ pc.slug }}" checked>
+              <span><strong>Standard theory, {{ stages | length }} stages.</strong> Develop, assess, and revise the theoretical analysis.</span>
+            </label>
+            <label class="check-row" for="theory-audit-added-{{ pc.slug }}">
+              <input type="radio" id="theory-audit-added-{{ pc.slug }}" name="theory_plan" value="standard_with_audit" data-theory-plan="standard_with_audit" aria-describedby="stage-count-{{ pc.slug }}">
+              <span><strong>Standard theory plus audit, {{ (stages | length) + 1 }} stages.</strong> Run the standard stages, then independently audit the exact final theorist artifact.</span>
+            </label>
+            <label class="check-row" for="theory-audit-only-{{ pc.slug }}">
+              <input type="radio" id="theory-audit-only-{{ pc.slug }}" name="theory_plan" value="audit_only" data-theory-plan="audit_only" aria-describedby="stage-count-{{ pc.slug }}" {% if not audit_sources %}disabled{% endif %}>
+              <span><strong>Audit existing theory only, 1 stage.</strong> Audit a sealed final theorist artifact without repeating or revising the theory.</span>
+            </label>
+            <div class="form-row" data-theory-audit-source hidden>
+              <label class="form-label" for="proof-audit-source-{{ pc.slug }}">Existing final theory artifact</label>
+              <p class="form-help">Choose by recorded run identity. The server resolves the exact path and verifies its sealed hash.</p>
+              <select id="proof-audit-source-{{ pc.slug }}" name="proof_audit_source_run_id" class="form-select" disabled>
+                <option value="">Select a source run</option>
+                {% for source in audit_sources %}
+                <option value="{{ source.run_id }}">Run {{ source.run_number }} · {{ source.status | replace('_', ' ') }} · final theorist stage {{ source.source_round }} · SHA-256 {{ source.sha256[:12] }}</option>
+                {% endfor %}
+              </select>
+              <p class="form-help">The new run carries the selected run's complete baseline forward and applies only audit-supported changes. Approving it adopts that complete baseline. A source marked awaiting review or revision requested is proposed; a superseded source is historical.</p>
+            </div>
+            <div class="form-row" data-theory-audit-scope hidden>
+              <strong>Define the audit scope in the direction field below.</strong>
+              <p class="form-help">Name the theorem, lemma, equation, claim, or proof step to examine. Include its location, assumptions, dependencies, and the evidence that should be used. Leave the field blank only when you want an independent audit of the complete selected artifact.</p>
+            </div>
+            {% if not audit_sources %}
+            <p class="form-help">Audit-only becomes available after a Phase 03 run has a sealed, unchanged final theorist artifact.</p>
+            {% endif %}
+          </fieldset>
+          {% else %}
+          <span class="form-help">The order is fixed to protect the handoffs shown in the run plan.</span>
+          {% endif %}
+        </div>
+        {% else %}
+        <fieldset class="form-row">
+          <legend class="form-label">
+            {{ 'Proposal and critique rounds' if pc.pattern == 'debate' else 'Investigation passes' }}
+          </legend>
+          <p class="form-help"><strong>{{ rounds_policy.label | default(round_min ~ ' to ' ~ round_max) }}.</strong> {% if pc.pattern == 'debate' %}Round 1 develops independent proposals; each later round critiques and revises them.{% else %}{{ rounds_policy.help | default('Choose how much iteration is appropriate for this run. You can rerun later with a different depth.') }}{% endif %}</p>
+          <div class="rounds-selector">
+            {% set options = rounds_policy.options | default(range(round_min, round_max + 1)) %}
+            {% for option in options %}
+            <input class="round-radio" type="radio" name="rounds" id="rounds-{{ pc.slug }}-{{ option }}"
+                   value="{{ option }}" {% if option | string == round_default | string %}checked{% endif %}>
+            <label class="round-option" for="rounds-{{ pc.slug }}-{{ option }}">
+              <strong>{{ option }}</strong><span>{{ 'round' if pc.pattern == 'debate' else 'pass' }}{{ '' if option == 1 else 'es' if pc.pattern != 'debate' else 's' }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+        {% endif %}
+
+        <div class="form-row">
+          <label class="form-label" for="feedback-{{ pc.slug }}">Direction for this run <span>optional</span></label>
+          <p class="form-help">State what changed, what to prioritize, and what evidence would affect your decision.</p>
+          <textarea name="feedback" id="feedback-{{ pc.slug }}" rows="5" class="form-textarea"
+                    maxlength="5000" autocomplete="off" spellcheck="true"
+                    placeholder="Example: Reassess the method under covariate shift. Compare against the strongest recent baseline and report negative results."></textarea>
+        </div>
+
+        <div class="launch-footer">
+          <p>Launching records this configuration as a new immutable run.</p>
+          <button type="submit" class="btn btn-primary btn-large" {% if not unattended_tools %}disabled aria-disabled="true"{% endif %}>
+            {{ 'Run again' if history else 'Launch ' ~ pc.name }}
+          </button>
+        </div>
+      </form>
+    {% endif %}
+  </section>
+</div>
+
+{% if latest and not run_active and (not approved or latest_identity != approved_identity) %}
+  {% set latest_status = latest.status | default(phase_status) %}
+  {% set latest_id = latest_identity %}
+  {% set latest_has_summary = latest.summary_available | default(latest.final_summary | default(pd.summary_path | default(false))) %}
+  {% set approval_context = pd.approval_context_report | default(none) %}
+  {% set latest_plan = latest.frozen_plan | default({}) %}
+<section class="panel review-panel state-edge-{{ latest_status }}" aria-labelledby="latest-result-heading">
+  <div class="review-summary">
+    <p class="section-kicker">Newest result</p>
+    <div class="review-title-row">
+      <h2 id="latest-result-heading">Run {{ latest.number | default(latest.run_number | default(latest_id)) }}</h2>
+      <span class="state-badge state-{{ latest_status }}"><i class="status-marker" aria-hidden="true"></i>Technical: {{ latest_status | replace('_', ' ') }}</span>
+      {% if latest.scientific_outcome %}
+      <span class="scientific-outcome outcome-{{ latest.scientific_outcome | lower }}">
+        Scientific outcome: {{ latest.scientific_outcome }}
+      </span>
+      {% endif %}
+      {% if approved and approved_identity != latest_id %}
+      <span class="newer-run-label">newer than approved baseline</span>
+      {% endif %}
+    </div>
+    <p>
+      {% if latest_status in ['awaiting_review', 'completed'] %}
+        The run has stopped. Read its summary before deciding whether it becomes the phase baseline.
+      {% elif latest_status == 'approved' %}
+        This result is approved. You can retain it as the baseline or launch another run.
+      {% elif latest_status in ['revision_requested', 'needs_revision'] %}
+        A revision was requested. Launch a new run with focused direction when ready.
+      {% elif latest_status in ['failed', 'cancelled'] %}
+        This run is preserved for inspection and does not replace an approved baseline.
+      {% else %}
+        This run is preserved in the phase history. Choose whether to inspect it or run again.
+      {% endif %}
+    </p>
+    <dl class="run-facts-inline">
+      {% set latest_started = latest.started_at | default(latest.started | default('')) %}
+      {% set latest_finished = latest.completed_at | default(latest.completed | default(latest.finished_at | default(''))) %}
+      <div><dt>Started</dt><dd>{% if latest_started %}<time datetime="{{ latest_started }}">{{ latest_started }}</time>{% else %}Not recorded{% endif %}</dd></div>
+      <div><dt>Finished</dt><dd>{% if latest_finished %}<time datetime="{{ latest_finished }}">{{ latest_finished }}</time>{% else %}Not recorded{% endif %}</dd></div>
+      {% if latest_plan.available %}
+      <div><dt>Frozen plan</dt><dd>{{ latest_plan.variant }}</dd></div>
+      {% endif %}
+      {% if pc.slug == '04-numerical-validation' and latest.protocol_checkpoint_required %}
+      <div><dt>Protocol checkpoint</dt><dd>{% if latest.protocol_checkpoint %}Sealed at <time datetime="{{ latest.protocol_checkpoint.sealed_at }}">{{ latest.protocol_checkpoint.sealed_at }}</time>{% else %}Not sealed for this run{% endif %}</dd></div>
+      {% endif %}
+      {% if latest_plan.pattern == 'sequential' or (not latest_plan.available and pc.pattern == 'sequential') %}
+      <div><dt>Completed</dt><dd>{{ latest.stages_completed | default(latest.rounds_completed | default(0)) }}/{{ latest.stages_requested | default(latest.rounds_requested | default(stages | length)) }} stages</dd></div>
+      {% else %}
+      <div><dt>Completed</dt><dd>{{ latest.rounds_completed | default(latest.completed_rounds | default(0)) }}/{{ latest.rounds_requested | default(latest.requested_rounds | default(round_default)) }} rounds</dd></div>
+      {% endif %}
+    </dl>
+    {% if pc.slug == '04-numerical-validation' and latest.protocol_checkpoint %}
+      {% set protocol_checkpoint = latest.protocol_checkpoint %}
+      {% include '_protocol_checkpoint.html' %}
+    {% endif %}
+    {% set source = latest.source_descriptor | default(none) %}
+    {% include '_source_identity.html' %}
+
+    {% set scientific = latest.scientific_decision | default(none) %}
+    {% if scientific %}
+    {% set selected_object = scientific.selected_scientific_object | default(none) %}
+    <section class="scientific-decision-brief" aria-labelledby="scientific-decision-{{ pc.slug }}-{{ latest_id }}">
+      <div class="scientific-decision-heading">
+        <div>
+          <p class="section-kicker">Scientific assessment</p>
+          <h3 id="scientific-decision-{{ pc.slug }}-{{ latest_id }}">{{ scientific.decision_requested }}</h3>
+        </div>
+        <span class="recommendation-label">Team recommendation: {{ latest.recommended_user_action_label }}</span>
+      </div>
+      {% if selected_object %}
+      <dl class="run-facts-inline" aria-label="Proposed downstream selection">
+        <div><dt>Selected object</dt><dd>{{ selected_object.kind }}</dd></div>
+        <div><dt>Stable ID</dt><dd><code>{{ selected_object.stable_id }}</code></dd></div>
+        <div><dt>Version</dt><dd><code>{{ selected_object.version }}</code></dd></div>
+      </dl>
+      {% endif %}
+      <p><strong>Recommendation.</strong> {{ scientific.recommendation }}</p>
+      <div class="decision-evidence-grid">
+        <div>
+          <h4>Main evidence</h4>
+          <ul class="compact-list">
+            {% for item in scientific.main_evidence %}<li>{{ item }}</li>{% endfor %}
+          </ul>
+        </div>
+        <div>
+          <h4>Principal unresolved risk</h4>
+          <p>{{ scientific.principal_risk }}</p>
+          <h4>Smallest result that would change the recommendation</h4>
+          <p>{{ scientific.smallest_decision_changer }}</p>
+        </div>
+      </div>
+      <details>
+        <summary>Compare decision options and proposed baseline</summary>
+        <dl class="decision-options">
+          <div><dt>Approve</dt><dd>{{ scientific.option_consequences.approve }}</dd></div>
+          <div><dt>Approve with limitations</dt><dd>{{ scientific.option_consequences.approve_with_limitations }}</dd></div>
+          <div><dt>Request revision</dt><dd>{{ scientific.option_consequences.request_revision }}</dd></div>
+          <div><dt>Rerun</dt><dd>{{ scientific.option_consequences.rerun }}</dd></div>
+          <div><dt>Defer</dt><dd>{{ scientific.option_consequences.defer }}</dd></div>
+          <div><dt>Exact rerun question</dt><dd>{{ scientific.rerun_question }}</dd></div>
+          <div><dt>Comparison with the approved run</dt><dd>{{ scientific.rerun_comparison }}</dd></div>
+          <div><dt>Proposed scientific baseline</dt><dd>{{ scientific.proposed_baseline }}</dd></div>
+        </dl>
+        <div class="scientific-record-changes">
+          <h4>Scientific record changes</h4>
+          {% if scientific.scientific_record_changes %}
+          <ul>
+            {% for change in scientific.scientific_record_changes %}
+            <li>
+              <div><code>{{ change.statement_id }}</code> <strong>{{ change.operation }}</strong></div>
+              <p>{{ change.reason }}</p>
+              <p class="form-help">Changed fields: {{ change.changed_fields | join(', ') | replace('_', ' ') }}{% if change.parent_statement_id %}. Replaces or descends from <code>{{ change.parent_statement_id }}</code>{% endif %}</p>
+              <dl>
+                {% for field, proposed_value in change.proposed_values.items() %}
+                <div>
+                  <dt>{{ field | replace('_', ' ') }}</dt>
+                  <dd>{% if proposed_value is string %}{{ proposed_value }}{% else %}{{ proposed_value | join('; ') }}{% endif %}</dd>
+                </div>
+                {% endfor %}
+              </dl>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p>No change to the scientific record.</p>
+          {% endif %}
+        </div>
+      </details>
+      <p class="form-help">The team recommendation is advisory. Complete, Partial, and Failed describe the scientific work only. You decide whether to approve, revise, rerun, or leave the result unapproved.</p>
+    </section>
+    {% elif latest_has_summary %}
+    <p class="form-help">This legacy result has no structured scientific decision record. Read its full summary before making a decision.</p>
+    {% endif %}
+
+    {% if latest.override_metadata or (approval_context and approval_context.requires_acknowledgement) %}
+    <div class="override-warning" role="alert">
+      <strong>This result needs a context-aware approval decision.</strong>
+      {% if latest.override_metadata %}
+      <p>The run started with an explicit prerequisite override. Missing or stale phases: {{ latest.override_metadata.blockers | default([]) | join(', ') or 'recorded in the run state' }}.</p>
+      {% endif %}
+      {% if approval_context and approval_context.changed_sources %}
+      <p>Accepted context changed after this run launched:</p>
+      <ul class="compact-list">
+        {% for item in approval_context.changed_sources %}
+        <li><strong>{{ item.phase }}</strong>: {{ item.reason }}{% if item.launch_run or item.current_run %} (launch {{ item.launch_run | default('none', true) }}, current {{ item.current_run | default('none', true) }}){% endif %}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      <p>{% if recovery_only %}Read the summary with these limitations in mind. Restore the phase configuration before making a new phase decision.{% else %}Read the summary with these limitations in mind. You may approve it explicitly or rerun against current inputs.{% endif %}</p>
+    </div>
+    {% endif %}
+
+    {% if latest.context_inputs %}
+    <details class="run-context-record">
+      <summary>Frozen inputs used by this run</summary>
+      <ul class="compact-list">
+        {% for item in latest.context_inputs %}
+        <li><strong>{{ item.phase }}</strong>, run <code>{{ item.run_id }}</code></li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+  </div>
+
+  <div class="review-actions" aria-label="Result decisions">
+    {% if latest_has_summary %}
+    <a href="{{ url_for('phase_summary', project_id=project.id, phase_slug=pc.slug, run_id=latest_id) }}"
+       class="btn btn-primary" target="_blank" rel="noopener">View summary</a>
+    {% else %}
+    <span class="btn is-disabled" aria-disabled="true">Summary unavailable</span>
+    {% endif %}
+
+    {% if latest.integrity_error %}
+    <div class="inline-error" role="alert">
+      <strong>Run evidence integrity check failed.</strong>
+      <p>Recorded evidence is missing or changed. Approval is blocked. Inspect the run log and restore the sealed files or rerun the phase.</p>
+      {% if latest.integrity_error_detail %}<p><small>{{ latest.integrity_error_detail }}</small></p>{% endif %}
+    </div>
+    {% endif %}
+
+    {% if latest_status in ['awaiting_review', 'completed'] and not recovery_only %}
+    {% if scientific %}
+    <form action="{{ url_for('approve_run', project_id=project.id, phase_slug=pc.slug, run_id=latest_id) }}"
+          method="post" data-confirm="Approve this run as the phase baseline?" data-unsaved-guard
+          data-draft-key="project-{{ project.id }}-phase-{{ pc.slug }}-approve-{{ latest_id }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="project_identity" value="{{ project_identity }}">
+      <input type="hidden" name="decision_record_version" value="{{ latest.decision_record_version }}">
+      <label class="check-row" for="approve-baseline-{{ pc.slug }}-{{ latest_id }}">
+        <input type="checkbox" id="approve-baseline-{{ pc.slug }}-{{ latest_id }}" name="accept_proposed_baseline" value="1" required>
+        <span>I reviewed the sealed summary and accept this run's proposed scientific baseline as a whole. I understand that this makes it the accepted baseline for this phase.</span>
+      </label>
+      {% if selected_object %}
+      <label class="check-row" for="approve-selection-{{ pc.slug }}-{{ latest_id }}">
+        <input type="checkbox" id="approve-selection-{{ pc.slug }}-{{ latest_id }}" name="accept_selected_scientific_object" value="1" required>
+        <span>I also select method <code>{{ selected_object.stable_id }}</code>, version <code>{{ selected_object.version }}</code>, for downstream study. This does not start another phase.</span>
+      </label>
+      {% endif %}
+      <fieldset class="plan-options">
+        <legend>Choose the approval decision</legend>
+        <label class="check-row" for="approval-kind-approve-{{ pc.slug }}-{{ latest_id }}">
+          <input type="radio" id="approval-kind-approve-{{ pc.slug }}-{{ latest_id }}" name="approval_kind" value="approve" required>
+          <span><strong>Approve.</strong> Accept the proposed scientific baseline as stated.</span>
+        </label>
+        <label class="check-row" for="approval-kind-limitations-{{ pc.slug }}-{{ latest_id }}">
+          <input type="radio" id="approval-kind-limitations-{{ pc.slug }}-{{ latest_id }}" name="approval_kind" value="approve_with_limitations" required>
+          <span><strong>Approve with limitations.</strong> Accept the proposed baseline while retaining its explicit limitations. Request revision if the baseline itself needs another qualification.</span>
+        </label>
+      </fieldset>
+      {% if approval_context and approval_context.requires_acknowledgement %}
+      <input type="hidden" name="approval_context_report_version" value="{{ pd.approval_context_report_version }}">
+      <label class="check-row" for="approve-context-{{ pc.slug }}-{{ latest_id }}">
+        <input type="checkbox" id="approve-context-{{ pc.slug }}-{{ latest_id }}" name="acknowledge_context" value="1" required>
+        <span>I reviewed the overridden or changed context and still choose to approve this result.</span>
+      </label>
+      {% endif %}
+      <label class="approval-note" for="approval-note-{{ pc.slug }}-{{ latest_id }}">Decision note <span class="muted">optional</span>
+        <textarea id="approval-note-{{ pc.slug }}-{{ latest_id }}" name="approval_note" rows="2" maxlength="5000"
+                  autocomplete="off" spellcheck="true" placeholder="Record your reason for this decision without changing the accepted baseline."></textarea>
+      </label>
+      <button type="submit" class="btn btn-success" {% if latest.integrity_error %}disabled aria-disabled="true"{% endif %}>Record approval decision</button>
+    </form>
+    {% else %}
+    <div class="inline-warning" role="status">
+      <strong>This legacy result cannot become a new baseline in the Web UI.</strong>
+      <p>It remains available as readable history, but it has no sealed structured scientific baseline. Rerun the phase to obtain an approvable result.</p>
+    </div>
+    {% endif %}
+
+    <details class="revision-control">
+      <summary class="btn">Request revision</summary>
+      <form action="{{ url_for('request_revision', project_id=project.id, phase_slug=pc.slug, run_id=latest_id) }}"
+            method="post" class="revision-form" data-unsaved-guard
+            data-draft-key="project-{{ project.id }}-phase-{{ pc.slug }}-revision-{{ latest_id }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="project_identity" value="{{ project_identity }}">
+        <label for="revision-{{ pc.slug }}-{{ latest_id }}">What must change?</label>
+        <textarea id="revision-{{ pc.slug }}-{{ latest_id }}" name="feedback" rows="4" required maxlength="5000"
+                  autocomplete="off" spellcheck="true" placeholder="Identify the unsupported claim, missing comparison, proof gap, or analysis that needs revision."></textarea>
+        <button type="submit" class="btn btn-warning">Record revision request</button>
+      </form>
+    </details>
+    {% endif %}
+
+    {% if not recovery_only %}
+    {% set exact_rerun_phase = pc.slug in ['03-theoretical-justification', '06-paper-writing'] %}
+    {% set quick_rerun_available = (not exact_rerun_phase) or latest.rerun_config %}
+    {% if quick_rerun_available %}
+    <details class="rerun-control">
+      <summary class="btn">Repeat this run configuration</summary>
+      <form action="{{ url_for('start_phase', project_id=project.id, phase_slug=pc.slug) }}"
+            method="post" class="revision-form" data-confirm="Launch a new run with the same recorded configuration and the current instructions and scientific inputs?" data-unsaved-guard
+            data-draft-key="project-{{ project.id }}-phase-{{ pc.slug }}-rerun-{{ latest_id }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="project_identity" value="{{ project_identity }}">
+        <input type="hidden" name="phase_plan_version" value="{{ pd.phase_plan_version | default('') }}">
+        <input type="hidden" name="prerequisite_report_version" value="{{ pd.prerequisite_report_version }}">
+        <input type="hidden" name="rerun_from" value="{{ latest_id }}">
+        {% if latest.status == 'awaiting_review' %}
+        <label class="check-row" for="rerun-replace-awaiting-{{ pc.slug }}-{{ latest_id }}">
+          <input type="checkbox" id="rerun-replace-awaiting-{{ pc.slug }}-{{ latest_id }}" name="replace_awaiting_review" value="1" required>
+          <span>I choose to replace this result awaiting my decision with the rerun.</span>
+        </label>
+        {% endif %}
+        {% if exact_rerun_phase %}<input type="hidden" name="preserve_frozen_plan" value="1">{% endif %}
+        {% if latest.method_selection %}
+        {% if latest.method_selection.source == 'run_specific_user_selection' %}
+        <input type="hidden" name="run_specific_method_id" value="{{ latest.method_selection.stable_id }}">
+        <input type="hidden" name="run_specific_method_version" value="{{ latest.method_selection.version }}">
+        <p><strong>Run-specific method retained:</strong> <code>{{ latest.method_selection.stable_id }}</code>, version <code>{{ latest.method_selection.version }}</code>.</p>
+        {% else %}
+        <p><strong>Method in the prior run:</strong> <code>{{ latest.method_selection.stable_id }}</code>, version <code>{{ latest.method_selection.version }}</code>. This repeat uses the current approved Phase 02 selection shown above.</p>
+        {% endif %}
+        {% endif %}
+        <input type="hidden" name="rounds" value="{{ latest.rounds_requested | default(latest.requested_rounds | default(round_default)) }}">
+        {% if latest.plan_variant %}
+        <p><strong>Plan:</strong> {{ latest.plan_variant }}</p>
+        {% endif %}
+        {% set source = latest.source_descriptor | default(none) %}
+        {% include '_source_identity.html' %}
+        {% if latest.rerun_config and latest.rerun_config.kind == 'theory' and latest.rerun_config.theory_plan == 'audit_only' %}
+        <p class="form-help">The server will reselect this source run and verify the full target hash before launch.</p>
+        {% elif latest.rerun_config and latest.rerun_config.kind == 'paper_review_only' %}
+        <p class="form-help">The server will reselect this exact manuscript and verify its full hash before launch.</p>
+        {% endif %}
+        {% if not prereqs_ok %}
+        <label class="check-row" for="rerun-override-{{ pc.slug }}-{{ latest_id }}">
+          <input type="checkbox" id="rerun-override-{{ pc.slug }}-{{ latest_id }}" name="override_prerequisites" value="1" required>
+          <span>I choose to rerun despite the current prerequisite warning.</span>
+        </label>
+        {% endif %}
+        <label for="rerun-feedback-{{ pc.slug }}-{{ latest_id }}">Direction for the new run <span class="muted">optional</span></label>
+        <textarea id="rerun-feedback-{{ pc.slug }}-{{ latest_id }}" name="feedback" rows="4" maxlength="5000"
+                  autocomplete="off" spellcheck="true" placeholder="Explain what this run should reconsider or improve."></textarea>
+        <p class="form-help">This creates a new immutable run. The current result remains in history and any approved baseline stays selected until you approve a replacement.</p>
+        <button type="submit" class="btn btn-primary" {% if not unattended_tools %}disabled aria-disabled="true"{% endif %}>Launch rerun</button>
+      </form>
+    </details>
+    {% elif exact_rerun_phase %}
+    <p class="form-help">A configuration repeat is unavailable because this run has no complete, verified plan metadata. Use the phase controls to configure a new run.</p>
+    {% endif %}
+
+    <a href="#launch-run" class="btn btn-quiet">Change run settings</a>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% if approved %}
+  {% set approved_id = approved_identity %}
+<section class="panel baseline-panel" aria-labelledby="baseline-heading">
+  <div class="baseline-mark" aria-hidden="true">BASELINE</div>
+  <div class="baseline-copy">
+    <p class="section-kicker">Approved phase baseline</p>
+    <h2 id="baseline-heading">Run {{ approved.number | default(approved.run_number | default(approved_id)) }}</h2>
+    {% if approved.scientific_outcome %}
+    <p><span class="scientific-outcome outcome-{{ approved.scientific_outcome | lower }}">Scientific outcome: {{ approved.scientific_outcome }}</span></p>
+    {% if approved.approval_kind_label %}<p><strong>Approval decision.</strong> {{ approved.approval_kind_label }}.</p>{% endif %}
+    <p><strong>Team recommendation at approval.</strong> {{ approved.scientific_decision.recommendation }}</p>
+    <details>
+      <summary>Accepted scientific baseline</summary>
+      <p>{{ approved.scientific_decision.proposed_baseline }}</p>
+    </details>
+    {% endif %}
+    {% if approved.integrity_error %}
+    <p>Sealed evidence for this run is missing or changed. The run remains in history, but it is not safe to use as the current baseline until the original files are restored or a replacement run is approved.</p>
+    <div class="inline-error" role="alert">
+      <strong>Baseline integrity check failed.</strong>
+      <p>Downstream runs will require an explicit prerequisite override. Restore the sealed evidence or rerun this phase and approve a replacement.</p>
+    </div>
+    {% elif recovery_only %}
+    <p>This accepted result is retained as a historical recovery record. The removed phase is not available as a current workflow step.</p>
+    {% elif pd.stale %}
+    <p>This result was accepted, but an upstream approval changed. It is retained for comparison and should not be treated as current without an explicit prerequisite override.</p>
+    {% else %}
+    <p>This is the result downstream phases should treat as accepted. Newer runs do not replace it until you approve them.</p>
+    {% endif %}
+    {% if approved.approval_note | default(approved.decision_note | default(none)) %}<blockquote>{{ approved.approval_note | default(approved.decision_note) }}</blockquote>{% endif %}
+    {% if pc.slug == '04-numerical-validation' and approved.protocol_checkpoint %}
+      {% set protocol_checkpoint = approved.protocol_checkpoint %}
+      {% include '_protocol_checkpoint.html' %}
+    {% endif %}
+    {% set source = approved.source_descriptor | default(none) %}
+    {% include '_source_identity.html' %}
+    {% if approved.approval_context_acknowledgement %}
+    <div class="override-warning" role="status">
+      <strong>Approved with a context exception</strong>
+      <p>{{ approved.approval_context_acknowledgement.note }}</p>
+    </div>
+    {% elif approved.override_metadata %}
+    <div class="override-warning" role="status">
+      <strong>This baseline originated from an overridden run.</strong>
+      <p>Review its recorded prerequisite limitations before using it downstream.</p>
+    </div>
+    {% endif %}
+  </div>
+  <div class="baseline-actions">
+    {% set approved_time = approved.approved_at | default(approved.decision_at | default('')) %}
+    <span>Approved {% if approved_time %}<time datetime="{{ approved_time }}">{{ approved_time }}</time>{% else %}date not recorded{% endif %}</span>
+    {% if approved.summary_available %}
+      <a class="btn btn-sm" href="{{ url_for('phase_summary', project_id=project.id, phase_slug=pc.slug, run_id=approved_id) }}"
+         target="_blank" rel="noopener">View baseline summary</a>
+    {% else %}
+      <span class="btn btn-sm is-disabled" aria-disabled="true">Baseline summary unavailable</span>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+<section class="panel run-history-panel" aria-labelledby="run-history-heading">
+  <div class="panel-head">
+    <div>
+      <p class="section-kicker">Immutable record</p>
+      <h2 id="run-history-heading">Run history</h2>
+    </div>
+    <span class="panel-count">{{ history | length }} run{{ '' if history | length == 1 else 's' }}</span>
+  </div>
+
+  {% if history %}
+  {% set visible_history_runs = 10 %}
+  <p id="run-history-scroll-help" class="sr-only">This table scrolls horizontally. Focus the table region and use the arrow keys to inspect all columns.</p>
+  <div class="history-table-wrap" role="region" aria-labelledby="run-history-heading"
+       aria-describedby="run-history-scroll-help" tabindex="0">
+    <table class="history-table" id="run-history-table-{{ pc.slug }}">
+      <thead>
+        <tr><th>Run</th><th>Technical status</th><th>Scientific outcome</th><th>Work completed</th><th>Started</th><th>Direction</th><th><span class="sr-only">Actions</span></th></tr>
+      </thead>
+      <tbody>
+        {% for run in history %}
+          {% set run_id = run.id | default(run.run_id | default(run.number | default(run.run_number | default(loop.revindex)))) %}
+          {% set run_status = run.status | default('completed' if run.completed | default(false) else 'recorded') %}
+          {% set summary_available = run.summary_available | default(run.final_summary | default(false)) %}
+          {% set run_frozen_plan = run.frozen_plan | default({}) %}
+        <tr{% if loop.index > visible_history_runs %} data-history-older-row hidden{% endif %}>
+          <td><strong>#{{ run.number | default(run.run_number | default(loop.revindex)) }}</strong><small class="mono">{{ run_id }}</small></td>
+          <td><span class="state-badge state-{{ run_status }}"><i class="status-marker" aria-hidden="true"></i>{{ run_status | replace('_', ' ') }}</span></td>
+          <td>
+            {% if run.scientific_outcome %}
+            <span class="scientific-outcome outcome-{{ run.scientific_outcome | lower }}">{{ run.scientific_outcome }}</span>
+            {% else %}
+            <span class="muted">Not recorded</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if run_frozen_plan.pattern == 'sequential' or (not run_frozen_plan.available and pc.pattern == 'sequential') %}
+              {{ run.stages_completed | default(run.completed_stages | default(run.rounds_completed | default(0))) }}/{{ run.stages_requested | default(run.requested_count | default(run.rounds_requested | default(stages | length))) }} stages
+            {% else %}
+              {{ run.rounds_completed | default(run.completed_rounds | default(0)) }}/{{ run.rounds_requested | default(run.requested_rounds | default(1)) }} rounds
+            {% endif %}
+          </td>
+          <td><time datetime="{{ run.started_at | default(run.started | default('')) }}">{{ run.started_at | default(run.started | default('Not recorded')) }}</time></td>
+          <td class="history-feedback">
+            {% if run.user_feedback | default(run.feedback | default('')) %}
+              {{ run.user_feedback | default(run.feedback) }}
+            {% else %}
+              <span class="muted">No additional direction</span>
+            {% endif %}
+            {% if run.plan_variant %}<small>Plan: {{ run.plan_variant }}</small>{% endif %}
+            {% if run.source_descriptor %}
+            <small>Source run: {{ run.source_descriptor.source_run_id }}</small>
+            <small>Source path: {{ run.source_descriptor.source_path }}</small>
+            <small>Source-baseline status: {{ run.source_descriptor.source_baseline_status }}</small>
+            <small class="mono">Source SHA-256: {{ run.source_descriptor.source_sha256 }}</small>
+            {% endif %}
+            {% if run.approval_kind_label %}<small>Approval decision: {{ run.approval_kind_label }}</small>{% endif %}
+            {% if run.revision_feedback | default(run.decision_note | default(none)) %}<small>Decision note: {{ run.revision_feedback | default(run.decision_note) }}</small>{% endif %}
+            {% if run.approval_context_acknowledgement %}<small>Context exception acknowledged at approval.</small>{% elif run.override_metadata %}<small>Launched with a prerequisite override.</small>{% endif %}
+            {% if run.cleanup_recovery_note %}
+              <small>Manual cleanup verification: {{ run.cleanup_recovery_note }}</small>
+            {% elif run.cleanup_reason %}
+              <small>Cleanup reason: {{ run.cleanup_reason }}</small>
+            {% elif run.error %}
+              <small>Failure: {{ run.error }}</small>
+            {% elif run.cancel_reason %}
+              <small>Cancellation: {{ run.cancel_reason }}</small>
+            {% endif %}
+            {% if run.integrity_error %}<small class="state-text state-failed">Sealed evidence missing or changed.</small>{% endif %}
+          </td>
+          <td class="history-actions">
+            {% if summary_available %}
+            <a href="{{ url_for('phase_summary', project_id=project.id, phase_slug=pc.slug, run_id=run_id) }}" target="_blank" rel="noopener">Summary</a>
+            {% endif %}
+            {% if run.log_available %}
+            <a href="{{ url_for('run_log', project_id=project.id, phase_slug=pc.slug, run_id=run_id) }}" target="_blank" rel="noopener">Log</a>
+            {% endif %}
+            {% if pc.slug == '06-paper-writing' and run.post_review_target and can_start and not recovery_only %}
+            <details class="rerun-control">
+              <summary>Review post-review manuscript</summary>
+              <form action="{{ url_for('start_phase', project_id=project.id, phase_slug=pc.slug) }}"
+                    method="post" class="revision-form" data-unsaved-guard
+                    data-draft-key="project-{{ project.id }}-phase-{{ pc.slug }}-review-{{ run_id }}"
+                    data-confirm="Start an independent review of this exact manuscript?">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="project_identity" value="{{ project_identity }}">
+                <input type="hidden" name="phase_plan_version" value="{{ pd.phase_plan_version | default('') }}">
+                <input type="hidden" name="prerequisite_report_version" value="{{ pd.prerequisite_report_version }}">
+                <input type="hidden" name="review_target" value="{{ run.post_review_target.path }}">
+                <input type="hidden" name="review_target_sha256" value="{{ run.post_review_target.sha256 }}">
+                {% if latest and latest.status == 'awaiting_review' %}
+                <input type="hidden" name="rerun_from" value="{{ latest_identity }}">
+                <div class="inline-warning" role="status">
+                  <strong>The newest result is still awaiting your decision.</strong>
+                  <p>Starting this review records run {{ latest.number | default(latest_identity) }} as revision requested and creates a separate run. Any approved baseline remains selected.</p>
+                  <label class="check-row" for="review-replace-awaiting-{{ pc.slug }}-{{ run_id }}">
+                    <input type="checkbox" id="review-replace-awaiting-{{ pc.slug }}-{{ run_id }}" name="replace_awaiting_review" value="1" required>
+                    <span>I choose to replace that result with this review-only run.</span>
+                  </label>
+                </div>
+                {% endif %}
+                {% if not prereqs_ok %}
+                <label class="check-row">
+                  <input type="checkbox" name="override_prerequisites" value="1" required>
+                  <span>I choose to review this manuscript despite the current prerequisite warning.</span>
+                </label>
+                {% endif %}
+                <label>Direction for this review <span class="muted">optional</span>
+                  <textarea name="feedback" rows="3" maxlength="5000" autocomplete="off" spellcheck="true"
+                            placeholder="Name a claim or concern that the contextual assessment should examine."></textarea>
+                </label>
+                <dl class="compact-source-facts">
+                  <div><dt>Source run</dt><dd><code>{{ run.post_review_target.source_run_id }}</code></dd></div>
+                  <div><dt>Project path</dt><dd><code>{{ run.post_review_target.path }}</code></dd></div>
+                  <div><dt>Status when selected</dt><dd>{{ run.post_review_target.source_status | replace('_', ' ') }}</dd></div>
+                  <div><dt>Source-baseline status</dt><dd>{{ run.post_review_target.source_baseline_status }}</dd></div>
+                  <div><dt>SHA-256</dt><dd><code>{{ run.post_review_target.sha256 }}</code></dd></div>
+                </dl>
+                {% if run.post_review_target.source_baseline_status != 'accepted' %}
+                <div class="inline-warning" role="status">
+                  <strong>This manuscript comes from a {{ run.post_review_target.source_baseline_status }} baseline.</strong>
+                  <p>Approving the review-only run would adopt that complete frozen source baseline together with the review-supported changes.</p>
+                </div>
+                {% else %}
+                <p class="form-help">The review-only run carries this accepted source baseline forward in full and applies only review-supported changes.</p>
+                {% endif %}
+                <button type="submit" class="btn btn-sm" {% if not unattended_tools %}disabled aria-disabled="true"{% endif %}>
+                  Start review-only run
+                </button>
+              </form>
+            </details>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if history | length > visible_history_runs %}
+  {% set older_run_count = (history | length) - visible_history_runs %}
+  <button type="button" class="btn btn-sm history-disclosure"
+          data-history-toggle data-history-target="run-history-table-{{ pc.slug }}"
+          data-collapsed-label="Show {{ older_run_count }} older run{{ '' if older_run_count == 1 else 's' }}"
+          data-expanded-label="Hide older runs" aria-expanded="false"
+          aria-controls="run-history-table-{{ pc.slug }}">
+    Show {{ older_run_count }} older run{{ '' if older_run_count == 1 else 's' }}
+  </button>
+  {% endif %}
+  {% else %}
+  <div class="inline-empty">
+    <strong>No runs have been launched.</strong>
+    <span>{% if recovery_only %}This removed phase has no run history to recover.{% else %}Review the plan above, add direction if useful, and launch the first run when you are ready.{% endif %}</span>
+  </div>
+  {% endif %}
+</section>
 
 {% endif %}

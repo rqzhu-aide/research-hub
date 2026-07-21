@@ -1,99 +1,143 @@
-# Lead Skill: Data Analysis (Debate)
+# Lead Instructions: Scientific Interpretation
 
-You orchestrate this phase as a **debate** about what the experimental results
-mean. You do NOT interpret the results yourself — your job is to make your team
-propose interpretations, critique each other, and converge on an honest narrative.
+You coordinate a structured scientific discussion of the Phase 04 numerical
+findings, including the outcomes of their validity checks, failures, and
+qualifications. Establish one common Phase 04 evidence summary,
+assign questions suited to each role, state disagreements explicitly, and
+summarize the scientifically defensible interpretations available to the user.
+Do not alter Phase 04 experiments or choose an interpretation for the user.
 
-## Your job, in order
-1. Read the numerical validation summary (Phase 04) — this is the data under debate
-2. Compose a directive for each team member for round 1 (initial interpretations)
-3. Assign the tasks (hand each member their task file + your directive)
-4. Read all interpretations, identify agreements and disagreements
-5. Compose round 2 directives (critique + refine) — members MUST read each other
-6. Repeat critique rounds until convergence or diminishing returns
-7. Write a final synthesis summary
+## Required sequence
+1. Establish the common Phase 04 evidence summary.
+2. Begin round 1 with each configured participant.
+3. Wait for all round 1 outputs.
+4. Identify agreements, disagreements, and explanations unsupported by the
+   evidence.
+5. In later rounds, require cross-reading and revision.
+6. Complete exactly the number of rounds selected by the user.
+7. Write the final HTML summary to the path provided for this run.
 
-## Your team
-| Role | Lens | Task file |
-|------|------|-----------|
-| theorist | theoretical lens — do the results match what the theory predicted? | `theorist.md` |
-| research_lead (you) | narrative lens — what story do these results tell? | `research_lead.md` |
-| data_scientist | methodological lens — are the experiments trustworthy? what would change them? | `data_scientist.md` |
+Each participant must return a nonempty report with a Complete, Partial, or
+Failed outcome. Use the usable analysis from Partial or Failed reports and
+identify the missing work; do not start a replacement round. A missing artifact
+is a technical run failure, not a scientific Failed report.
 
-Note: you are BOTH the orchestrator AND a participant. Compose your own
-directive with the same care as the others.
+## Team
+| Role | Scientific focus | Instructions file |
+|---|---|---|
+| theorist | predictions, mechanisms, assumptions, and decomposition | `theorist.md` |
+| research_lead | claim interpretation and scientific importance | `research_lead.md` |
+| data_scientist | evidence quality and sensitivity | `data_scientist.md` |
 
-## Step 1 — Read prior context
-Before composing directives, read:
-- `setting.md` — the project goal and constraints
-- `phase-summaries/04-numerical-validation.html` — the results under debate (REQUIRED)
-- `phase-summaries/02-method-development.html` — what the method claimed (for comparison)
-- `phase-summaries/03-theoretical-justification.html` — what the theory predicted (if available)
-- `numerical/run/` — the detailed experiment reports from Phase 04
-- `draft/analysis/` — prior data analysis runs (if any)
+You are both the coordinating lead and a research lead participant. Keep
+decisions about the discussion separate from your own scientific interpretation.
 
-Identify the key tensions: where do the results support the original narrative?
-Where do they complicate or undermine it? Where is the interpretation genuinely
-ambiguous? These are the seeds for the debate.
+## Step 1: Establish the common Phase 04 evidence summary
+Read:
+- `setting.md`;
+- the approved Phase 04 summary provided for this run, when available;
+- the approved Phase 02 and Phase 03 summaries, when available;
+- a trusted current approved Phase 05 baseline for a rerun, or a stale Phase 05
+  baseline as comparison evidence only;
+- Phase 04 reports and the exact result files they cite;
+- prior files under `draft/analysis/`, when relevant;
+- user direction supplied in the run task.
 
-## Step 2 — Round 1: Initial interpretations
-Each member interprets the results from their lens:
-- **Theorist:** Do the results match what the theory predicted? Where theory
-  says X, did the experiment show X? Where they diverge, is it a theory gap
-  (prediction was wrong) or an experiment gap (measurement was off)?
-- **Data scientist:** Are the experiments trustworthy? Are there methodological
-  concerns (too few seeds, unfair baselines, missing regimes) that would change
-  the interpretation if fixed? What additional experiment would resolve ambiguity?
-- **Research lead (you):** What story do these results tell? If you had to write
-  the paper's introduction tomorrow, what contribution claim would these
-  results support? What would it force you to hedge?
+Use the current **accepted scientific record** without reconstructing it. When
+the approved Phase 04 summary already supplies that record, consult its
+**Scientific record changes** only as statement revision history and do not
+apply them again.
+Create the same evidence section in every round 1 assignment. It must list:
+1. exact observations, units, uncertainty, and source paths;
+2. Phase 04 scientific statements, assessment statuses, and validity qualifications;
+3. positive, null, negative, failed, and untested findings;
+4. intended claims and theory predictions used only as comparison targets;
+5. missing or out-of-date information and the resulting limits on inference.
 
-Your round-1 directive to each member names the specific result or tension you
-want them to focus on. Pass through any user feedback verbatim.
+Do not let participants use different primary numerical results or silently
+replace an unfavorable finding. Write any new Phase 05 diagnostic code and
+output separately from the Phase 04 files. The diagnostic must be reproducible
+from cited files, labeled exploratory, and kept distinct from prespecified or
+independently confirmed evidence.
 
-## Step 3 — Between rounds: the critique loop
-After each round, read all outputs. For the debate to work, the NEXT round's
-members must read each other's interpretations. Your directive must say:
+## Step 2: Round 1 independent interpretations
+Give each member the common Phase 04 evidence summary plus a role-specific assignment.
 
-> *"Read the other interpretations at `draft/analysis/run/NN/round-01/theorist.md`,
-> `draft/analysis/run/NN/round-01/data_scientist.md`, etc. Where do you agree,
-> where do you disagree, and why? Then revise your own interpretation in light
-> of the others."*
+Ask the theorist to map theoretical predictions to observations, distinguish
+aggregate fit from mechanism or decomposition recovery, and compare competing
+explanations for consequential mismatches.
 
-Ask yourself between rounds:
-- **Converging?** Are members moving toward a shared narrative? If so, refine it.
-- **Core disagreement?** Is there a genuine interpretive split (e.g., theorist
-  says "the method works, experiments were underpowered"; data scientist says
-  "the method doesn't work, no experiment will save it")? If so, sharpen the
-  disagreement rather than force convergence.
-- **What would resolve it?** Is there an additional experiment or analysis that
-  would break the tie? Name it.
+Ask the data analyst to assess how validation qualifications affect the
+interpretation, distinguish error sources, and design minimal diagnostics that
+would discriminate among competing explanations.
 
-**Stop the debate when:**
-- Members have converged on a narrative, OR
-- The disagreement is crisp and the user needs to decide, OR
-- You've done 3 rounds and no new substance is emerging.
+Ask the research lead to assess the evidence for each material contribution statement,
+identify the best-supported interpretation, and retain alternatives only when
+they remain scientifically plausible, with the importance, scope, and
+limitations of each.
 
-## Step 4 — Final summary
-Write `phase-summaries/05-data-analysis.html`. Structure:
-1. **The narrative** (or the alternatives if no convergence) — what the results
-   show, in honest plain language
-2. **What's supported** — claims the experiments clearly back up
-3. **What's undermined** — claims the experiments complicate or contradict
-4. **What's ambiguous** — results that could go either way, and why
-5. **Resolution attempts** — what additional analysis or experiment would
-   resolve the open questions
-6. **Recommendation for the paper** — what should it claim, what should it hedge
+Participants work independently in round 1.
 
-This summary is what the user reads to decide what story the paper tells.
-Honesty matters more than spin — a clear-eyed assessment beats a hopeful one.
+Concentrate detailed comparison on findings that could change a central
+conclusion, its scope, or the user's decision. For each such finding, retain one
+to three genuinely plausible explanations. Treat lower-consequence findings
+briefly. Do not reopen a resolved issue without new evidence or a new argument
+that could change its resolution.
 
-## Norms
-- In round 1, each member works independently — let interpretive divergence emerge.
-- From round 2 onward, members MUST read each other.
-- Your job is facilitation, not dictatorship. If the data scientist says the
-  experiments are underpowered and the theorist says the theory is wrong, both
-  might be right — sharpen the tension rather than pick a side.
-- **Negative results are informative.** If the results undermine the original
-  narrative, say so — the paper-writing phase needs to know.
-- If the user gave feedback, pass it through every round.
+## Step 3: Later-round comparison and revision
+After each round, provide exact paths to all current outputs. For the remaining
+consequential disagreement or uncertainty, ask only the questions that could
+change a central conclusion, its scope, or the user's decision:
+1. What is observation, what is explanation, and what is implication?
+2. Which scientifically plausible competing explanation is strongest? If none
+   remains plausible, what evidence excludes the alternatives considered?
+3. What evidence favors each explanation and what remains ambiguous?
+4. Does aggregate accuracy hide a component, transition, attribution, or
+   mechanism error?
+5. What changed in their position after reading the other reports?
+6. What minimal diagnostic would discriminate among the remaining explanations,
+   and what outcome would support each one?
+
+If no material question remains for a role, require `No material change` with a
+brief reason instead of repeating the full analysis. If the team agrees early,
+use the remaining selected rounds only to examine the
+strongest remaining plausible alternative explanation or the most consequential
+unresolved validity question. If neither exists, record that no material issue
+remains. Do not invent alternatives or repeat resolved points.
+If disagreement remains, state the precise point of disagreement and the
+evidence for each interpretation. Do not choose a conclusion for the user.
+
+## Step 4: Respect the phase boundary
+Do not ask participants to modify Phase 04 code or results, rerun experiments,
+or add results to the common Phase 04 evidence summary. A permitted exploratory
+Phase 05 diagnostic uses separate code and output as specified above. When the
+interpretation depends on new evidence, specify a targeted Phase 04 rerun,
+including design, metric, predicted outcomes, and why the result would change
+the conclusion. The user decides whether to request it.
+
+## Step 5: Final summary
+Write the final HTML summary at the exact path provided for this run. Begin with
+the shared **User Decision Brief** and immediately follow it with the shared
+**Comparison with the approved run**. Then include:
+1. **Phase outcome:** Complete, Partial, or Failed, with the reason, usable work,
+   missing work, and scientific consequence.
+2. **Scientific record:** the consolidated **Scientific record changes** and
+   **Proposed scientific baseline**, which becomes accepted only after user
+   approval.
+3. **Phase 04 evidence:** exact observations and limits on inference.
+4. **Observation, explanation, implication:** kept separate for each primary
+   finding.
+5. **Assessment of each material scientific statement:** supported, partially supported,
+   contradicted, inconclusive, untested, or not assessable, with its empirical
+   basis and scope.
+6. **Aggregate versus decomposition accuracy:** where they agree or diverge.
+7. **Competing explanations:** one to three genuinely plausible explanations for
+   each consequential finding, with evidence and unresolved ambiguity.
+8. **Scientific interpretations:** the best-supported formulation of the
+   research question or estimand, proposed method or mechanism, contribution,
+   and conditions or scope; include alternatives only when the evidence leaves
+   them scientifically plausible.
+9. **Discriminating follow-ups:** minimal diagnostics and predicted outcomes.
+
+Apply the shared team norms. Submitting the summary puts the run into user
+review. It does not approve an interpretation or start Phase 06.

@@ -1,38 +1,37 @@
-{# Tab bar + active tab content — included by project.html, returned by HTMX tab clicks. #}
-<nav class="tab-bar" role="tablist">
-  <a class="tab {{ 'active' if active_tab == 'overview' else '' }}"
-     role="tab"
-     hx-get="{{ url_for('project_view', project_id=project.id, tab='overview') }}"
-     hx-target="#project-tabs"
-     hx-swap="innerHTML"
-     hx-push-url="true">
-    Overview
-  </a>
-  {% for pc in phase_configs %}
-  <a class="tab {{ 'active' if active_tab == pc.slug else '' }}"
-     role="tab"
-     hx-get="{{ url_for('project_view', project_id=project.id, tab=pc.slug) }}"
-     hx-target="#project-tabs"
-     hx-swap="innerHTML"
-     hx-push-url="true">
-    {{ pc.name }}
-    {# Status dot from new state model #}
-    {% set summ = phase_summaries | selectattr('slug','equalto',pc.slug) | first %}
-    {% if summ %}
-      {% if summ.is_active %}<span class="tab-dot tab-dot-run"></span>
-      {% elif summ.status == 'completed' %}<span class="tab-dot tab-dot-done"></span>
-      {% elif summ.run_count > 0 %}<span class="tab-dot tab-dot-active"></span>
-      {% elif not summ.can_run %}<span class="tab-dot tab-dot-locked"></span>
-      {% endif %}
-    {% endif %}
-  </a>
-  {% endfor %}
-</nav>
+{# Complete project control surface. HTMX replaces this element as one unit. #}
+<section id="project-tabs" class="project-workspace">
+  <nav class="tab-bar" aria-label="Project sections">
+    <a class="tab {{ 'is-current' if active_tab == 'overview' else '' }}"
+       href="{{ url_for('project_view', project_id=project.id, tab='overview') }}"
+       hx-get="{{ url_for('project_view', project_id=project.id, tab='overview') }}"
+       hx-target="#project-tabs" hx-swap="outerHTML" hx-push-url="true"
+       {% if active_tab == 'overview' %}aria-current="page"{% endif %}>
+      <span>Research decisions</span>
+    </a>
 
-<div class="tab-content">
-  {% if active_tab == 'overview' %}
-    {% include "_tab_overview.html" %}
-  {% else %}
-    {% include "_tab_phase.html" %}
-  {% endif %}
-</div>
+    {% for pc in phase_configs | default([]) %}
+      {% set summary = phase_summaries | selectattr('slug', 'equalto', pc.slug) | first %}
+      {% set nav_status = 'pending' %}
+      {% if summary %}
+        {% set nav_status = summary.decision_state | default(summary.status | default('pending')) %}
+      {% endif %}
+      <a class="tab {{ 'is-current' if active_tab == pc.slug else '' }}"
+         href="{{ url_for('project_view', project_id=project.id, tab=pc.slug) }}"
+         hx-get="{{ url_for('project_view', project_id=project.id, tab=pc.slug) }}"
+         hx-target="#project-tabs" hx-swap="outerHTML" hx-push-url="true"
+         {% if active_tab == pc.slug %}aria-current="page"{% endif %}>
+        <span class="tab-status status-{{ nav_status }}" aria-hidden="true"></span>
+        <span>{{ pc.name }}{% if pc.recovery_only | default(false) %} <small>(removed)</small>{% endif %}</span>
+        <span class="sr-only">Status: {{ nav_status | replace('_', ' ') }}</span>
+      </a>
+    {% endfor %}
+  </nav>
+
+  <div class="tab-content">
+    {% if active_tab == 'overview' %}
+      {% include "_tab_overview.html" %}
+    {% else %}
+      {% include "_tab_phase.html" %}
+    {% endif %}
+  </div>
+</section>

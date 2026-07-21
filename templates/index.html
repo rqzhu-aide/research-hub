@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Research Hub{% endblock %}
 {% block content %}
-<div class="empty-state">
-  <h2>No projects yet</h2>
-  <p>Create a project from the terminal:</p>
-  <pre>python hub.py create "My Project" "Description" "Goal"</pre>
-</div>
+<section class="empty-state">
+  <span class="empty-mark" aria-hidden="true">RH</span>
+  <p class="eyebrow">No projects</p>
+  <h1>Start with a research brief.</h1>
+  <p>Create a project, inspect every phase plan, and launch work only when you choose.</p>
+  <a href="{{ url_for('new_project') }}" class="btn btn-primary btn-large">Create your first project</a>
+</section>
 {% endblock %}

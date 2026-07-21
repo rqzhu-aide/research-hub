@@ -1,0 +1,13 @@
+{% if source %}
+<div class="source-identity" role="note">
+  <strong>Sealed source for this derivative run</strong>
+  <dl>
+    <div><dt>Source run</dt><dd><code>{{ source.source_run_id }}</code></dd></div>
+    <div><dt>Source object</dt><dd>{{ 'Final theoretical analysis' if source.kind == 'theory_audit' else 'Post-review manuscript' }}{% if source.source_round %}, stage {{ source.source_round }}{% endif %}</dd></div>
+    <div><dt>Project path</dt><dd><code>{{ source.source_path }}</code></dd></div>
+    <div><dt>Status when selected</dt><dd>{{ source.status_at_selection | replace('_', ' ') }}</dd></div>
+    <div><dt>Source-baseline status</dt><dd>{{ source.source_baseline_status }}</dd></div>
+    <div><dt>SHA-256</dt><dd><code>{{ source.source_sha256 }}</code></dd></div>
+  </dl>
+</div>
+{% endif %}

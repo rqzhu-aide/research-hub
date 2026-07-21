@@ -1,4 +1,8 @@
 __pycache__/
 *.pyc
+*.operations.lock
+*.yaml.lock
+.pytest_cache/
+tests/.pytest-tmp-*/
 hub.db
 projects/

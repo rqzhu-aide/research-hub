@@ -1,93 +1,173 @@
-# Lead Skill: Method Development (Debate)
+# Lead Instructions: Method Development
 
-You orchestrate this phase as a **debate**. You do NOT propose the method
-yourself — your job is to make your team propose, critique, and converge.
+Coordinate independent method proposals followed by direct scientific comparison.
+Keep your own research-lead assessment separate from the final synthesis.
 
-## Your job, in order
-1. Read the literature review summary (Phase 01 output) — this is required context
-2. Compose a directive for each team member for round 1 (proposals)
-3. Assign the tasks (hand each member their task file + your directive)
-4. Read all proposals, identify agreements and disagreements
-5. Compose round 2 directives (critique + refine) — members MUST read each other
-6. Repeat critique rounds until convergence or diminishing returns
-7. Write a final synthesis summary
+## Responsibilities
+1. For a rerun, import a trusted current approved Phase 02 scientific record
+   when supplied. Otherwise use a current approved Phase 01 record. Treat a stale Phase 02
+   result only as comparison evidence. If neither is available, initialize a
+   proposed scientific record and state this explicitly.
+2. Define the target, obstacle, and open design choices.
+3. Formulate distinct round-1 research questions for all three roles.
+4. Compare all proposals and construct the first method specification table.
+5. In later rounds, require each role to compare the preceding reports and test
+   the proposed methods.
+6. Attempt exactly the number of rounds selected by the user and retain usable
+   work from Complete, Partial, and Failed role reports.
+7. Write an evidence-weighted synthesis that states the best-supported
+   conclusion, disagreements, uncertainty, and choices available to the user.
 
-## Your team
-| Role | Lens | Task file |
+## Roles
+| Role | Scientific focus | Instructions file |
 |------|------|-----------|
-| theorist | mathematical formulation — what estimator/objective/dynamics | `theorist.md` |
-| research_lead (you) | domain positioning — what's the contribution, why it matters | `research_lead.md` |
-| data_scientist | computational feasibility — what algorithm, what it takes to build | `data_scientist.md` |
+| theorist | target, formulation, and mathematical validity | `theorist.md` |
+| research_lead (you) | contribution, object, and evidence alignment | `research_lead.md` |
+| data_scientist | computation, faithful implementation, and evidence | `data_scientist.md` |
 
-Note: you are BOTH the orchestrator AND a participant. When you create a task
-for `research_lead`, you are creating it for yourself (your gateway will pick
-it up). Compose your own directive with the same care as the others.
+Your `research_lead` report is one role-specific proposal. Do not present it as
+the combined conclusion.
 
-## Step 1 — Read prior context
-Before composing directives, read:
-- `setting.md` — the project goal and constraints
-- `phase-summaries/01-literature-review.html` — what the literature review found (REQUIRED)
-- `references/` — any source material, drafts, prior art the project has
-- `ideas/` — prior method development runs (if any)
+## Step 1: Read prior context
+Read:
 
-Identify the 2-3 most promising directions the literature review surfaced.
-These are the seeds for the debate.
+- `setting.md`
+- the shared team norms and the accepted scientific record established for this run
+- the trusted current approved Phase 02 baseline for a rerun, or the stale
+  Phase 02 baseline as comparison evidence only
+- the approved Phase 01 summary provided for this run, when available
+- `references/` and prior `ideas/` runs
 
-## Step 2 — Round 1: Proposals
-Each member proposes their preferred method from their lens:
-- **Theorist:** the mathematical formulation — what's the estimator/objective?
-  What assumptions? What guarantees might we aim for?
-- **Data scientist:** the computational approach — what algorithm? What's the
-  implementation sketch? What data/benchmarks would validate it?
-- **Research lead (you):** the positioning — what's the core contribution?
-  How does it differ from the closest prior art? Why would the field care?
+State the target and obstacle in plain language. Identify two or three plausible
+directions at most. If the user chooses to proceed without a current Phase 01
+summary, state what prior evidence is unavailable. For an originality or
+prior-work statement carried forward unchanged from an accepted Phase 02
+baseline, preserve its stable ID and `Current` formulation state and propose
+only warranted changes to assessment status, evidential basis, source
+provenance, or uncertainty. Use `Proposed` only for a new or materially reworded
+statement. Assess a statement whose required evidence is unavailable as `Not
+assessable`, and record the proposed changes under **Scientific record changes**
+for this run.
 
-Your round-1 directive to each member names the direction(s) you want them to
-develop. Pass through any user feedback verbatim.
+## Step 2: Round 1 proposals
+Give each role a distinct scientific question or methodological direction.
+Require every proposal to include:
 
-## Step 3 — Between rounds: the critique loop
-After each round, read all outputs. For the debate to work, the NEXT round's
-members must read each other's current proposals. Your directive must say:
+1. target and obstacle;
+2. separate definitions of the target, oracle, feasible estimator, approximation,
+   and implementation;
+3. an entry in the method specification table with a stable method ID,
+   specification version, and formula;
+4. assumptions and unresolved choices;
+5. invariants, information leakage, inappropriate evaluation-data reuse,
+   target-information use, circularity, and boundary checks;
+6. prespecified evidence and contradiction criteria for each stated property or
+   performance advantage;
+7. the strongest alternative and why it may be preferable.
+8. a **Scientific record changes** section containing only proposed additions
+   or changes to material statements.
 
-> *"Read the other proposals at `ideas/run/NN/round-01/theorist.md`,
-> `ideas/run/NN/round-01/data_scientist.md`, etc. Identify where you agree,
-> where you disagree, and why. Then revise your own proposal in light of
-> the others — strengthen it, concede points, or sharpen the disagreement."*
+Address the user direction supplied in each run task. The roles work
+independently in round 1.
 
-Ask yourself between rounds:
-- **Converging?** Are members moving toward a shared method? If so, the next
-  round should refine the shared direction.
-- **Stuck on a trade-off?** Are there genuine alternatives that can't be
-  reconciled? If so, the next round should sharpen the trade-off (pros/cons
-  table) rather than force convergence.
-- **Something missing?** Is nobody addressing a risk the literature review
-  flagged? Assign someone to close the gap.
+## Step 3: Comparison in later rounds
+From round 2 onward, require every role to read the available named reports from
+the prior round. Use supported material in nonempty Partial and Failed reports.
+A missing or unreadable artifact is a technical run failure, not a scientific
+Failed report. Each new report must identify agreements, disagreements, and the
+evidence needed to resolve each disagreement. Ask:
 
-**Stop the debate when:**
-- Members have converged on a method, OR
-- The trade-offs are crisp and the user needs to decide, OR
-- You've done 3 rounds and no new substance is emerging.
+- Do all implementations compute the specified mathematical objects?
+- Is an oracle quantity being mistaken for a feasible estimator?
+- Is a diagnostic being presented as an estimator without a defined estimand and
+  a stated statistical relation to that estimand?
+- Does any evaluation use output from the proposed method, or an estimate derived
+  from that output, as the reference for assessing the same method or component?
+- Which invariant or boundary case could show quickly that a stated property
+  does not hold?
+- Which choices are genuinely unresolved and belong before the user?
+- Can the central set be reduced without losing the main contribution?
 
-Do NOT run more than 3 rounds of debate without the user's input — diminishing
-returns set in fast. The user can always request another run with specific feedback.
+If the comparison converges early, use the remaining rounds to seek cases that
+contradict the stated properties and to test the strongest alternative. Do not
+add variants merely to fill a round.
+Use the supported content of Partial and Failed reports, mark conclusions that
+depend on missing work as Not assessable, and continue the configured rounds.
 
-## Step 4 — Final summary
-Write `phase-summaries/02-method-development.html`. Structure:
-1. **The proposed method** (or the 2-3 alternatives if no convergence) —
-   mathematical formulation, algorithm sketch, what's new
-2. **Positioning** — how it differs from prior art, what it borrows
-3. **Design decisions made** — with rationale (what the team agreed on and why)
-4. **Open questions / risks** — what's unresolved, what could go wrong
-5. **Recommended next step** — proceed to theory? to numerics? re-scan literature?
+## Step 4: Method specification table
+Keep one row per candidate with:
 
-This summary is what the user reads to decide whether to proceed. Make the
-method concrete enough to act on, and the trade-offs sharp enough to decide on.
+- stable method ID and specification version;
+- object type: estimator, procedure, decomposition, or diagnostic;
+- role in the current proposal: central, alternative, or not pursued;
+- target and oracle object;
+- feasible formula and algorithmic variant;
+- code implementation, repository or source path, and version;
+- assumptions and measures that prevent information leakage, inappropriate reuse
+  of evaluation data, or use of target information;
+- expected advantage and prespecified results that would support or contradict it;
+- unresolved questions and the consequences of the available choices.
 
-## Norms
-- In round 1, each member works independently — DON'T tell them what the others
-  are proposing. Let the divergence emerge naturally.
-- From round 2 onward, members MUST read each other — your directive must
-  reference the other proposals by file path.
-- Your job is facilitation, not dictatorship. If two members disagree, don't
-  force a winner — sharpen the disagreement and let the user decide.
-- If the user gave feedback, pass it through every round — don't drop it.
+Never reuse a method ID after changing its estimand, definition, or algorithmic
+variant. Increment the specification version for a nonmaterial clarification and
+record exactly what changed. Retain methods that are not pursued in the table
+with role `not pursued` and state why they were set aside.
+
+## Step 5: Final synthesis
+Write the final HTML summary to the exact path provided for this run.
+Do not overwrite an earlier run summary.
+Begin with the User Decision Brief and Comparison with the approved run defined
+in the team norms.
+Immediately afterward, state the phase outcome as Complete, Partial, or Failed.
+Complete means the prescribed method-development checks were performed, not
+that a method was selected or supported. For Partial or Failed, state the usable
+work, missing work, and scientific consequence.
+Separate:
+
+1. **Role-specific proposals and evaluations**, including your own role report.
+2. **Evidence-weighted synthesis**, stating the best-supported conclusion,
+   disagreements, uncertainty, and choices available to the user.
+
+Include:
+
+1. target and obstacle;
+2. the method specification table and object definitions for the central methods;
+3. **Method selection for downstream study:** propose exactly one stable method
+   ID and version, state the selection separately from whole-baseline acceptance,
+   repeat that exact ID and version in the structured record's
+   `decision_requested` field, and record them under
+   `selected_scientific_object`. Do not infer selection from the recommendation
+   or ranking;
+4. comparison with prior work, one consolidated **Scientific record changes**
+   section, and the **Proposed scientific baseline**, which becomes accepted
+   only after user approval;
+5. results of checks for invariance, information leakage, inappropriate reuse of
+   evaluation data, use of target information, circularity, and boundary behavior;
+6. prespecified evidence and contradiction criteria for each stated property or
+   performance advantage;
+7. alternatives not pursued and why they were set aside;
+8. unresolved choices with consequences;
+9. explicit user options:
+   - approve the complete proposed baseline and the separately named method ID
+     and version for subsequent theoretical or numerical study;
+   - request revision to designate a named alternative before approval;
+   - request a specified revision;
+   - rerun the method comparison;
+   - return to Phase 01 for a focused search.
+
+The proposed selection is a decision option, not a choice made for the user.
+After submitting the summary, stop. The user alone decides whether to approve
+the complete baseline and exact method selection, request changes, rerun the
+phase, or start a later phase.
+
+## Requirements
+- Follow the shared team norms and the accepted scientific record for this run.
+- Require role reports to include only proposed **Scientific record changes**,
+  not a reconstructed record. Reconcile those proposed changes in the final
+  summary without altering an earlier accepted record.
+- Preserve independence in round 1 and require each role to read the other role
+  reports in later rounds.
+- Prefer a small set of precisely defined methods with testable properties and
+  prespecified results that would support or contradict those properties.
+- Keep unresolved design choices visible.
+- Address the user direction already supplied in each run task.

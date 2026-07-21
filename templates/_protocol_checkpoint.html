@@ -1,0 +1,30 @@
+{% set checkpoint = protocol_checkpoint | default(none) %}
+{% if checkpoint %}
+{% set checkpoint_data = checkpoint.data | default({}) %}
+{% set checkpoint_files = checkpoint_data.protocol_files | default([]) %}
+{% set protocol_report = checkpoint.protocol_report | default(none) %}
+<details class="protocol-checkpoint-details" data-progress-details="protocol-checkpoint">
+  <summary data-progress-focus="protocol-checkpoint">Inspect sealed protocol checkpoint</summary>
+  <dl class="protocol-checkpoint-record">
+    <div><dt>Checkpoint file</dt><dd><code>{{ checkpoint.path | default('Not recorded') }}</code></dd></div>
+    <div><dt>Checkpoint SHA-256</dt><dd><code>{{ checkpoint.sha256 | default('Not recorded') }}</code></dd></div>
+    <div><dt>Sealed</dt><dd>{% if checkpoint.sealed_at %}<time datetime="{{ checkpoint.sealed_at }}">{{ checkpoint.sealed_at }}</time>{% else %}Not recorded{% endif %}</dd></div>
+    {% if protocol_report %}
+    <div><dt>Protocol-stage report</dt><dd><code>{{ protocol_report.path }}</code></dd></div>
+    <div><dt>Protocol-stage outcome</dt><dd>{{ protocol_report.scientific_outcome }}</dd></div>
+    <div><dt>Protocol-stage SHA-256</dt><dd><code>{{ protocol_report.sha256 }}</code></dd></div>
+    {% endif %}
+  </dl>
+  <ol class="protocol-file-list">
+    {% for item in checkpoint_files %}
+    <li>
+      <code>{{ item.path }}</code>
+      <span>{{ item.purpose | default('Purpose not recorded') }}</span>
+      <small>SHA-256 {{ item.sha256 | default('Not recorded') }}{% if item.size is defined %} · {{ item.size | filesizeformat }}{% endif %}</small>
+    </li>
+    {% else %}
+    <li>No protocol files were recorded.</li>
+    {% endfor %}
+  </ol>
+</details>
+{% endif %}

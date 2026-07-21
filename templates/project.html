@@ -1,57 +1,39 @@
 {% extends "base.html" %}
-{% block title %}{{ project.name }} — Research Hub{% endblock %}
+{% block title %}{{ project.name }} | Research Hub{% endblock %}
 {% block content %}
 
 <header class="project-header">
   <div class="header-row">
-    <div>
+    <div class="project-heading">
+      <p class="eyebrow">Project {{ project.id }}</p>
       <h1>{{ project.name }}</h1>
       <p class="project-meta">
-        #{{ project.id }} · <strong>{{ project.status }}</strong>
+        <span class="status-marker status-{{ project.status | default('active') }}" aria-hidden="true"></span>
+        <span>{{ project.status | default('active') | replace('_', ' ') | title }}</span>
       </p>
     </div>
+
     <div class="proj-path-box">
       <span class="path-label">Project root</span>
       <div class="path-row">
         <code class="path-value">{{ proj_dir }}</code>
         {% if proj_dir and proj_dir != '(not found)' %}
-        <button type="button" class="open-folder-icon"
-                title="Open Folder"
-                aria-label="Open folder in file browser"
-                onclick="openFolder({{ project.id }})">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+        <button type="button" class="icon-btn"
+                aria-label="Open project folder"
+                title="Open project folder"
+                data-open-folder-url="{{ url_for('open_folder', project_id=project.id) }}"
+                data-project-identity="{{ project_identity }}">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M1.5 4.5C1.5 3.67 2.17 3 3 3h3l1.5 1.5H13c.83 0 1.5.67 1.5 1.5v6c0 .83-.67 1.5-1.5 1.5H3c-.83 0-1.5-.67-1.5-1.5v-7.5z"/>
           </svg>
         </button>
         {% endif %}
       </div>
+      <span id="folder-action-status" class="path-status" role="status" aria-live="polite"></span>
     </div>
   </div>
 </header>
 
-{# Tab bar + content — HTMX swaps the innerHTML of this container on tab click #}
-<div id="project-tabs">
-  {% include "_project_tabs.html" %}
-</div>
-
-<script>
-async function openFolder(projectId) {
-  const btn = event.target.closest('button');
-  btn.style.opacity = '0.5';
-  btn.disabled = true;
-  try {
-    const res = await fetch(`/project/${projectId}/open-folder`, { method: 'POST' });
-    if (!res.ok) {
-      const msg = await res.text();
-      alert('Could not open folder: ' + msg);
-    }
-  } catch (e) {
-    alert('Network error: ' + e.message);
-  } finally {
-    btn.style.opacity = '';
-    btn.disabled = false;
-  }
-}
-</script>
+{% include "_project_tabs.html" %}
 
 {% endblock %}

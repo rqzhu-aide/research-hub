@@ -6,103 +6,163 @@ hub:
   workspace_dir: "~/research"    # where projects + database live (separate from app)
   # projects:    ~/research/projects/project-NNN-<slug>/
   # database:    ~/research/hub.db
-  max_iterations: 10
+  run_timeout_minutes: 120
+# Phase runs are explicitly started by the user. This permits the lead to
+# execute the project-local tools needed by Hermes after that decision.
+  allow_unattended_tools: true
 
 # Define your agent profiles here (must already exist in Hermes)
 # Role id == profile name (so role references in phases map directly to Hermes profiles)
-# NOTE: model/provider live in each profile's own config.yaml — not here.
+# NOTE: model/provider live in each profile's own config.yaml, not here.
 #       The profiles page reads them live from ~/.hermes/profiles/<name>/config.yaml
 agents:
 - id: "research_lead"
   profile: "research_lead"
   name: "Research Lead"
-  role: "domain, framing, writing"
+  role: "scientific question, framing, synthesis"
 
 - id: "theorist"
   profile: "theorist"
   name: "Theorist"
-  role: "methods, math, rigor"
+  role: "statistical theory, assumptions, proofs"
 
 - id: "data_scientist"
   profile: "data_scientist"
-  name: "Data Scientist"
-  role: "implementation, data, reproducibility"
+  name: "Data Analyst"
+  role: "implementation, numerical studies, data analysis"
 
 - id: "paper_reviewer"
   profile: "paper_reviewer"
   name: "Paper Reviewer"
-  role: "independent quality check (on-demand)"
+  role: "independent scientific assessment"
 
-# ─────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 # Phase definitions
 #
-# The research_lead orchestrates every phase. It reads the situation, picks
-# tasks from the playbook (config/phases/<slug>/*.md), and assigns them to
-# members. What's declared here is METADATA — the lead treats it as guidance,
-# not a rigid script.
+# The user explicitly starts every run. The research_lead then executes only
+# that run's configured plan, submits a summary for review, and stops. Neither
+# completion nor approval starts another phase.
 #
 # Fields:
-#   slug        — phase identifier (NN-name), used everywhere
-#   name        — display name
-#   description — one-line summary
-#   pattern     — suggested interaction style (lead may adapt):
-#                   parallel   = members work independently, lead merges
-#                   sequential = pipeline A→B→C, each takes previous as input
-#                   debate     = owner proposes, critics critique, repeat
-#   gated_by    — phases that must reach 'completed' before this can start
-#                   empty list = runnable at any time
-#   folder      — where this phase's outputs land (relative to project root)
-#   members     — roles that participate; FIRST is the primary contributor
+#   slug: phase identifier (NN-name), used everywhere
+#   name: display name
+#   description: one-line summary
+#   pattern: exact interaction structure for the run
+#     parallel: members investigate independently, then the lead synthesizes
+#     sequential: fixed ordered handoffs, with each stage reading the prior one
+#     debate: independent proposals followed by configured comparison rounds
+#   gated_by: recommended approved, current prerequisites. The user may proceed
+#     with an explicit recorded override when one is missing or stale.
+#   context_from: additional approved context to include when current. These
+#     phases are useful inputs, not prerequisites.
+#   folder: where this phase's run outputs are written, relative to the project
+#   members: roles that may participate in the configured plan
+#   rounds: allowed/default depth for parallel and debate work
+#   stages: exact ordered handoffs for sequential work
+#   available_run_plans: explicit Web UI plans for a phase with supported
+#     user-selected variants
 #
-# Note: there is no "modes" field. Every phase has one run machinery; the
-# research_lead adapts per-run direction by reading project state and the
-# user's feedback. See config/phases/<slug>/_lead.md for the lead's playbook.
-# ─────────────────────────────────────────────────────────────────────
+# There is no "modes" field. User direction may change the research focus, but
+# it cannot add, skip, reorder, or automatically start configured phases.
+# ---------------------------------------------------------------------------
 phases:
 - slug: "01-literature-review"
   name: "Literature Review"
-  description: "Survey and organize relevant literature"
+  description: "Assess direct prior work, theoretical foundations, related methods, existing implementations, and originality"
   pattern: parallel
   gated_by: []
-  folder: "references/"
+  folder: "references/literature-review/"
   members: [research_lead, theorist, data_scientist]
+  rounds: {min: 1, default: 2, max: 5}
 
 - slug: "02-method-development"
   name: "Method Development"
-  description: "Design and specify the proposed method"
+  description: "Define the estimand and method, then specify validity conditions and results that would contradict its stated properties"
   pattern: debate
   gated_by: ["01-literature-review"]
   folder: "ideas/"
   members: [theorist, research_lead, data_scientist]
+  rounds: {min: 2, default: 2, max: 3}
 
 - slug: "03-theoretical-justification"
-  name: "Theoretical Justification"
-  description: "Develop proofs, bounds, and guarantees"
+  name: "Theoretical Analysis"
+  description: "Derive theoretical results and state their assumptions, scope, and limitations"
   pattern: sequential
   gated_by: ["02-method-development"]
   folder: "draft/theory/"
-  members: [theorist, research_lead]
+  members: [theorist, research_lead, paper_reviewer]
+  proof_audit:
+    plans: [standard, standard_with_audit, audit_only]
+    stage:
+      role: paper_reviewer
+      name: "Audit the final theoretical analysis independently"
+      description: "Check the exact sealed theory artifact, assumptions, proof dependencies, and central conclusions without revising the theory."
+  rounds: {min: 3, default: 3, max: 3}
+  stages:
+  - role: theorist
+    name: "Develop the theory"
+    description: "Develop the necessary results, their dependencies, assumptions, scope, and proofs."
+  - role: research_lead
+    name: "Assess theoretical support"
+    description: "Assess how the results support the claims, including scope and unresolved gaps."
+  - role: theorist
+    name: "Revise the analysis"
+    description: "Revise the analysis where needed and state any unresolved mathematical questions explicitly."
 
 - slug: "04-numerical-validation"
   name: "Numerical Validation"
-  description: "Implement, test, and validate numerically"
+  description: "Verify that the implementation matches the method and assess prespecified statistical properties and empirical performance"
   pattern: sequential
   gated_by: ["02-method-development"]
+  context_from: ["03-theoretical-justification"]
   folder: "numerical/"
   members: [data_scientist, theorist, research_lead]
+  rounds: {min: 4, default: 4, max: 4}
+  stages:
+  - role: data_scientist
+    name: "Prespecify the protocol, then test"
+    description: "Complete the protocol-only task in its isolated run workspace; after Research Hub verifies and seals that workspace, complete the separate result task by implementing the method and testing failure cases first."
+  - role: theorist
+    name: "Audit mathematical and computational correspondence"
+    description: "Verify the sealed protocol file hashes, then audit whether the implementation and protocol correspond to the method and scientific design."
+  - role: data_scientist
+    name: "Correct and validate"
+    description: "Write versioned corrections for implementation or protocol discrepancies within the scientific design, preserve the sealed originals, and complete the numerical study."
+  - role: research_lead
+    name: "Synthesize the evidence"
+    description: "Synthesize the submitted evidence for each prespecified statement without redefining the study or running additional analyses."
 
 - slug: "05-data-analysis"
-  name: "Data Analysis"
-  description: "Analyze results and interpret findings"
+  name: "Scientific Interpretation"
+  description: "Interpret the numerical results, uncertainty, and validity checks and determine the scope of each scientific conclusion"
   pattern: debate
   gated_by: ["04-numerical-validation"]
+  context_from: ["03-theoretical-justification"]
   folder: "draft/analysis/"
   members: [theorist, research_lead, data_scientist]
+  rounds: {min: 2, default: 2, max: 3}
 
 - slug: "06-paper-writing"
   name: "Paper Writing"
-  description: "Compile findings into manuscript"
+  description: "Write and independently assess a manuscript consistent with the theory and evidence"
   pattern: sequential
-  gated_by: ["05-data-analysis"]
+  gated_by: ["03-theoretical-justification", "05-data-analysis"]
   folder: "draft/"
   members: [research_lead, theorist, data_scientist, paper_reviewer]
+  rounds: {min: 5, default: 5, max: 5}
+  stages:
+  - role: research_lead
+    name: "Define the manuscript claims and structure"
+    description: "Draft the scientific argument and the sections assigned to the research lead."
+  - role: theorist
+    name: "Write the theory"
+    description: "Draft the theory section for the stated claims and method."
+  - role: data_scientist
+    name: "Write experiments and results"
+    description: "Report the estimates, uncertainty, negative results, and limitations directly."
+  - role: paper_reviewer
+    name: "Read the manuscript independently"
+    description: "Record a first-reader assessment using only the exact manuscript under review."
+  - role: paper_reviewer
+    name: "Assess the manuscript against the evidence"
+    description: "Compare the preserved first reading with the internal scientific record and complete the assessment."

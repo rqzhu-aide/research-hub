@@ -1,40 +1,37 @@
 {% extends "base.html" %}
-{% block title %}Hub Settings — Research Hub{% endblock %}
+{% block title %}Settings | Research Hub{% endblock %}
 {% block content %}
 
-<header class="project-header">
-  <h1>⚙️ Hub Settings</h1>
-  <p class="project-meta">Where projects and the database live.</p>
+<header class="project-header compact-header">
+  <p class="eyebrow">Hub administration</p>
+  <h1>Settings</h1>
+  <p class="project-meta">Review where project records and application data are stored.</p>
 </header>
 
 <div class="settings-grid">
   <section class="panel">
-    <h3>📁 Workspace</h3>
+    <div class="panel-head"><h2>Workspace</h2></div>
     <dl class="settings-list">
-      <dt>Workspace directory</dt>
-      <dd><code>{{ workspace_dir }}</code></dd>
-      <dt>Projects directory</dt>
-      <dd><code>{{ projects_dir }}</code></dd>
-      <dt>Database</dt>
-      <dd><code>{{ db_path }}</code></dd>
-      <dt>Existing projects</dt>
-      <dd>{{ project_count }}</dd>
+      <dt>Workspace directory</dt><dd><code>{{ workspace_dir }}</code></dd>
+      <dt>Projects directory</dt><dd><code>{{ projects_dir }}</code></dd>
+      <dt>Database</dt><dd><code>{{ db_path }}</code></dd>
+      <dt>Existing projects</dt><dd>{{ project_count }}</dd>
     </dl>
 
-    <h4 style="margin-top: 20px;">Change workspace</h4>
-    <form action="{{ url_for('change_workspace') }}" method="post" class="inline-form">
-      <input type="text" name="workspace_dir" value="{{ workspace_dir }}"
-             class="form-input" placeholder="/path/to/workspace">
-      <button type="submit" class="btn btn-primary">Update</button>
+    <form action="{{ url_for('change_workspace') }}" method="post" class="workspace-form" data-unsaved-guard data-draft-key="hub-settings-workspace" data-confirm="Change the workspace used for future projects?">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="workspace-dir">Workspace for future projects</label>
+      <div class="inline-form">
+        <input type="text" id="workspace-dir" name="workspace_dir" value="{{ workspace_dir }}"
+               class="form-input" autocomplete="off" spellcheck="false" placeholder="C:\path\to\workspace">
+        <button type="submit" class="btn btn-primary">Update workspace</button>
+      </div>
+      <p class="hint">Existing projects stay in place. Restart the server after changing this setting.</p>
     </form>
-    <p class="hint">
-      ⚠ Changing the workspace creates future projects in the new location.
-      Existing projects stay where they are. Server restart required.
-    </p>
   </section>
 
   <section class="panel">
-    <h3>📋 Config Preview</h3>
+    <div class="panel-head"><h2>Configuration preview</h2></div>
     <pre class="config-preview">hub:
 {% for key, val in hub_config.items() %}  {{ key }}: {{ val }}
 {% endfor %}</pre>

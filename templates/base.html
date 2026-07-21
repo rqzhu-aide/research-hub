@@ -3,48 +3,84 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}Research Hub{% endblock %}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </head>
 <body>
-  <div class="app">
-    <aside class="sidebar">
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+
+  <div class="app-shell">
+    <aside class="sidebar" id="primary-sidebar" aria-label="Research Hub navigation">
       <div class="sidebar-header">
-        <h1><span class="logo-mark">◈</span> Research Hub</h1>
-      </div>
-      <nav class="project-list">
-        <h2>Projects</h2>
-        {% for p in projects or [] %}
-        <a href="{{ url_for('project_view', project_id=p.id) }}"
-           class="project-item {{ 'active' if project and project.id == p.id else '' }}">
-          <span class="proj-status proj-status-{{ p.status }}">{{ {"active":"●","paused":"⏸","completed":"✓","archived":"━"}.get(p.status, "●") }}</span>
-          <span class="proj-name">{{ p.name }}</span>
+        <a class="brand" href="{{ url_for('index') }}" aria-label="Research Hub home">
+          <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+          <span>Research Hub</span>
         </a>
-        {% endfor %}
-      </nav>
-      <div class="sidebar-footer">
-        <a href="{{ url_for('new_project') }}" class="nav-link">✨ New Project</a>
-        <a href="{{ url_for('profiles_view') }}" class="nav-link">👥 Agent Profiles</a>
-        <a href="{{ url_for('hub_settings') }}" class="nav-link">⚙️ Settings</a>
+        <button class="sidebar-close" type="button" data-sidebar-close aria-label="Close navigation">Close</button>
       </div>
+
+      <nav class="project-list" aria-label="Projects">
+        <div class="nav-section-label">Projects</div>
+        {% if projects %}
+          {% for p in projects %}
+          <a href="{{ url_for('project_view', project_id=p.id) }}"
+             class="project-item {{ 'is-current' if project and project.id == p.id else '' }}"
+             {% if project and project.id == p.id %}aria-current="page"{% endif %}>
+            <span class="status-marker status-{{ p.status | default('active') }}" aria-hidden="true"></span>
+            <span class="proj-name">{{ p.name }}</span>
+          </a>
+          {% endfor %}
+        {% else %}
+          <p class="sidebar-empty">No projects yet.</p>
+        {% endif %}
+      </nav>
+
+      <nav class="sidebar-footer" aria-label="Hub tools">
+        <a href="{{ url_for('new_project') }}" class="nav-link"
+           {% if request.endpoint == 'new_project' %}aria-current="page"{% endif %}>
+          <span aria-hidden="true">+</span> New project
+        </a>
+        <a href="{{ url_for('profiles_view') }}" class="nav-link"
+           {% if request.endpoint in ['profiles_view', 'profile_memory'] %}aria-current="page"{% endif %}>
+          <span aria-hidden="true">@</span> Agent profiles
+        </a>
+        <a href="{{ url_for('hub_settings') }}" class="nav-link"
+           {% if request.endpoint == 'hub_settings' %}aria-current="page"{% endif %}>
+          <span aria-hidden="true">:</span> Settings
+        </a>
+      </nav>
     </aside>
 
-    <main class="main-content">
-      {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-          <div class="flash-container">
+    <div class="workspace-shell">
+      <div class="mobile-bar">
+        <button type="button" class="btn btn-quiet" data-sidebar-open aria-controls="primary-sidebar" aria-expanded="false">
+          Menu
+        </button>
+        <span class="mobile-brand">Research Hub</span>
+      </div>
+
+      <main class="main-content" id="main-content" tabindex="-1">
+        <div id="interface-status" class="sr-only" role="status" aria-live="polite"></div>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+          <div class="flash-container" aria-live="polite">
             {% for category, message in messages %}
-              <div class="flash flash-{{ category }}">{{ message }}</div>
+            <div class="flash flash-{{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}">
+              <span class="status-marker" aria-hidden="true"></span>
+              <span>{{ message }}</span>
+            </div>
             {% endfor %}
           </div>
-        {% endif %}
-      {% endwith %}
-      {% block content %}{% endblock %}
-    </main>
+          {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+      </main>
+    </div>
   </div>
+
+  <div class="sidebar-scrim" data-sidebar-close aria-hidden="true"></div>
 </body>
 </html>

@@ -1,39 +1,61 @@
-# Literature Review — Data Scientist
+# Literature Review: Data Analyst
 
-## Your lens
-You survey from the **computational / implementation** angle: what's been
-built, what data exists, what tools are available.
+## Scientific focus
+Determine what has actually been implemented, how closely it matches the
+candidate mathematical object, and what evidence or infrastructure already exists.
 
-## Two modes (your lead will specify which)
-- **Initial survey** — broad scan at project start
-- **Targeted re-scan** — context-aware, after code and experiments exist
+## Two modes
+- **Initial survey**: map reference implementations, packages, data, benchmarks,
+  and reproducibility practices.
+- **Focused literature update**: inspect code and computational results closest to the
+  proposed estimator or algorithm and test for implementation-level overlap.
 
-## Initial survey — search for
-1. **Existing implementations** — reference code, libraries, packages
-2. **Datasets and benchmarks** — standard data and evaluation setups
-3. **Tooling landscape** — frameworks and reproducibility infrastructure
+## What to investigate
+1. Original repositories and official package documentation linked to primary work.
+2. Whether code implements the exact target, an approximation, or a related
+   problem.
+3. Required inputs, hidden refits, tuning, randomness, computational cost, and
+   regimes not covered by the implementation or documentation.
+4. Standard benchmarks, target or reference values, comparator methods, and
+   reporting conventions.
+5. Maintenance, license, version, reproducibility, and whether the reported
+   results can be reproduced from the available code and data.
 
-## Targeted re-scan — search for
-1. **Same or similar data** — papers/projects using our datasets or regimes
-2. **Better optimization / numerical methods** — algorithms or tricks for perf
-3. **Reusable packages and tools** — libraries that could replace or accelerate code
+An available package may be an existing implementation even when its paper uses
+different language. Conversely, a similarly named function may target a different
+estimand. Inspect the implemented computation and documentation before
+classifying it.
 
 ## What to produce
 Write to `{{output_path}}`:
 
-1. **Computational landscape / implementation summary** (1-2 paragraphs):
-   - *Initial:* what code/tools/data exist; what's mature vs. rough vs. missing
-   - *Targeted:* your read of the project's current numerical/code state
+Begin with **Scientific completion outcome: Complete, Partial, or Failed**, as
+defined in the team norms.
 
-2. **Resource list** (8-15 entries): concrete artifact + what it provides +
-   license/maintenance status. Tag each: `[dataset]`, `[library]`,
-   `[implementation]`, `[benchmark]`, `[optimization]`, `[tooling]`, or `[baseline]`.
+1. **Implementation evidence**: determine whether the research question or
+   estimand, proposed method or mechanism, stated computational contribution,
+   and intended scope have a direct, partial, related, or no existing
+   implementation.
+2. **Software and data table**: include every resource needed to establish the
+   closest implementation overlap, reusable infrastructure, and material
+   limitations. Give source, version, license, maintenance status, implemented
+   target, inputs, refits, outputs, and relation to the project.
+3. **Benchmark summary**: available data, target or reference values, comparator
+   methods, metrics, and known reproducibility limitations.
+4. **Implementation implications**: what can be reused, what needs an independent
+   implementation, and which apparent shortcuts would change the target.
+5. **Search log**: repositories, package indexes, documentation sources, dates,
+   software and API query terms, version branches, citation links, and stopping rule.
+6. **Role conclusion**: reuse, reproduce independently, compare against, or
+   exclude each central resource. State that this is the data analyst's
+   conclusion for later comparison with the other roles.
+7. **Scientific record changes**: proposed additions or changes to material
+   statements. Do not reproduce the full accepted scientific record.
 
-3. **Feasibility / engineering recommendations** (1-2 paragraphs):
-   - *Initial:* what would be straightforward vs. hard to implement
-   - *Targeted:* actionable — "swap solver X for Y for ~3× speedup", "dataset Z
-     has the labels we're missing", "package P handles our edge case"
-
-## Norm
-Point at concrete artifacts (repo names, dataset names, packages with versions).
-Every suggestion has a clear "do this because…" attached.
+## Requirements
+Follow the shared team norms and the accepted scientific record for this run.
+Cite specific software, data, documentation, and versions. For every proposed
+reuse, state why it computes the intended target. Continue targeted searches
+until additional repositories, documentation, and citation links do not change
+the classification of the closest implementations or reveal a material
+resource. State the evidence for this stopping decision.
