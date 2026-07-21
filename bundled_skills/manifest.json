@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "source": {
+    "repository": "https://github.com/rqzhu-aide/stat-paper-skills",
+    "revision": "1a32b75dc671266b515816b32fca7244c9fc42be"
+  },
+  "skills": {
+    "stat-paper-writing": {
+      "directory": "stat-paper-writing",
+      "digest": "697fdc1899df4537aada7cf83cef854e6e064452880641baaa64c95a52d349b5",
+      "roles": [
+        "research_lead",
+        "theorist",
+        "data_scientist"
+      ]
+    },
+    "stat-paper-reviewer": {
+      "directory": "stat-paper-reviewer",
+      "digest": "b14c54062f0cfba3b6f23af35715ff55144064666a774932bef984c89b2e7454",
+      "roles": [
+        "paper_reviewer"
+      ]
+    }
+  }
+}

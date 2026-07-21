@@ -174,7 +174,9 @@ The application deliberately separates project registration, run control, orches
 | `hub.py` | Validated configuration, SQLite project registry, safe project paths, database initialization and migration |
 | `scripts/project_state.py` | Locked and atomic project state, run transitions, approvals, staleness, prerequisite reports, and immutable context records |
 | `scripts/launch_run.py` | Preflight checks, prompt construction, Hermes worker launch, progress commands, cancellation, and worker reconciliation |
+| `scripts/profile_skills.py` | Read-only skill status checks and explicit, transactional profile installation or replacement |
 | `scripts/web_phase_data.py` | Read-only view models for phase and overview pages |
+| `bundled_skills/` | Pinned recommended skill resources, source revision, licenses, and integrity manifest |
 | `config/phases/<slug>/` | Phase protocol, research-lead instructions, and role-specific playbooks |
 | `config/souls/` | Stable identity, reasoning standards, and boundaries for each role |
 | `config/team/` | Shared team charter and operating norms |
@@ -224,8 +226,13 @@ research-hub/
 |-- schema.sql
 |-- scripts/
 |   |-- launch_run.py
+|   |-- profile_skills.py
 |   |-- project_state.py
 |   `-- web_phase_data.py
+|-- bundled_skills/
+|   |-- manifest.json
+|   |-- stat-paper-writing/
+|   `-- stat-paper-reviewer/
 |-- config/
 |   |-- phases/<phase-slug>/
 |   |   |-- _phase.md
@@ -290,6 +297,25 @@ agents:
 
 Phase members and stage owners reference `id`. `profile` is the Hermes profile used to execute that role, so the two names do not need to be identical. Model and provider settings remain in each Hermes profile's own configuration.
 
+### Recommended role skills
+
+Research Hub includes pinned copies of two recommended Hermes skills under `bundled_skills/`:
+
+| Research role | Recommended skill |
+|---|---|
+| Research lead, theorist, data analyst | `stat-paper-writing` |
+| Paper reviewer | `stat-paper-reviewer` |
+
+Open **Profiles** in the Web UI to see the status for each role's mapped Hermes profile. Installation occurs only when the user selects **Install recommended skill**. A status check never changes the profile, and Research Hub never replaces a different or locally modified copy without a separate, confirmed replacement action. Repeating an install for the same pinned copy is safe.
+
+The skills are recommendations, not phase prerequisites. A phase can still run when a recommended skill is absent. Immediately before starting a writing chat or queuing an independent-review task, Research Hub checks the installed content against the pinned bundle and passes the skill name to Hermes only when the copy is current. A copy that is missing, changed, or in conflict is not preloaded. Review-only paper runs do not give the author-side writing skill to the research lead.
+
+Hermes task commands identify a skill by name. A manual change to the profile after a task is queued but before Hermes loads it can therefore change the guidance used by that task. Research Hub blocks its own skill installation and replacement controls while a run is active, but it cannot prevent edits made outside the application. Do not modify active Hermes profiles during a run.
+
+The reviewer bundle contains an optional OpenAlex search helper. If an agent invokes it, the helper sends search terms and any author, affiliation, or ORCID filters to OpenAlex over HTTPS and can read `OPENALEX_API_KEY` from the Hermes process environment. Do not use confidential manuscript prose as a search query. Installing the skill does not run the helper or make a network request.
+
+Hermes profile locations follow the active platform: `%LOCALAPPDATA%\hermes` on Windows and `~/.hermes` on POSIX systems. `RESEARCH_HUB_HERMES_ROOT` can set an explicit root. If `HERMES_HOME` is already set, Research Hub derives the same profile root from it. Each new run records the resolved root and supplies it to its Hermes processes, so status checks, installation, and execution use the same profile tree.
+
 When `allow_unattended_tools` is `true`, the explicitly launched background Hermes run may use tools without an interactive confirmation prompt. Agents are instructed to keep their work in the project, but the Hermes process inherits the filesystem and network access of the operating-system account that launched it. Use an appropriately restricted account or sandbox when stronger isolation is required. Setting this option to `false` disables background phase launch because the detached Web UI worker has no interactive terminal in which to request approvals.
 
 ### Parallel or debate phase
@@ -341,7 +367,7 @@ its audit plans and reviewer stage; the selected plan fixes its run to 3, 4, or
 1 stage. The standard `rounds` mapping may be omitted and is then inferred from
 the stage count.
 
-Configuration is validated before use. Validation checks role and profile identifiers, the required `research_lead`, bounded nonblank UTF-8 role souls, safe project-relative output folders, round bounds, sequential stage owners, debate minimum rounds, prerequisite graph cycles, and required playbook files. Invalid configuration fails with a focused error instead of launching partial work.
+Configuration is validated before use. Validation checks role and profile identifiers, Hermes-reserved profile names, the required `research_lead`, a profile independent from contributing roles for `paper_reviewer`, bounded nonblank UTF-8 role souls, safe project-relative output folders, round bounds, sequential stage owners, debate minimum rounds, prerequisite graph cycles, and required playbook files. Invalid configuration fails with a focused error instead of launching partial work.
 
 `gated_by` defines the recommended approved prerequisites and downstream staleness graph. `context_from` names additional approved, current phase summaries that are useful when available but are not prerequisites. The current phase's prior approved result is included automatically on reruns for comparison.
 

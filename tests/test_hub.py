@@ -378,6 +378,58 @@ def test_config_requires_launcher_research_lead(configured_hub):
 
 
 @pytest.mark.parametrize(
+    "profile",
+    [
+        "Lead-Profile",
+        "lead.profile",
+        "lead/profile",
+        "a" * 65,
+        "hermes",
+        "test",
+        "tmp",
+        "root",
+        "sudo",
+    ],
+    ids=[
+        "uppercase",
+        "dot",
+        "slash",
+        "too-long",
+        "reserved-hermes",
+        "reserved-test",
+        "reserved-tmp",
+        "reserved-root",
+        "reserved-sudo",
+    ],
+)
+def test_config_rejects_noncanonical_hermes_profile_names(
+    configured_hub, profile: str
+):
+    app_root, _ = configured_hub
+    config = hub.load_config()
+    config["agents"][0]["profile"] = profile
+
+    with pytest.raises(hub.ConfigurationError, match="profile"):
+        hub.validate_config(config, config_root=app_root)
+
+
+def test_config_requires_reviewer_to_use_an_independent_profile(configured_hub):
+    app_root, _ = configured_hub
+    config = hub.load_config()
+    config["agents"].append(
+        {
+            "id": "paper_reviewer",
+            "profile": "lead-profile",
+            "name": "Outside reviewer",
+            "role": "independent review",
+        }
+    )
+
+    with pytest.raises(hub.ConfigurationError, match="distinct Hermes profile"):
+        hub.validate_config(config, config_root=app_root)
+
+
+@pytest.mark.parametrize(
     ("payload", "message"),
     [
         (b"", "non-whitespace text"),

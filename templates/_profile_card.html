@@ -12,11 +12,12 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label class="sr-only" for="profile-{{ a.id }}">Hermes profile for {{ a.name }}</label>
         <select id="profile-{{ a.id }}" name="profile" class="profile-select" data-profile-select>
-          {% for p in all_profiles %}<option value="{{ p }}" {% if p == a.profile %}selected{% endif %}>{{ p }}</option>{% endfor %}
+          {% for p in a.profile_options %}<option value="{{ p }}" {% if p == a.profile %}selected{% endif %}>{{ p }}</option>{% endfor %}
         </select>
         <button type="submit" class="btn btn-sm">Save</button>
         <span id="spin-{{ a.id }}" class="htmx-indicator profile-spin" role="status">Saving</span>
       </form>
+      {% if a.id == 'paper_reviewer' %}<p class="profile-rule-note">The outside reviewer must use a profile not assigned to a contributing role.</p>{% endif %}
     </dd>
     <dt>Role</dt><dd>{{ a.role }}</dd>
 
@@ -41,7 +42,54 @@
   {% if a.fallbacks %}
   <div class="fallback-chain">
     <span class="fallback-label">Fallbacks</span>
-    {% for fb in a.fallbacks %}<span class="fallback-chip provider-{{ fb.provider }}">{{ fb.provider }}{% if fb.model %} · {{ fb.model }}{% endif %}</span>{% endfor %}
+    {% for fb in a.fallbacks %}<span class="fallback-chip provider-{{ fb.provider }}">{{ fb.provider }}{% if fb.model %} / {{ fb.model }}{% endif %}</span>{% endfor %}
   </div>
+  {% endif %}
+
+  {% if a.recommended_skills %}
+  <section class="profile-skills" aria-labelledby="skills-{{ a.id }}">
+    <div class="profile-skills-head">
+      <div>
+        <p class="section-kicker">Recommended role skill</p>
+        <h3 id="skills-{{ a.id }}">Research guidance</h3>
+      </div>
+    </div>
+    {% for skill in a.recommended_skills %}
+    <div class="profile-skill-row">
+      <div class="profile-skill-title">
+        <code>{{ skill.name }}</code>
+        <span class="skill-status skill-status-{{ skill.status }}">{{ skill.status_label }}</span>
+      </div>
+      <p>{{ skill.description }}</p>
+      <p class="skill-detail">{{ skill.status_detail }}</p>
+
+      {% if skill.can_install %}
+      <form action="{{ url_for('install_agent_skills', agent_id=a.id) }}" method="post" class="skill-action-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="skill_action_token" value="{{ skill.action_token }}">
+        <button type="submit" class="btn btn-sm btn-primary"
+                aria-label="Install {{ skill.name }} in profile {{ a.profile }} for {{ a.name }}">Install recommended skill</button>
+      </form>
+      {% elif skill.can_replace %}
+      <form action="{{ url_for('install_agent_skills', agent_id=a.id) }}" method="post" class="skill-action-form"
+            data-confirm="Replace the existing {{ skill.name }} copy in profile {{ a.profile }}? Research Hub will preserve it as a backup.">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="skill_action_token" value="{{ skill.action_token }}">
+        <input type="hidden" name="replace" value="1">
+        <button type="submit" class="btn btn-sm btn-warning"
+                aria-label="Replace {{ skill.name }} in profile {{ a.profile }} for {{ a.name }} with the bundled copy">Replace with bundled copy</button>
+      </form>
+      {% endif %}
+
+      {% if skill.network_note %}<p class="skill-network-note">{{ skill.network_note }}</p>{% endif %}
+      <p class="skill-source">Bundled revision <code>{{ skill.source_revision }}</code></p>
+    </div>
+    {% endfor %}
+  </section>
+  {% elif a.skills_error %}
+  <section class="profile-skills" aria-label="Recommended role skill status">
+    <p class="section-kicker">Recommended role skill</p>
+    <p class="skill-error">{{ a.skills_error }}</p>
+  </section>
   {% endif %}
 </article>

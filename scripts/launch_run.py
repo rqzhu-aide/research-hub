@@ -32,6 +32,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(HUB_DIR))
 
 import project_state
+import profile_skills
 
 
 HUB_CONFIG = HUB_DIR / "config.yaml"
@@ -76,6 +77,13 @@ PAPER_WRITING_PHASE = "06-paper-writing"
 THEORETICAL_ANALYSIS_PHASE = "03-theoretical-justification"
 NUMERICAL_VALIDATION_PHASE = "04-numerical-validation"
 PAPER_REVIEWER_ROLE = "paper_reviewer"
+PAPER_REVIEWER_SKILL = "stat-paper-reviewer"
+PAPER_WRITING_SKILL = "stat-paper-writing"
+PAPER_WRITING_SKILL_ROLES = frozenset({
+    "research_lead",
+    "theorist",
+    "data_scientist",
+})
 THEORY_PLAN_STANDARD = "standard"
 THEORY_PLAN_STANDARD_WITH_AUDIT = "standard_with_audit"
 THEORY_PLAN_AUDIT_ONLY = "audit_only"
@@ -143,7 +151,7 @@ def _configured_proof_audit(
     return list(plans), normalized
 
 
-def _paper_review_only_phase(phase: Mapping[str, Any]) -> dict[str, Any]:
+def paper_review_only_phase(phase: Mapping[str, Any]) -> dict[str, Any]:
     """Return the two-stage plan for reviewing an exact existing manuscript."""
 
     review_phase = dict(phase)
@@ -259,6 +267,169 @@ def _role_profiles(config: Mapping[str, Any]) -> dict[str, str]:
     }
 
 
+def _should_preload_recommended_skill(
+    phase_slug: str,
+    role: str,
+    skill_name: str,
+    *,
+    review_only: bool = False,
+) -> bool:
+    """Return whether one exact recommended skill applies to this run mode."""
+
+    if role == PAPER_REVIEWER_ROLE and skill_name == PAPER_REVIEWER_SKILL:
+        return True
+    return (
+        phase_slug == PAPER_WRITING_PHASE
+        and not review_only
+        and role in PAPER_WRITING_SKILL_ROLES
+        and skill_name == PAPER_WRITING_SKILL
+    )
+
+
+def _recommended_skill_status_record(
+    status: profile_skills.SkillStatus,
+    *,
+    preload: bool,
+) -> dict[str, Any]:
+    """Normalize the read-only fields that determine safe skill preloading."""
+
+    return {
+        "name": status.skill,
+        "state": status.state,
+        "reason": status.reason,
+        "expected_digest": status.expected_digest,
+        "installed_digest": status.installed_digest,
+        "source_revision": status.source_revision,
+        "profile_path": status.profile_path,
+        "managed": status.managed,
+        "preload": preload,
+    }
+
+
+def _recommended_skills_snapshot(
+    config: Mapping[str, Any],
+    phase_slug: str,
+    *,
+    effective_phase: Mapping[str, Any] | None = None,
+    hermes_root: str | os.PathLike[str] | None = None,
+) -> dict[str, Any]:
+    """Describe relevant profile skills without changing any Hermes profile."""
+
+    phase = (
+        dict(effective_phase)
+        if effective_phase is not None
+        else _phase_config(config, phase_slug)
+    )
+    review_only = bool(phase.get("review_only", False))
+    roles = {str(role) for role in phase.get("members", [])}
+    roles.add("research_lead")
+    profiles = _role_profiles(config)
+    try:
+        bundled = profile_skills.load_manifest()
+        resolved_hermes_root = (
+            Path(hermes_root)
+            if hermes_root is not None
+            else profile_skills.resolve_hermes_root()
+        )
+    except (profile_skills.ProfileSkillsError, OSError, ValueError):
+        return {
+            "schema_version": 1,
+            "source_revision": None,
+            "roles": {},
+        }
+
+    role_records: dict[str, Any] = {}
+    for role in sorted(roles):
+        try:
+            requirements = profile_skills.role_requirements(
+                role,
+                manifest=bundled,
+            )
+        except (KeyError, ValueError):
+            continue
+        requirements = tuple(
+            name
+            for name in requirements
+            if _should_preload_recommended_skill(
+                phase_slug,
+                role,
+                name,
+                review_only=review_only,
+            )
+        )
+        if not requirements:
+            continue
+        profile = str(profiles.get(role, ""))
+        if not profile:
+            role_records[role] = {
+                "profile": "",
+                "skills": [
+                    {
+                        "name": name,
+                        "state": "profile_missing",
+                        "reason": "profile_unmapped",
+                        "expected_digest": bundled.skills[name].digest,
+                        "installed_digest": None,
+                        "source_revision": bundled.source_revision,
+                        "profile_path": "",
+                        "managed": False,
+                        "preload": False,
+                    }
+                    for name in requirements
+                ],
+            }
+            continue
+        try:
+            statuses = profile_skills.profile_skill_statuses(
+                profile,
+                requirements,
+                manifest=bundled,
+                hermes_root=resolved_hermes_root,
+            )
+        except (profile_skills.ProfileSkillsError, OSError, ValueError, KeyError):
+            role_records[role] = {
+                "profile": profile,
+                "skills": [
+                    {
+                        "name": name,
+                        "state": "invalid",
+                        "reason": "status_unavailable",
+                        "expected_digest": bundled.skills[name].digest,
+                        "installed_digest": None,
+                        "source_revision": bundled.source_revision,
+                        "profile_path": "",
+                        "managed": False,
+                        "preload": False,
+                    }
+                    for name in requirements
+                ],
+            }
+            continue
+        role_records[role] = {
+            "profile": profile,
+            "skills": [
+                _recommended_skill_status_record(
+                    statuses[name],
+                    preload=(
+                        statuses[name].state == "current"
+                        and _should_preload_recommended_skill(
+                            phase_slug,
+                            role,
+                            name,
+                            review_only=review_only,
+                        )
+                    ),
+                )
+                for name in requirements
+            ],
+        }
+    return {
+        "schema_version": 1,
+        "source_revision": bundled.source_revision,
+        "roles": role_records,
+    }
+
+
 def _launch_instruction_fingerprint(path: Path) -> dict[str, Any]:
     """Describe one launch instruction without following a linked final path."""
 
@@ -287,10 +458,29 @@ def _launch_instruction_fingerprint(path: Path) -> dict[str, Any]:
     }
 
 
-def launch_plan_version(config: Mapping[str, Any], phase_slug: str) -> str:
+def launch_plan_version(
+    config: Mapping[str, Any],
+    phase_slug: str,
+    *,
+    effective_phase: Mapping[str, Any] | None = None,
+    hermes_root: str | os.PathLike[str] | None = None,
+    recommended_skills_snapshot: Mapping[str, Any] | None = None,
+) -> str:
     """Fingerprint the exact phase configuration and instruction set shown to a user."""
 
-    phase = _phase_config(config, phase_slug)
+    phase = (
+        dict(effective_phase)
+        if effective_phase is not None
+        else _phase_config(config, phase_slug)
+    )
+    try:
+        resolved_hermes_root = (
+            Path(hermes_root)
+            if hermes_root is not None
+            else profile_skills.resolve_hermes_root()
+        )
+    except (profile_skills.ProfileSkillsError, OSError, ValueError):
+        resolved_hermes_root = None
     roles = {str(role) for role in phase.get("members", [])}
     roles.add("research_lead")
     agents = sorted(
@@ -322,10 +512,25 @@ def launch_plan_version(config: Mapping[str, Any], phase_slug: str) -> str:
                 hub_settings.get("allow_unattended_tools", False)
             ),
             "run_timeout_minutes": hub_settings.get("run_timeout_minutes", 120),
+            "hermes_root": (
+                str(resolved_hermes_root)
+                if resolved_hermes_root is not None
+                else None
+            ),
         },
         "instructions": [
             _launch_instruction_fingerprint(path) for path in instruction_paths
         ],
+        "recommended_skills": (
+            recommended_skills_snapshot
+            if recommended_skills_snapshot is not None
+            else _recommended_skills_snapshot(
+                config,
+                phase_slug,
+                effective_phase=phase,
+                hermes_root=resolved_hermes_root,
+            )
+        ),
     }
     canonical = json.dumps(
         payload,
@@ -520,6 +725,7 @@ def _run_process_with_bounded_output(
     max_output_bytes: int,
     merge_stderr: bool = False,
     output_writer: Callable[[bytes], None] | None = None,
+    environment: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a process while draining at most one combined output byte budget."""
 
@@ -541,6 +747,7 @@ def _run_process_with_bounded_output(
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT if merge_stderr else subprocess.PIPE,
+            env=(dict(environment) if environment is not None else None),
             **popen_options,
         )
     except OSError as exc:
@@ -719,15 +926,43 @@ def _run_process_with_bounded_output(
     return subprocess.CompletedProcess(command, return_code, stdout, stderr)
 
 
-def _run_command(arguments: Sequence[str], *, timeout: int = 20) -> subprocess.CompletedProcess[str]:
+def _run_command(
+    arguments: Sequence[str],
+    *,
+    timeout: int = 20,
+    environment: Mapping[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     try:
         return _run_process_with_bounded_output(
             arguments,
             timeout=timeout,
             max_output_bytes=MAX_COMMAND_OUTPUT_BYTES,
+            environment=environment,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise LaunchError(f"Could not run {' '.join(arguments[:3])}: {exc}") from exc
+
+
+def _hermes_environment(
+    hermes_root: str | os.PathLike[str] | None,
+    *,
+    base: Mapping[str, str] | None = None,
+) -> dict[str, str] | None:
+    """Copy an environment and bind Hermes to one resolved profile root."""
+
+    if hermes_root is None:
+        return dict(base) if base is not None else None
+    environment = dict(os.environ if base is None else base)
+    for key in list(environment):
+        if key.casefold() in {
+            "hermes_home",
+            "research_hub_hermes_root",
+        }:
+            environment.pop(key)
+    root = str(Path(hermes_root))
+    environment["HERMES_HOME"] = root
+    environment["RESEARCH_HUB_HERMES_ROOT"] = root
+    return environment
 
 
 def _write_text_atomic(path: Path, text: str) -> None:
@@ -940,9 +1175,230 @@ def _manifest_schema_version(manifest: Mapping[str, Any]) -> int:
     return value
 
 
+def _manifest_hermes_root(manifest: Mapping[str, Any]) -> Path | None:
+    """Return a sealed Hermes root, while retaining manifests created earlier."""
+
+    value = manifest.get("hermes_root")
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value or "\x00" in value:
+        raise LaunchError("Run manifest hermes_root must be a nonempty path")
+    root = Path(value)
+    normalized = Path(os.path.abspath(value))
+    if not root.is_absolute() or normalized != root or str(root) != value:
+        raise LaunchError("Run manifest hermes_root must be an absolute normalized path")
+    return root
+
+
+def _is_sha256_digest(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _validate_recommended_skills_snapshot(manifest: Mapping[str, Any]) -> None:
+    """Validate an optional read-only skill snapshot without consulting live state."""
+
+    snapshot = manifest.get("recommended_skills")
+    if snapshot is None:
+        return
+    if not isinstance(snapshot, Mapping) or set(snapshot) != {
+        "schema_version",
+        "source_revision",
+        "roles",
+    }:
+        raise LaunchError("Run manifest recommended_skills has an invalid structure")
+    if snapshot.get("schema_version") != 1:
+        raise LaunchError("Run manifest recommended_skills schema is unsupported")
+    source_revision = snapshot.get("source_revision")
+    if source_revision is not None and (
+        not isinstance(source_revision, str)
+        or len(source_revision) != 40
+        or any(character not in "0123456789abcdef" for character in source_revision)
+    ):
+        raise LaunchError("Run manifest recommended skill revision is invalid")
+    roles = snapshot.get("roles")
+    if not isinstance(roles, Mapping) or len(roles) > 32:
+        raise LaunchError("Run manifest recommended skill roles are invalid")
+    if source_revision is None and roles:
+        raise LaunchError("Unavailable recommended skills must not declare role state")
+    phase_slug = str(manifest.get("phase_slug", ""))
+    phase = manifest.get("phase")
+    review_only = bool(
+        isinstance(phase, Mapping) and phase.get("review_only", False)
+    )
+    status_states = {
+        "profile_missing",
+        "missing",
+        "current",
+        "modified",
+        "conflict",
+        "invalid",
+    }
+    skill_keys = {
+        "name",
+        "state",
+        "reason",
+        "expected_digest",
+        "installed_digest",
+        "source_revision",
+        "profile_path",
+        "managed",
+        "preload",
+    }
+    for role, role_record in roles.items():
+        if not isinstance(role, str) or not role:
+            raise LaunchError("Run manifest recommended skill role is invalid")
+        if not isinstance(role_record, Mapping) or set(role_record) != {
+            "profile",
+            "skills",
+        }:
+            raise LaunchError(
+                f"Run manifest recommended skills for {role} are invalid"
+            )
+        profile = role_record.get("profile")
+        skills = role_record.get("skills")
+        if not isinstance(profile, str) or not isinstance(skills, list):
+            raise LaunchError(
+                f"Run manifest recommended skills for {role} are invalid"
+            )
+        names: set[str] = set()
+        for record in skills:
+            if not isinstance(record, Mapping) or set(record) != skill_keys:
+                raise LaunchError(
+                    f"Run manifest recommended skill record for {role} is invalid"
+                )
+            name = record.get("name")
+            state = record.get("state")
+            reason = record.get("reason")
+            installed_digest = record.get("installed_digest")
+            if not isinstance(name, str) or not name or name in names:
+                raise LaunchError(
+                    f"Run manifest recommended skill name for {role} is invalid"
+                )
+            names.add(name)
+            if state not in status_states or not isinstance(reason, str) or not reason:
+                raise LaunchError(
+                    f"Run manifest recommended skill status for {role} is invalid"
+                )
+            if not _is_sha256_digest(record.get("expected_digest")):
+                raise LaunchError(
+                    f"Run manifest recommended skill digest for {role} is invalid"
+                )
+            if installed_digest is not None and not _is_sha256_digest(
+                installed_digest
+            ):
+                raise LaunchError(
+                    f"Run manifest installed skill digest for {role} is invalid"
+                )
+            if record.get("source_revision") != source_revision:
+                raise LaunchError(
+                    f"Run manifest recommended skill revision for {role} is invalid"
+                )
+            if not isinstance(record.get("profile_path"), str):
+                raise LaunchError(
+                    f"Run manifest recommended skill path for {role} is invalid"
+                )
+            if type(record.get("managed")) is not bool or type(
+                record.get("preload")
+            ) is not bool:
+                raise LaunchError(
+                    f"Run manifest recommended skill flags for {role} are invalid"
+                )
+            if record["preload"] and (
+                state != "current"
+                or installed_digest != record["expected_digest"]
+                or not _should_preload_recommended_skill(
+                    phase_slug,
+                    role,
+                    name,
+                    review_only=review_only,
+                )
+            ):
+                raise LaunchError(
+                    f"Run manifest cannot preload the recorded skill for {role}"
+                )
+
+
+def _verified_preloaded_skill_names(
+    manifest: Mapping[str, Any],
+    role: str,
+) -> list[str]:
+    """Recheck skills immediately before queue or chat start.
+
+    This check controls whether the command starts. It does not monitor the
+    profile after Hermes has accepted the queue or chat command.
+    """
+
+    snapshot = manifest.get("recommended_skills")
+    if snapshot is None:
+        return []
+    _validate_recommended_skills_snapshot(manifest)
+    roles = snapshot["roles"]
+    role_record = roles.get(role)
+    if not isinstance(role_record, Mapping):
+        return []
+    records = [record for record in role_record["skills"] if record["preload"]]
+    if not records:
+        return []
+    profile = str(role_record["profile"])
+    manifest_profiles = manifest.get("profiles")
+    if not isinstance(manifest_profiles, Mapping):
+        raise LaunchError("The run has no valid Hermes profile mapping")
+    mapped_profile = str(manifest_profiles.get(role, ""))
+    if not profile or profile != mapped_profile:
+        raise LaunchError(
+            f"The recorded Hermes profile for {role} no longer matches the run"
+        )
+    names = [str(record["name"]) for record in records]
+    try:
+        bundled = profile_skills.load_manifest()
+        requirements = set(
+            profile_skills.role_requirements(role, manifest=bundled)
+        )
+        if not set(names).issubset(requirements):
+            raise LaunchError(
+                f"The bundled skill recommendation for {role} changed after launch"
+            )
+        statuses = profile_skills.profile_skill_statuses(
+            profile,
+            names,
+            manifest=bundled,
+            hermes_root=_manifest_hermes_root(manifest),
+        )
+    except LaunchError:
+        raise
+    except (profile_skills.ProfileSkillsError, OSError, ValueError, KeyError) as exc:
+        raise LaunchError(
+            f"The recommended skill for {role} could not be verified before use"
+        ) from exc
+    for record in records:
+        name = str(record["name"])
+        live = _recommended_skill_status_record(statuses[name], preload=True)
+        stable_fields = (
+            "name",
+            "state",
+            "expected_digest",
+            "installed_digest",
+            "source_revision",
+            "profile_path",
+        )
+        if any(live[field] != record[field] for field in stable_fields):
+            raise LaunchError(
+                f"The installed {name} skill changed after this run was prepared. "
+                "Research Hub will not start this Hermes command. Review the "
+                "profile and start a new run."
+            )
+    return names
+
+
 def _validate_manifest_snapshot_schema(manifest: Mapping[str, Any]) -> None:
     """Require a complete v2 frozen-input inventory while retaining v1 reads."""
 
+    _manifest_hermes_root(manifest)
+    _validate_recommended_skills_snapshot(manifest)
     if _manifest_schema_version(manifest) == 1:
         return
     phase = manifest.get("phase")
@@ -1893,10 +2349,20 @@ def _board_slugs(payload: Any) -> set[str]:
     }
 
 
-def _ensure_board(hermes: str, board_slug: str, display_name: str) -> None:
+def _ensure_board(
+    hermes: str,
+    board_slug: str,
+    display_name: str,
+    *,
+    hermes_root: str | os.PathLike[str] | None = None,
+) -> None:
     """Create the project board, while treating CLI failures as real failures."""
 
-    listed = _run_command([hermes, "kanban", "boards", "list", "--json"])
+    environment = _hermes_environment(hermes_root)
+    listed = _run_command(
+        [hermes, "kanban", "boards", "list", "--json"],
+        environment=environment,
+    )
     if listed.returncode != 0:
         detail = (listed.stderr or listed.stdout).strip()
         raise LaunchError(f"Hermes could not list kanban boards: {detail or 'unknown error'}")
@@ -1907,15 +2373,18 @@ def _ensure_board(hermes: str, board_slug: str, display_name: str) -> None:
     if board_slug in slugs:
         return
 
-    created = _run_command([
-        hermes,
-        "kanban",
-        "boards",
-        "create",
-        board_slug,
-        "--name",
-        display_name,
-    ])
+    created = _run_command(
+        [
+            hermes,
+            "kanban",
+            "boards",
+            "create",
+            board_slug,
+            "--name",
+            display_name,
+        ],
+        environment=environment,
+    )
     if created.returncode != 0:
         detail = (created.stderr or created.stdout).strip()
         raise LaunchError(f"Hermes could not create kanban board {board_slug}: {detail or 'unknown error'}")
@@ -1926,7 +2395,9 @@ def _preflight(
     phase: Mapping[str, Any],
     profiles: Mapping[str, str],
     config: Mapping[str, Any],
-) -> str:
+    *,
+    hermes_root: str | os.PathLike[str] | None = None,
+) -> tuple[str, Path]:
     if not project_dir.is_dir():
         raise LaunchError(f"Project directory does not exist: {project_dir}")
     if not (project_dir / "setting.md").is_file():
@@ -1961,20 +2432,28 @@ def _preflight(
             "Hermes is not available on PATH. Install Hermes and start the configured "
             "profile gateways before launching a phase."
         )
-    hermes_home = Path(
-        os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))
-    ).expanduser()
-    missing_on_disk = sorted(
-        profile
-        for role, profile in profiles.items()
-        if role in required_roles
-        and not (hermes_home / "profiles" / profile / "config.yaml").is_file()
-    )
+    try:
+        resolved_hermes_root = (
+            profile_skills.profile_home("default", hermes_root=hermes_root)
+            if hermes_root is not None
+            else profile_skills.resolve_hermes_root()
+        )
+        missing_on_disk = sorted({
+            profile
+            for role, profile in profiles.items()
+            if role in required_roles
+            and profile_skills.configured_profile_home(
+                profile,
+                hermes_root=resolved_hermes_root,
+            ) is None
+        })
+    except (profile_skills.ProfileSkillsError, OSError, ValueError) as exc:
+        raise LaunchError("Hermes profile locations could not be resolved safely") from exc
     if missing_on_disk:
         raise LaunchError(
             "Configured Hermes profiles do not exist: " + ", ".join(missing_on_disk)
         )
-    return hermes
+    return hermes, resolved_hermes_root
 
 
 def _ancestor_slugs(phase_slug: str, dependencies: Mapping[str, Sequence[str]]) -> set[str]:
@@ -4614,6 +5093,7 @@ When the report exists, complete this kanban task with a concise handoff summary
     idempotency_key = f"research-hub:{run_id}:{round_n}:{role}"
     if task_kind != "standard":
         idempotency_key += f":{task_kind}"
+    preloaded_skills = _verified_preloaded_skill_names(manifest, role)
     command = [
         str(manifest["hermes_executable"]),
         "kanban",
@@ -4633,10 +5113,16 @@ When the report exists, complete this kanban task with a concise handoff summary
         f"{int(manifest['timeout_minutes'])}m",
         "--max-retries",
         "1",
-        "--json",
     ]
+    for skill_name in preloaded_skills:
+        command.extend(("--skill", skill_name))
+    command.append("--json")
     _guard_command_length(command)
-    created = _run_command(command, timeout=30)
+    created = _run_command(
+        command,
+        timeout=30,
+        environment=_hermes_environment(_manifest_hermes_root(manifest)),
+    )
     if created.returncode != 0:
         detail = (created.stderr or created.stdout).strip()
         raise LaunchError(f"Hermes task creation failed for {role}: {detail}")
@@ -4687,15 +5173,18 @@ When the report exists, complete this kanban task with a concise handoff summary
 
 
 def _show_task(manifest: Mapping[str, Any], task_id: str) -> dict[str, Any]:
-    shown = _run_command([
-        str(manifest["hermes_executable"]),
-        "kanban",
-        "--board",
-        str(manifest["board_slug"]),
-        "show",
-        task_id,
-        "--json",
-    ])
+    shown = _run_command(
+        [
+            str(manifest["hermes_executable"]),
+            "kanban",
+            "--board",
+            str(manifest["board_slug"]),
+            "show",
+            task_id,
+            "--json",
+        ],
+        environment=_hermes_environment(_manifest_hermes_root(manifest)),
+    )
     if shown.returncode != 0:
         detail = (shown.stderr or shown.stdout).strip()
         raise LaunchError(f"Could not verify Hermes task {task_id}: {detail}")
@@ -4720,26 +5209,32 @@ def _archive_external_task(
         return None
     if status not in {"blocked", ""}:
         try:
-            _run_command([
+            _run_command(
+                [
+                    str(manifest["hermes_executable"]),
+                    "kanban",
+                    "--board",
+                    str(manifest["board_slug"]),
+                    "block",
+                    task_id,
+                    "Research Hub stopped this user-controlled run.",
+                ],
+                environment=_hermes_environment(_manifest_hermes_root(manifest)),
+            )
+        except Exception:
+            pass
+    try:
+        archived = _run_command(
+            [
                 str(manifest["hermes_executable"]),
                 "kanban",
                 "--board",
                 str(manifest["board_slug"]),
-                "block",
+                "archive",
                 task_id,
-                "Research Hub stopped this user-controlled run.",
-            ])
-        except Exception:
-            pass
-    try:
-        archived = _run_command([
-            str(manifest["hermes_executable"]),
-            "kanban",
-            "--board",
-            str(manifest["board_slug"]),
-            "archive",
-            task_id,
-        ])
+            ],
+            environment=_hermes_environment(_manifest_hermes_root(manifest)),
+        )
     except Exception as exc:
         return f"Could not archive Hermes task {task_id}: {exc}"
     if archived.returncode != 0:
@@ -5426,6 +5921,7 @@ def _run_logged_command(
     project_dir: Path,
     phase_slug: str,
     run_id: str,
+    environment: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run Hermes while keeping the persistent run log within its byte cap."""
 
@@ -5452,6 +5948,7 @@ def _run_logged_command(
                 output_writer=lambda payload: _write_worker_output(
                     payload, descriptor=descriptor
                 ),
+                environment=environment,
             )
         except _ProcessOutputLimitExceeded as exc:
             _write_worker_output(RUN_LOG_LIMIT_MARKER, descriptor=descriptor)
@@ -5602,16 +6099,8 @@ def _launch_run_locked(
 
     project_dir = Path(project_dir).resolve()
     config = _load_hub_config()
-    phase = _phase_config(config, phase_slug)
-    current_phase_plan_version = launch_plan_version(config, phase_slug)
-    reviewed_phase_plan_version = str(expected_phase_plan_version).strip().lower()
-    if reviewed_phase_plan_version and not hmac.compare_digest(
-        reviewed_phase_plan_version, current_phase_plan_version
-    ):
-        raise LaunchError(
-            "The phase plan or scientific instructions changed since this page was "
-            "shown. Reload the phase and review the run again."
-        )
+    configured_phase = _phase_config(config, phase_slug)
+    phase = dict(configured_phase)
     review_source: tuple[Path, str, dict[str, Any]] | None = None
     theory_audit_source: dict[str, Any] | None = None
     selected_theory_plan = str(theory_plan).strip()
@@ -5621,7 +6110,7 @@ def _launch_run_locked(
         review_source = _resolve_paper_review_source(
             project_dir, review_target, review_target_sha256
         )
-        phase = _paper_review_only_phase(phase)
+        phase = paper_review_only_phase(phase)
     elif review_target_sha256:
         raise LaunchError("A review target hash was supplied without a review target")
     if phase_slug == THEORETICAL_ANALYSIS_PHASE:
@@ -5651,9 +6140,41 @@ def _launch_run_locked(
         phase = _phase_for_theory_plan(phase, selected_theory_plan)
     elif proof_audit or selected_theory_plan or proof_audit_source_run_id:
         raise LaunchError("Phase 03 run-plan options are only valid in Phase 03")
+    try:
+        hermes_root = profile_skills.resolve_hermes_root()
+    except (profile_skills.ProfileSkillsError, OSError, ValueError) as exc:
+        raise LaunchError("Hermes profile locations could not be resolved safely") from exc
+    plan_phase = phase if review_source is not None else configured_phase
+    initial_recommended_skills = _recommended_skills_snapshot(
+        config,
+        phase_slug,
+        effective_phase=plan_phase,
+        hermes_root=hermes_root,
+    )
+    current_phase_plan_version = launch_plan_version(
+        config,
+        phase_slug,
+        effective_phase=plan_phase,
+        hermes_root=hermes_root,
+        recommended_skills_snapshot=initial_recommended_skills,
+    )
+    reviewed_phase_plan_version = str(expected_phase_plan_version).strip().lower()
+    if reviewed_phase_plan_version and not hmac.compare_digest(
+        reviewed_phase_plan_version, current_phase_plan_version
+    ):
+        raise LaunchError(
+            "The phase plan or scientific instructions changed since this page was "
+            "shown. Reload the phase and review the run again."
+        )
     profiles = _role_profiles(config)
     rounds = _round_count(phase, rounds_requested)
-    hermes = _preflight(project_dir, phase, profiles, config)
+    hermes, hermes_root = _preflight(
+        project_dir,
+        phase,
+        profiles,
+        config,
+        hermes_root=hermes_root,
+    )
     dependencies = _dependencies(config)
 
     state = project_state.load(project_dir)
@@ -5670,7 +6191,12 @@ def _launch_run_locked(
 
     board_slug = _workspace_board_slug(project_dir, project_id)
     display_name = str(state.get("project", {}).get("name") or board_slug)
-    _ensure_board(hermes, board_slug, display_name)
+    _ensure_board(
+        hermes,
+        board_slug,
+        display_name,
+        hermes_root=hermes_root,
+    )
 
     report = project_state.prerequisite_report(project_dir, phase_slug, dependencies)
     current_prerequisite_version = project_state.decision_report_version(
@@ -5854,7 +6380,19 @@ def _launch_run_locked(
         timeout_minutes = int(config.get("hub", {}).get("run_timeout_minutes", 120))
         if timeout_minutes < 1:
             raise LaunchError("hub.run_timeout_minutes must be a positive integer")
-        if launch_plan_version(config, phase_slug) != current_phase_plan_version:
+        recommended_skills = _recommended_skills_snapshot(
+            config,
+            phase_slug,
+            effective_phase=plan_phase,
+            hermes_root=hermes_root,
+        )
+        if launch_plan_version(
+            config,
+            phase_slug,
+            effective_phase=plan_phase,
+            hermes_root=hermes_root,
+            recommended_skills_snapshot=recommended_skills,
+        ) != current_phase_plan_version:
             raise LaunchError(
                 "The phase instructions changed while the run inputs were being "
                 "frozen. Reload the phase and launch again."
@@ -5870,6 +6408,7 @@ def _launch_run_locked(
             "profiles": profiles,
             "board_slug": board_slug,
             "hermes_executable": hermes,
+            "hermes_root": str(hermes_root),
             "lead_profile": profiles["research_lead"],
             "timeout_minutes": timeout_minutes,
             "allow_unattended_tools": True,
@@ -5884,6 +6423,7 @@ def _launch_run_locked(
             "paper_review": paper_review,
             "submission_outputs": submission_outputs,
             "method_selection": method_selection,
+            "recommended_skills": recommended_skills,
             "phase_plan_version": current_phase_plan_version,
             "prerequisite_report_version": current_prerequisite_version,
         }
@@ -5925,6 +6465,10 @@ def _launch_run_locked(
         environment = os.environ.copy()
         environment["HERMES_KANBAN_BOARD"] = board_slug
         environment["HERMES_KANBAN_WORKSPACE"] = str(project_dir)
+        environment = _hermes_environment(
+            hermes_root,
+            base=environment,
+        )
         popen_options: dict[str, Any] = {}
         if os.name == "nt":
             popen_options["creationflags"] = (
@@ -6083,22 +6627,27 @@ def _worker(
         f"Read the complete run instructions from {prompt_file}. Verify that you are "
         f"working on run {run_id}, follow the file exactly, and do not start any other phase."
     )
-    command = [
-        str(manifest["hermes_executable"]),
-        "--profile",
-        str(manifest["lead_profile"]),
-        "chat",
-        "-q",
-        bootstrap,
-        "--yolo",
-    ]
     try:
+        preloaded_skills = _verified_preloaded_skill_names(
+            manifest,
+            "research_lead",
+        )
+        command = [
+            str(manifest["hermes_executable"]),
+            "--profile",
+            str(manifest["lead_profile"]),
+            "chat",
+        ]
+        for skill_name in preloaded_skills:
+            command.extend(("--skills", skill_name))
+        command.extend(("-q", bootstrap, "--yolo"))
         result = _run_logged_command(
             command,
             timeout=int(manifest["timeout_minutes"]) * 60,
             project_dir=project_path,
             phase_slug=phase_slug,
             run_id=run_id,
+            environment=_hermes_environment(_manifest_hermes_root(manifest)),
         )
         return_code = int(result.returncode)
     except subprocess.TimeoutExpired:
@@ -6339,14 +6888,17 @@ def _stop_external_tasks(
         warnings.append(f"Could not read recorded task IDs: {exc}")
 
     try:
-        listed = _run_command([
-            str(manifest["hermes_executable"]),
-            "kanban",
-            "--board",
-            str(manifest["board_slug"]),
-            "list",
-            "--json",
-        ])
+        listed = _run_command(
+            [
+                str(manifest["hermes_executable"]),
+                "kanban",
+                "--board",
+                str(manifest["board_slug"]),
+                "list",
+                "--json",
+            ],
+            environment=_hermes_environment(_manifest_hermes_root(manifest)),
+        )
     except Exception as exc:
         warnings.append(f"Could not list run-scoped Hermes tasks: {exc}")
         listed = None

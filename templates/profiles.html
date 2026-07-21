@@ -4,7 +4,7 @@
 <header class="project-header compact-header">
   <p class="eyebrow">Runtime roles</p>
   <h1>Agent profiles</h1>
-  <p class="project-meta">Each role maps to an independent Hermes profile with its own model configuration and memory.</p>
+  <p class="project-meta">Each role maps to a Hermes profile with its own model configuration, memory, and optional recommended research guidance.</p>
 </header>
 
 {% if agents %}
@@ -15,5 +15,5 @@
 <div class="inline-empty"><strong>No agent profiles found.</strong><span>Configure Hermes profiles before launching research work.</span></div>
 {% endif %}
 
-<p class="page-note">Runtime model settings are read from each profile's <code>config.yaml</code>. Reassigning a role changes future runs only.</p>
+<p class="page-note">Status checks are read-only. Installing a recommended skill changes only the profile named on that role card. Reassigning a role changes future runs and does not install, remove, or move skills.</p>
 {% endblock %}

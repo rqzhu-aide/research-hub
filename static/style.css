@@ -674,7 +674,7 @@ progress::-moz-progress-bar { background: var(--running); }
 .config-preview, .memory-view { max-width: 100%; overflow: auto; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--sidebar); color: var(--text-soft); font-size: .75rem; line-height: 1.6; white-space: pre-wrap; }
 .memory-view { min-height: 400px; margin-bottom: 16px; }
 
-.profiles-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px; }
+.profiles-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 15px; }
 .profile-card { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); }
 .profile-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .profile-card-head h2 { margin: 0; }
@@ -684,6 +684,7 @@ progress::-moz-progress-bar { background: var(--running); }
 .profile-meta dd { min-width: 0; margin: 0; color: var(--text-soft); }
 .profile-select-form { display: flex; align-items: center; gap: 8px; }
 .profile-select { padding: 6px 8px; }
+.profile-rule-note { margin: 7px 0 0; color: var(--muted); font-size: .7rem; line-height: 1.45; }
 .profile-spin { color: var(--faint); font-size: .7rem; }
 .htmx-indicator { display: none; }
 .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display: inline; }
@@ -692,6 +693,24 @@ progress::-moz-progress-bar { background: var(--running); }
 .view-link { margin-left: 7px; font-size: .75rem; }
 .fallback-chain { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 15px; padding-top: 13px; border-top: 1px solid var(--line); }
 .fallback-label { color: var(--faint); font-family: "IBM Plex Mono", monospace; font-size: .64rem; text-transform: uppercase; }
+.profile-skills { margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--line); }
+.profile-skills-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.profile-skills-head h3 { margin: 0; font-size: .92rem; }
+.profile-skill-row { padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--sidebar); }
+.profile-skill-row + .profile-skill-row { margin-top: 9px; }
+.profile-skill-title { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.profile-skill-title code { color: var(--accent-bright); font-size: .74rem; }
+.profile-skill-row > p { margin: 8px 0 0; color: var(--text-soft); font-size: .76rem; line-height: 1.5; }
+.profile-skill-row .skill-detail { color: var(--muted); }
+.skill-status { padding: 3px 7px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--muted); font-family: "IBM Plex Mono", monospace; font-size: .62rem; white-space: nowrap; }
+.skill-status-current { border-color: rgba(102, 216, 194, .42); background: var(--approved-soft); color: var(--approved); }
+.skill-status-missing, .skill-status-profile_missing { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent-bright); }
+.skill-status-modified, .skill-status-conflict { border-color: rgba(244, 196, 109, .42); background: var(--review-soft); color: var(--review); }
+.skill-status-invalid, .skill-status-error { border-color: rgba(255, 129, 137, .42); background: var(--danger-soft); color: var(--danger); }
+.skill-action-form { margin-top: 11px; }
+.profile-skill-row .skill-network-note { padding-left: 9px; border-left: 2px solid var(--review); color: var(--muted); }
+.profile-skill-row .skill-source { color: var(--faint); font-size: .67rem; }
+.skill-error { margin: 8px 0 0; color: var(--danger); font-size: .76rem; line-height: 1.5; }
 .page-note { max-width: 850px; margin-top: 18px; color: var(--muted); }
 .state-text { font-size: .78rem; }
 

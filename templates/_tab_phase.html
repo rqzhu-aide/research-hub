@@ -624,7 +624,8 @@
             data-draft-key="project-{{ project.id }}-phase-{{ pc.slug }}-rerun-{{ latest_id }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="project_identity" value="{{ project_identity }}">
-        <input type="hidden" name="phase_plan_version" value="{{ pd.phase_plan_version | default('') }}">
+        {% set repeat_plan_version = pd.review_phase_plan_version if latest.rerun_config and latest.rerun_config.kind == 'paper_review_only' else pd.phase_plan_version %}
+        <input type="hidden" name="phase_plan_version" value="{{ repeat_plan_version | default('') }}">
         <input type="hidden" name="prerequisite_report_version" value="{{ pd.prerequisite_report_version }}">
         <input type="hidden" name="rerun_from" value="{{ latest_id }}">
         {% if latest.status == 'awaiting_review' %}
@@ -823,7 +824,7 @@
                     data-confirm="Start an independent review of this exact manuscript?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="project_identity" value="{{ project_identity }}">
-                <input type="hidden" name="phase_plan_version" value="{{ pd.phase_plan_version | default('') }}">
+                <input type="hidden" name="phase_plan_version" value="{{ pd.review_phase_plan_version | default('') }}">
                 <input type="hidden" name="prerequisite_report_version" value="{{ pd.prerequisite_report_version }}">
                 <input type="hidden" name="review_target" value="{{ run.post_review_target.path }}">
                 <input type="hidden" name="review_target_sha256" value="{{ run.post_review_target.sha256 }}">

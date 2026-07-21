@@ -1,5 +1,5 @@
 # Research Hub Configuration
-# User defines 3-4 Hermes profiles here. The hub orchestrates workflows across them.
+# User maps one Hermes profile to each research role here.
 
 hub:
   name: "My Research Hub"
@@ -12,9 +12,10 @@ hub:
   allow_unattended_tools: true
 
 # Define your agent profiles here (must already exist in Hermes)
-# Role id == profile name (so role references in phases map directly to Hermes profiles)
+# Stable role IDs map phase work to existing Hermes profile names.
 # NOTE: model/provider live in each profile's own config.yaml, not here.
-#       The profiles page reads them live from ~/.hermes/profiles/<name>/config.yaml
+#       The Profiles page reads them from the active Hermes profile root.
+#       Set RESEARCH_HUB_HERMES_ROOT to override Hermes' platform default.
 agents:
 - id: "research_lead"
   profile: "research_lead"

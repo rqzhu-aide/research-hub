@@ -35,12 +35,16 @@ MAX_ROLE_SOUL_BYTES = 100 * 1024
 MAX_CONFIG_BYTES = 2 * 1024 * 1024
 PROJECT_SLUG_MAX_LENGTH = 64
 REQUIRED_LEAD_AGENT_ID = "research_lead"
+INDEPENDENT_REVIEWER_AGENT_ID = "paper_reviewer"
 
 _schema_lock = threading.RLock()
 _operation_thread_lock = threading.RLock()
 
 _AGENT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
-_PROFILE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+_PROFILE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+_HERMES_RESERVED_NAMED_PROFILES = frozenset(
+    {"hermes", "test", "tmp", "root", "sudo"}
+)
 _PHASE_SLUG_RE = re.compile(r"^[0-9]{2}-[a-z0-9]+(?:-[a-z0-9]+)*$")
 _ALLOWED_PATTERNS = {"parallel", "sequential", "debate"}
 
@@ -300,6 +304,7 @@ def validate_config(cfg: object, *, config_root: Optional[Path] = None) -> dict:
     if not isinstance(agents, list) or not agents:
         raise ConfigurationError("agents must be a non-empty list")
     agent_ids: set[str] = set()
+    profile_by_agent: dict[str, str] = {}
     for index, agent in enumerate(agents):
         field = f"agents[{index}]"
         if not isinstance(agent, dict):
@@ -309,17 +314,34 @@ def validate_config(cfg: object, *, config_root: Optional[Path] = None) -> dict:
         _require_nonempty_string(agent.get("name"), f"{field}.name")
         if not _AGENT_ID_RE.fullmatch(agent_id):
             raise ConfigurationError(f"{field}.id is not a safe agent identifier")
-        if not _PROFILE_RE.fullmatch(profile):
+        if (
+            not _PROFILE_RE.fullmatch(profile)
+            or profile in _HERMES_RESERVED_NAMED_PROFILES
+        ):
             raise ConfigurationError(f"{field}.profile is not a safe Hermes profile name")
         if agent_id in agent_ids:
             raise ConfigurationError(f"duplicate agent id: {agent_id}")
         agent_ids.add(agent_id)
+        profile_by_agent[agent_id] = profile
 
     if REQUIRED_LEAD_AGENT_ID not in agent_ids:
         raise ConfigurationError(
             f"agents must include required id {REQUIRED_LEAD_AGENT_ID!r}; "
             "the launcher uses this agent as the research lead"
         )
+    reviewer_profile = profile_by_agent.get(INDEPENDENT_REVIEWER_AGENT_ID)
+    if reviewer_profile is not None:
+        shared_with = sorted(
+            agent_id
+            for agent_id, profile in profile_by_agent.items()
+            if agent_id != INDEPENDENT_REVIEWER_AGENT_ID
+            and profile == reviewer_profile
+        )
+        if shared_with:
+            raise ConfigurationError(
+                "agents.paper_reviewer must use a distinct Hermes profile; "
+                "it currently shares one with " + ", ".join(shared_with)
+            )
 
     soul_root = (config_root or CONFIG_PATH.parent) / "config" / "souls"
     for agent_id in sorted(agent_ids):

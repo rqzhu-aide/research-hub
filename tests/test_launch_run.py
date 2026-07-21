@@ -279,6 +279,341 @@ def test_launch_plan_version_tracks_phase_config_and_instructions(
     )
 
 
+def test_launch_plan_tracks_recommended_skill_status_without_requiring_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundled = launcher.profile_skills.load_manifest()
+    state = {"value": "missing"}
+
+    def statuses(profile, names, **_kwargs):
+        return {
+            name: launcher.profile_skills.SkillStatus(
+                profile=profile,
+                profile_path=f"/profiles/{profile}",
+                skill=name,
+                state=state["value"],
+                reason=(
+                    "current_managed"
+                    if state["value"] == "current"
+                    else "missing"
+                ),
+                expected_digest=bundled.skills[name].digest,
+                installed_digest=(
+                    bundled.skills[name].digest
+                    if state["value"] == "current"
+                    else None
+                ),
+                source_revision=bundled.source_revision,
+                managed=state["value"] == "current",
+            )
+            for name in names
+        }
+
+    monkeypatch.setattr(
+        launcher.profile_skills,
+        "profile_skill_statuses",
+        statuses,
+    )
+    config = {
+        "hub": {},
+        "agents": [
+            {"id": "research_lead", "profile": "lead-profile"},
+            {"id": "theorist", "profile": "theory-profile"},
+        ],
+        "phases": [{
+            "slug": launcher.PAPER_WRITING_PHASE,
+            "members": ["theorist"],
+        }],
+    }
+
+    missing_snapshot = launcher._recommended_skills_snapshot(
+        config,
+        launcher.PAPER_WRITING_PHASE,
+    )
+    missing_version = launcher.launch_plan_version(
+        config,
+        launcher.PAPER_WRITING_PHASE,
+    )
+    assert missing_snapshot["roles"]["theorist"]["skills"][0]["state"] == "missing"
+    assert missing_snapshot["roles"]["theorist"]["skills"][0]["preload"] is False
+
+    state["value"] = "current"
+    current_snapshot = launcher._recommended_skills_snapshot(
+        config,
+        launcher.PAPER_WRITING_PHASE,
+    )
+    current_version = launcher.launch_plan_version(
+        config,
+        launcher.PAPER_WRITING_PHASE,
+    )
+    assert current_snapshot["roles"]["theorist"]["skills"][0]["preload"] is True
+    assert current_version != missing_version
+
+    monkeypatch.setattr(
+        launcher,
+        "_recommended_skills_snapshot",
+        lambda *_args, **_kwargs: pytest.fail(
+            "a supplied skill snapshot must be used without rereading live state"
+        ),
+    )
+    assert launcher.launch_plan_version(
+        config,
+        launcher.PAPER_WRITING_PHASE,
+        recommended_skills_snapshot=current_snapshot,
+    ) == current_version
+
+
+def test_preloaded_skill_is_rechecked_and_drift_fails_safely(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundled = launcher.profile_skills.load_manifest()
+    state = {"value": "current"}
+
+    def statuses(profile, names, **_kwargs):
+        return {
+            name: launcher.profile_skills.SkillStatus(
+                profile=profile,
+                profile_path=f"/profiles/{profile}",
+                skill=name,
+                state=state["value"],
+                reason=(
+                    "current_managed"
+                    if state["value"] == "current"
+                    else "missing"
+                ),
+                expected_digest=bundled.skills[name].digest,
+                installed_digest=(
+                    bundled.skills[name].digest
+                    if state["value"] == "current"
+                    else None
+                ),
+                source_revision=bundled.source_revision,
+                managed=state["value"] == "current",
+            )
+            for name in names
+        }
+
+    monkeypatch.setattr(
+        launcher.profile_skills,
+        "profile_skill_statuses",
+        statuses,
+    )
+    config = {
+        "agents": [
+            {"id": "research_lead", "profile": "lead-profile"},
+            {"id": "paper_reviewer", "profile": "review-profile"},
+        ],
+        "phases": [{
+            "slug": launcher.THEORETICAL_ANALYSIS_PHASE,
+            "members": ["paper_reviewer"],
+        }],
+    }
+    snapshot = launcher._recommended_skills_snapshot(
+        config,
+        launcher.THEORETICAL_ANALYSIS_PHASE,
+    )
+    assert set(snapshot["roles"]) == {"paper_reviewer"}
+    assert snapshot["roles"]["paper_reviewer"]["skills"][0]["preload"] is True
+    manifest = {
+        "phase_slug": launcher.THEORETICAL_ANALYSIS_PHASE,
+        "profiles": {
+            "research_lead": "lead-profile",
+            "paper_reviewer": "review-profile",
+        },
+        "recommended_skills": snapshot,
+    }
+
+    assert launcher._verified_preloaded_skill_names(
+        manifest,
+        "paper_reviewer",
+    ) == [launcher.PAPER_REVIEWER_SKILL]
+
+    state["value"] = "missing"
+    with pytest.raises(launcher.LaunchError, match="changed after this run"):
+        launcher._verified_preloaded_skill_names(manifest, "paper_reviewer")
+
+    assert launcher._verified_preloaded_skill_names({}, "paper_reviewer") == []
+
+
+def test_review_only_plan_tracks_only_the_reviewer_skill(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundled = launcher.profile_skills.load_manifest()
+    states = {
+        launcher.PAPER_WRITING_SKILL: "missing",
+        launcher.PAPER_REVIEWER_SKILL: "current",
+    }
+
+    def statuses(profile, names, **_kwargs):
+        return {
+            name: launcher.profile_skills.SkillStatus(
+                profile=profile,
+                profile_path=str(tmp_path / "profiles" / profile),
+                skill=name,
+                state=states[name],
+                reason=("current_managed" if states[name] == "current" else "missing"),
+                expected_digest=bundled.skills[name].digest,
+                installed_digest=(
+                    bundled.skills[name].digest
+                    if states[name] == "current"
+                    else None
+                ),
+                source_revision=bundled.source_revision,
+                managed=states[name] == "current",
+            )
+            for name in names
+        }
+
+    monkeypatch.setattr(
+        launcher.profile_skills,
+        "profile_skill_statuses",
+        statuses,
+    )
+    phase = {
+        "slug": launcher.PAPER_WRITING_PHASE,
+        "members": [
+            "research_lead",
+            "theorist",
+            "data_scientist",
+            "paper_reviewer",
+        ],
+    }
+    config = {
+        "hub": {},
+        "agents": [
+            {"id": "research_lead", "profile": "lead-profile"},
+            {"id": "theorist", "profile": "theory-profile"},
+            {"id": "data_scientist", "profile": "data-profile"},
+            {"id": "paper_reviewer", "profile": "review-profile"},
+        ],
+        "phases": [phase],
+    }
+    review_phase = launcher.paper_review_only_phase(phase)
+    hermes_root = tmp_path / "hermes"
+
+    snapshot = launcher._recommended_skills_snapshot(
+        config,
+        launcher.PAPER_WRITING_PHASE,
+        effective_phase=review_phase,
+        hermes_root=hermes_root,
+    )
+    initial = launcher.launch_plan_version(
+        config,
+        launcher.PAPER_WRITING_PHASE,
+        effective_phase=review_phase,
+        hermes_root=hermes_root,
+        recommended_skills_snapshot=snapshot,
+    )
+    assert set(snapshot["roles"]) == {"paper_reviewer"}
+    assert snapshot["roles"]["paper_reviewer"]["skills"][0]["preload"] is True
+
+    states[launcher.PAPER_WRITING_SKILL] = "current"
+    unchanged = launcher.launch_plan_version(
+        config,
+        launcher.PAPER_WRITING_PHASE,
+        effective_phase=review_phase,
+        hermes_root=hermes_root,
+    )
+    assert unchanged == initial
+
+    states[launcher.PAPER_REVIEWER_SKILL] = "missing"
+    changed = launcher.launch_plan_version(
+        config,
+        launcher.PAPER_WRITING_PHASE,
+        effective_phase=review_phase,
+        hermes_root=hermes_root,
+    )
+    assert changed != initial
+
+
+def test_preflight_uses_cross_platform_profile_home_resolution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "setting.md").write_text("Research question\n", encoding="utf-8")
+    phase_root = tmp_path / "phases"
+    phase_dir = phase_root / "test-phase"
+    soul_root = tmp_path / "souls"
+    phase_dir.mkdir(parents=True)
+    soul_root.mkdir()
+    for name in ("_phase.md", "_lead.md", "research_lead.md", "theorist.md"):
+        (phase_dir / name).write_text("instructions\n", encoding="utf-8")
+    for role in ("research_lead", "theorist"):
+        (soul_root / f"{role}.md").write_text("role\n", encoding="utf-8")
+
+    hermes_root = tmp_path / "native-hermes-root"
+    (hermes_root / "profiles" / "theory-profile").mkdir(parents=True)
+    (hermes_root / "config.yaml").write_text("model: lead\n", encoding="utf-8")
+    (hermes_root / "profiles" / "theory-profile" / "config.yaml").write_text(
+        "model: theory\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(launcher, "PHASES_DIR", phase_root)
+    monkeypatch.setattr(launcher, "SOULS_DIR", soul_root)
+    monkeypatch.setattr(launcher.shutil, "which", lambda _name: "hermes")
+    monkeypatch.setattr(
+        launcher.profile_skills,
+        "resolve_hermes_root",
+        lambda: hermes_root,
+    )
+
+    hermes, resolved_root = launcher._preflight(
+        project,
+        {"slug": "test-phase", "members": ["theorist"]},
+        {"research_lead": "default", "theorist": "theory-profile"},
+        {"hub": {"allow_unattended_tools": True}},
+    )
+
+    assert hermes == "hermes"
+    assert resolved_root == hermes_root
+
+
+def test_board_setup_binds_hermes_root_without_mutating_parent_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hermes_root = tmp_path / "hermes-root"
+    observed: list[dict[str, str]] = []
+
+    def run_command(_arguments, **kwargs):
+        observed.append(dict(kwargs["environment"]))
+        return _completed({"boards": [{"slug": "project-board"}]})
+
+    monkeypatch.setenv("HERMES_HOME", "parent-home")
+    monkeypatch.setenv("RESEARCH_HUB_HERMES_ROOT", "parent-root")
+    monkeypatch.setattr(launcher, "_run_command", run_command)
+
+    launcher._ensure_board(
+        "hermes",
+        "project-board",
+        "Project",
+        hermes_root=hermes_root,
+    )
+
+    assert len(observed) == 1
+    assert observed[0]["HERMES_HOME"] == str(hermes_root)
+    assert observed[0]["RESEARCH_HUB_HERMES_ROOT"] == str(hermes_root)
+    assert launcher.os.environ["HERMES_HOME"] == "parent-home"
+    assert launcher.os.environ["RESEARCH_HUB_HERMES_ROOT"] == "parent-root"
+
+
+def test_manifest_hermes_root_is_optional_for_old_runs_and_strict_when_present(
+    tmp_path: Path,
+) -> None:
+    assert launcher._manifest_hermes_root({}) is None
+    root = tmp_path / "hermes-root"
+    assert launcher._manifest_hermes_root({"hermes_root": str(root)}) == root
+    with pytest.raises(launcher.LaunchError, match="absolute normalized path"):
+        launcher._manifest_hermes_root({"hermes_root": "relative/hermes"})
+    with pytest.raises(launcher.LaunchError, match="absolute normalized path"):
+        launcher._manifest_hermes_root(
+            {"hermes_root": str(tmp_path / "nested" / ".." / "hermes-root")}
+        )
+
+
 def test_locked_launch_rejects_a_stale_phase_plan_version(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -286,7 +621,11 @@ def test_locked_launch_rejects_a_stale_phase_plan_version(
     phase_slug = "01-literature-review"
     config = {"phases": [{"slug": phase_slug}]}
     monkeypatch.setattr(launcher, "_load_hub_config", lambda: config)
-    monkeypatch.setattr(launcher, "launch_plan_version", lambda *_args: "a" * 64)
+    monkeypatch.setattr(
+        launcher,
+        "launch_plan_version",
+        lambda *_args, **_kwargs: "a" * 64,
+    )
 
     with pytest.raises(launcher.LaunchError, match="instructions changed"):
         launcher._launch_run_locked(
@@ -1020,7 +1359,7 @@ def test_phase_six_plan_variants_separate_review_substages() -> None:
 
     assert launcher._paper_reviewer_substage(manifest, 4) == "independent"
     assert launcher._paper_reviewer_substage(manifest, 5) == "contextual"
-    review_only = launcher._paper_review_only_phase(full)
+    review_only = launcher.paper_review_only_phase(full)
     assert review_only["members"] == ["paper_reviewer"]
     assert [stage["role"] for stage in review_only["stages"]] == [
         "paper_reviewer",
@@ -1298,6 +1637,15 @@ def test_phase_six_initial_reviewer_brief_excludes_internal_context(
         return _completed({"task": {"id": "review-task"}})
 
     monkeypatch.setattr(launcher, "_run_command", create_review_task)
+    monkeypatch.setattr(
+        launcher,
+        "_verified_preloaded_skill_names",
+        lambda _manifest, role: (
+            [launcher.PAPER_REVIEWER_SKILL]
+            if role == "paper_reviewer"
+            else []
+        ),
+    )
 
     launcher._dispatch_task(
         project,
@@ -1318,6 +1666,9 @@ def test_phase_six_initial_reviewer_brief_excludes_internal_context(
     workspace_index = commands[0].index("--workspace") + 1
     assert commands[0][workspace_index] == f"dir:{bundle_root}"
     assert commands[0][workspace_index] != f"dir:{project}"
+    assert commands[0][commands[0].index("--skill") + 1] == (
+        launcher.PAPER_REVIEWER_SKILL
+    )
     assert "sealed-context reviewer task" in brief
     assert "`task.md`, `bundle.json`" in brief
     assert "Reader-visible text." not in brief
@@ -2200,6 +2551,7 @@ def test_dispatch_task_builds_full_context_and_records_exact_task_id(
             "run_number": 1,
         "profiles": {"theorist": "theory-profile"},
         "hermes_executable": "hermes",
+        "hermes_root": str(tmp_path / "hermes-root"),
         "board_slug": "project-board",
         "timeout_minutes": 45,
         "user_feedback": "Prioritize robustness over novelty.",
@@ -2263,6 +2615,7 @@ def test_dispatch_task_builds_full_context_and_records_exact_task_id(
     }
     recorded: dict[str, object] = {}
     commands: list[list[str]] = []
+    command_environments: list[dict[str, str]] = []
 
     monkeypatch.setattr(launcher, "_read_manifest", lambda *_args: manifest)
     monkeypatch.setattr(launcher, "_verify_frozen_inputs", lambda *_args: None)
@@ -2272,8 +2625,9 @@ def test_dispatch_task_builds_full_context_and_records_exact_task_id(
         recorded["args"] = args
         recorded["kwargs"] = kwargs
 
-    def run_command(arguments, **_kwargs):
+    def run_command(arguments, **kwargs):
         commands.append(list(arguments))
+        command_environments.append(dict(kwargs["environment"]))
         return _completed({"task": {"id": "hermes-task-409"}})
 
     monkeypatch.setattr(launcher.project_state, "record_task", record_task)
@@ -2295,6 +2649,8 @@ def test_dispatch_task_builds_full_context_and_records_exact_task_id(
     command = commands[0]
     assert command[:4] == ["hermes", "kanban", "--board", "project-board"]
     assert command[command.index("--assignee") + 1] == "theory-profile"
+    assert "--skill" not in command
+    assert command_environments[0]["HERMES_HOME"] == manifest["hermes_root"]
     assert command[command.index("--idempotency-key") + 1] == (
         f"research-hub:{run_id}:2:theorist"
     )
@@ -3437,12 +3793,14 @@ def test_worker_passes_a_short_bootstrap_instead_of_the_full_prompt(
     prompt_file.write_text(unique_prompt_text, encoding="utf-8")
     manifest = {
         "hermes_executable": "hermes",
+        "hermes_root": str(tmp_path / "hermes-root"),
         "lead_profile": "lead-profile",
         "timeout_minutes": 1,
         "prompt_path": str(prompt_file),
         "prompt_sha256": hashlib.sha256(prompt_file.read_bytes()).hexdigest(),
     }
     commands: list[list[str]] = []
+    command_environments: list[dict[str, str]] = []
     pid_calls: list[tuple] = []
     failure_calls: list[tuple] = []
 
@@ -3460,8 +3818,9 @@ def test_worker_passes_a_short_bootstrap_instead_of_the_full_prompt(
         lambda *args, **kwargs: pid_calls.append((args, kwargs)),
     )
 
-    def run_command(arguments, **_kwargs):
+    def run_command(arguments, **kwargs):
         commands.append(list(arguments))
+        command_environments.append(dict(kwargs["environment"]))
         return subprocess.CompletedProcess(arguments, 0)
 
     monkeypatch.setattr(launcher, "_run_logged_command", run_command)
@@ -3480,6 +3839,15 @@ def test_worker_passes_a_short_bootstrap_instead_of_the_full_prompt(
         "_stop_external_tasks",
         lambda *_args, **_kwargs: pytest.fail("terminal cleanup should not run"),
     )
+    monkeypatch.setattr(
+        launcher,
+        "_verified_preloaded_skill_names",
+        lambda _manifest, role: (
+            [launcher.PAPER_WRITING_SKILL]
+            if role == "research_lead"
+            else []
+        ),
+    )
 
     result = launcher._worker(
         str(project), phase_slug, run_id, str(manifest_file)
@@ -3489,6 +3857,8 @@ def test_worker_passes_a_short_bootstrap_instead_of_the_full_prompt(
     assert len(pid_calls) == 1
     assert len(commands) == 1
     command = commands[0]
+    assert command[command.index("--skills") + 1] == launcher.PAPER_WRITING_SKILL
+    assert command_environments[0]["HERMES_HOME"] == manifest["hermes_root"]
     bootstrap = command[command.index("-q") + 1]
     assert str(prompt_file) in bootstrap
     assert run_id in bootstrap

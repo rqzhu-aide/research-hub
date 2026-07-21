@@ -110,6 +110,46 @@ def web_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
         }
 
 
+@pytest.fixture
+def profile_web_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
+    hermes_root = tmp_path / "hermes"
+    profile_name = "lead-profile"
+    profile_home = hermes_root / "profiles" / profile_name
+    profile_home.mkdir(parents=True)
+    (profile_home / "config.yaml").write_text(
+        "model:\n  default: test-model\n  provider: test-provider\n",
+        encoding="utf-8",
+    )
+    agent = {
+        "id": "research_lead",
+        "profile": profile_name,
+        "name": "Research Lead",
+        "role": "scientific framing and synthesis",
+    }
+    config = {
+        "hub": {"name": "Test Hub", "workspace_dir": str(tmp_path / "workspace")},
+        "agents": [agent],
+        "phases": [],
+    }
+
+    monkeypatch.setenv("RESEARCH_HUB_HERMES_ROOT", str(hermes_root))
+    monkeypatch.setattr(webapp.hub, "load_config", lambda: config)
+    monkeypatch.setattr(webapp.hub, "list_projects", lambda: [])
+    monkeypatch.setattr(webapp.hub, "get_project_dir", lambda _project_id: None)
+    monkeypatch.setattr(webapp, "_profiles", lambda: [agent])
+    monkeypatch.setitem(webapp.app.config, "TESTING", True)
+    monkeypatch.setitem(webapp.app.config, "SECRET_KEY", "test-only-secret")
+
+    with webapp.app.test_client() as client:
+        yield {
+            "client": client,
+            "config": config,
+            "agent": agent,
+            "hermes_root": hermes_root,
+            "profile_home": profile_home,
+        }
+
+
 def _csrf(client) -> str:
     token = "csrf-token-for-tests"
     with client.session_transaction() as session:
@@ -123,6 +163,15 @@ def _project_identity(web_env: dict) -> str:
     )
 
 
+def _skill_action_token(
+    profile_web_env: dict,
+    skill_name: str = "stat-paper-writing",
+) -> str:
+    agent = profile_web_env["agent"]
+    status = webapp.profile_skills.skill_status(str(agent["profile"]), skill_name)
+    return webapp._make_skill_action_token(str(agent["id"]), status)
+
+
 def _ready_prerequisites(*_args, **_kwargs) -> dict:
     return {"satisfied": True, "blockers": [], "requirements": []}
 
@@ -131,11 +180,13 @@ def _launch_tokens(
     web_env: dict,
     phase_slug: str,
     report: dict | None = None,
+    *,
+    effective_phase: dict | None = None,
 ) -> dict[str, str]:
     prerequisite_report = report if report is not None else _ready_prerequisites()
     return {
         "phase_plan_version": webapp.launch_plan_version(
-            web_env["config"], phase_slug
+            web_env["config"], phase_slug, effective_phase=effective_phase
         ),
         "prerequisite_report_version": webapp.decision_report_version(
             "prerequisite", prerequisite_report
@@ -155,6 +206,334 @@ def test_empty_workspace_get_renders_onboarding(monkeypatch: pytest.MonkeyPatch)
     assert response.status_code == 200
     assert "No projects" in response.get_data(as_text=True)
     assert 'href="/project/new"' in response.get_data(as_text=True)
+
+
+def test_profiles_status_is_read_only_and_explains_explicit_install(
+    profile_web_env: dict,
+) -> None:
+    root = profile_web_env["hermes_root"]
+    before = sorted(
+        (str(path.relative_to(root)), path.read_bytes() if path.is_file() else None)
+        for path in root.rglob("*")
+    )
+
+    response = profile_web_env["client"].get("/profiles")
+
+    after = sorted(
+        (str(path.relative_to(root)), path.read_bytes() if path.is_file() else None)
+        for path in root.rglob("*")
+    )
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert before == after
+    assert "stat-paper-writing" in body
+    assert "Not installed" in body
+    assert "Install recommended skill" in body
+    assert (
+        'aria-label="Install stat-paper-writing in profile lead-profile '
+        'for Research Lead"' in body
+    )
+    assert 'name="skill_action_token"' in body
+    assert "Status checks are read-only" in body
+
+
+def test_profile_options_preserve_outside_reviewer_independence() -> None:
+    agents = [
+        {"id": "research_lead", "profile": "lead-profile"},
+        {"id": "theorist", "profile": "shared-profile"},
+        {"id": "data_scientist", "profile": "shared-profile"},
+        {"id": "paper_reviewer", "profile": "review-profile"},
+    ]
+    available = [
+        "lead-profile",
+        "shared-profile",
+        "review-profile",
+        "unused-profile",
+    ]
+
+    assert webapp._profile_options_for_agent(
+        agents[0], agents, available
+    ) == ["lead-profile", "shared-profile", "unused-profile"]
+    assert webapp._profile_options_for_agent(
+        agents[3], agents, available
+    ) == ["review-profile", "unused-profile"]
+
+
+def test_profile_listing_uses_only_the_root_default_alias(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "hermes"
+    (root / "profiles" / "default").mkdir(parents=True)
+    (root / "profiles" / "named-profile").mkdir()
+    (root / "config.yaml").write_text("model: root-model\n", encoding="utf-8")
+    (root / "profiles" / "default" / "config.yaml").write_text(
+        "model: wrong-default\n", encoding="utf-8"
+    )
+    (root / "profiles" / "named-profile" / "config.yaml").write_text(
+        "model: named-model\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("RESEARCH_HUB_HERMES_ROOT", str(root))
+
+    assert webapp.list_hermes_profiles() == ["default", "named-profile"]
+
+
+def test_profile_skill_install_is_explicit_and_idempotent(
+    profile_web_env: dict,
+) -> None:
+    client = profile_web_env["client"]
+    profile_home = profile_web_env["profile_home"]
+    payload = {
+        "csrf_token": _csrf(client),
+        "skill_action_token": _skill_action_token(profile_web_env),
+    }
+
+    first = client.post(
+        "/agent/research_lead/skills/install",
+        data=payload,
+        follow_redirects=True,
+    )
+    installed = profile_home / "skills" / "stat-paper-writing"
+    assert first.status_code == 200
+    assert "Installed stat-paper-writing" in first.get_data(as_text=True)
+    assert (installed / "SKILL.md").is_file()
+    assert (installed / "LICENSE").read_bytes() == (
+        webapp.profile_skills.APP_ROOT / "bundled_skills" / "LICENSE"
+    ).read_bytes()
+    first_digest = webapp.profile_skills.bundle_digest(installed)
+
+    second = client.post(
+        "/agent/research_lead/skills/install",
+        data={
+            "csrf_token": _csrf(client),
+            "skill_action_token": _skill_action_token(profile_web_env),
+        },
+        follow_redirects=True,
+    )
+    assert second.status_code == 200
+    assert "already current" in second.get_data(as_text=True)
+    assert webapp.profile_skills.bundle_digest(installed) == first_digest
+
+
+def test_profile_assignment_does_not_install_or_move_skills(
+    profile_web_env: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = profile_web_env["client"]
+    root = profile_web_env["hermes_root"]
+    other_home = root / "profiles" / "other-profile"
+    other_home.mkdir(parents=True)
+    (other_home / "config.yaml").write_text("model: other\n", encoding="utf-8")
+
+    def mutate_config(mutator):
+        mutator(profile_web_env["config"])
+        return "", ""
+
+    monkeypatch.setattr(webapp, "_mutate_config", mutate_config)
+    response = client.post(
+        "/agent/research_lead/profile",
+        data={"csrf_token": _csrf(client), "profile": "other-profile"},
+    )
+
+    assert response.status_code == 302
+    assert profile_web_env["agent"]["profile"] == "other-profile"
+    assert not (profile_web_env["profile_home"] / "skills").exists()
+    assert not (other_home / "skills").exists()
+
+
+def test_profile_skill_conflict_requires_confirmed_replacement(
+    profile_web_env: dict,
+) -> None:
+    client = profile_web_env["client"]
+    profile_home = profile_web_env["profile_home"]
+    installed = profile_home / "skills" / "stat-paper-writing"
+    installed.mkdir(parents=True)
+    local_file = installed / "SKILL.md"
+    local_file.write_text("local skill\n", encoding="utf-8")
+    payload = {
+        "csrf_token": _csrf(client),
+        "skill_action_token": _skill_action_token(profile_web_env),
+    }
+
+    status_page = client.get("/profiles")
+    body = status_page.get_data(as_text=True)
+    assert "Different local copy" in body
+    assert "Replace with bundled copy" in body
+
+    refused = client.post(
+        "/agent/research_lead/skills/install",
+        data=payload,
+        follow_redirects=True,
+    )
+    assert "explicit replacement is required" in refused.get_data(as_text=True)
+    assert local_file.read_text(encoding="utf-8") == "local skill\n"
+
+    replaced = client.post(
+        "/agent/research_lead/skills/install",
+        data={**payload, "replace": "1"},
+        follow_redirects=True,
+    )
+    assert replaced.status_code == 200
+    assert "Replaced stat-paper-writing" in replaced.get_data(as_text=True)
+    assert local_file.read_text(encoding="utf-8") != "local skill\n"
+    backups = [
+        path
+        for path in profile_home.rglob("stat-paper-writing*")
+        if path != installed and path.is_dir()
+    ]
+    assert len(backups) == 1
+    assert (backups[0] / "SKILL.md").read_text(encoding="utf-8") == "local skill\n"
+
+
+def test_profile_skill_install_rejects_stale_profile_and_active_run(
+    profile_web_env: dict, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    client = profile_web_env["client"]
+    profile_home = profile_web_env["profile_home"]
+    expected = profile_web_env["agent"]["profile"]
+    stale_action = _skill_action_token(profile_web_env)
+    profile_web_env["agent"]["profile"] = "other-profile"
+
+    stale = client.post(
+        "/agent/research_lead/skills/install",
+        data={"csrf_token": _csrf(client), "skill_action_token": stale_action},
+        follow_redirects=True,
+    )
+    assert "profile assignment changed" in stale.get_data(as_text=True)
+    assert not (profile_home / "skills").exists()
+
+    profile_web_env["agent"]["profile"] = expected
+    project_dir = tmp_path / "active-project"
+    project_dir.mkdir()
+    monkeypatch.setattr(
+        webapp.hub, "list_projects", lambda: [{"id": 7, "name": "Active study"}]
+    )
+    monkeypatch.setattr(webapp.hub, "get_project_dir", lambda _project_id: project_dir)
+    monkeypatch.setattr(
+        webapp.project_state, "get_active_run", lambda _project_dir: {"run_id": "run-1"}
+    )
+    blocked = client.post(
+        "/agent/research_lead/skills/install",
+        data={
+            "csrf_token": _csrf(client),
+            "skill_action_token": _skill_action_token(profile_web_env),
+        },
+        follow_redirects=True,
+    )
+    assert "Stop the active run for Active study" in blocked.get_data(as_text=True)
+    assert not (profile_home / "skills").exists()
+
+
+def test_profile_skill_install_requires_csrf(profile_web_env: dict) -> None:
+    response = profile_web_env["client"].post(
+        "/agent/research_lead/skills/install",
+        data={"skill_action_token": _skill_action_token(profile_web_env)},
+    )
+    assert response.status_code == 400
+
+
+def test_profile_skill_action_requires_valid_signature_and_role_scope(
+    profile_web_env: dict,
+) -> None:
+    client = profile_web_env["client"]
+    writing_token = _skill_action_token(profile_web_env)
+    replacement = "0" if writing_token[-1] != "0" else "1"
+    tampered = client.post(
+        "/agent/research_lead/skills/install",
+        data={
+            "csrf_token": _csrf(client),
+            "skill_action_token": writing_token[:-1] + replacement,
+        },
+        follow_redirects=True,
+    )
+    assert "skill action is missing or invalid" in tampered.get_data(as_text=True)
+
+    agent = profile_web_env["agent"]
+    reviewer_status = webapp.profile_skills.skill_status(
+        str(agent["profile"]), "stat-paper-reviewer"
+    )
+    wrong_skill_token = webapp._make_skill_action_token(
+        str(agent["id"]), reviewer_status
+    )
+    wrong_skill = client.post(
+        "/agent/research_lead/skills/install",
+        data={
+            "csrf_token": _csrf(client),
+            "skill_action_token": wrong_skill_token,
+        },
+        follow_redirects=True,
+    )
+    assert "not recommended for this research role" in wrong_skill.get_data(
+        as_text=True
+    )
+    assert not (profile_web_env["profile_home"] / "skills").exists()
+
+
+def test_profile_skill_replacement_rejects_changed_reviewed_copy(
+    profile_web_env: dict,
+) -> None:
+    client = profile_web_env["client"]
+    installed = (
+        profile_web_env["profile_home"] / "skills" / "stat-paper-writing"
+    )
+    installed.mkdir(parents=True)
+    local_file = installed / "SKILL.md"
+    local_file.write_text("first local copy\n", encoding="utf-8")
+    reviewed_action = _skill_action_token(profile_web_env)
+
+    local_file.write_text("changed after review\n", encoding="utf-8")
+    response = client.post(
+        "/agent/research_lead/skills/install",
+        data={
+            "csrf_token": _csrf(client),
+            "skill_action_token": reviewed_action,
+            "replace": "1",
+        },
+        follow_redirects=True,
+    )
+
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "skill status changed" in body
+    assert local_file.read_text(encoding="utf-8") == "changed after review\n"
+    assert not (profile_web_env["profile_home"] / ".research-hub-skill-backups").exists()
+
+
+def test_profile_skill_replacement_rechecks_state_under_profile_lock(
+    profile_web_env: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = profile_web_env["client"]
+    installed = (
+        profile_web_env["profile_home"] / "skills" / "stat-paper-writing"
+    )
+    installed.mkdir(parents=True)
+    local_file = installed / "SKILL.md"
+    local_file.write_text("reviewed local copy\n", encoding="utf-8")
+    reviewed_action = _skill_action_token(profile_web_env)
+    provision_skill = webapp.profile_skills.provision_skill
+
+    def change_before_profile_lock(*args, **kwargs):
+        local_file.write_text("changed before profile lock\n", encoding="utf-8")
+        return provision_skill(*args, **kwargs)
+
+    monkeypatch.setattr(
+        webapp.profile_skills,
+        "provision_skill",
+        change_before_profile_lock,
+    )
+    response = client.post(
+        "/agent/research_lead/skills/install",
+        data={
+            "csrf_token": _csrf(client),
+            "skill_action_token": reviewed_action,
+            "replace": "1",
+        },
+        follow_redirects=True,
+    )
+
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "changed after the installation was reviewed" in body
+    assert local_file.read_text(encoding="utf-8") == "changed before profile lock\n"
+    assert not (profile_web_env["profile_home"] / ".research-hub-skill-backups").exists()
 
 
 def test_failed_workspace_change_restores_previous_config(
@@ -290,6 +669,53 @@ def test_ready_launch_form_contains_both_current_decision_tokens(
     )
     assert body.count('name="phase_plan_version"') == launch_form_count
     assert body.count('name="prerequisite_report_version"') == launch_form_count
+
+
+def test_paper_page_prepares_distinct_full_and_review_only_plan_tokens(
+    web_env: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paper_slug = "06-paper-writing"
+    paper_phase = {
+        "slug": paper_slug,
+        "name": "Paper Writing",
+        "description": "Write and review the paper.",
+        "pattern": "sequential",
+        "rounds": {"min": 5, "default": 5, "max": 5},
+        "gated_by": [],
+        "folder": "draft/",
+        "members": [
+            "research_lead",
+            "theorist",
+            "data_scientist",
+            "paper_reviewer",
+        ],
+        "stages": [
+            {"role": "research_lead", "name": f"Stage {number}"}
+            for number in range(1, 6)
+        ],
+    }
+    web_env["config"]["phases"].append(paper_phase)
+    captured: dict = {}
+
+    def capture_template(_name: str, **context):
+        captured.update(context)
+        return "captured"
+
+    monkeypatch.setattr(webapp, "render_template", capture_template)
+    response = web_env["client"].get(
+        f"/project/{PROJECT_ID}?tab={paper_slug}"
+    )
+
+    expected_full = webapp.launch_plan_version(web_env["config"], paper_slug)
+    expected_review = webapp.launch_plan_version(
+        web_env["config"],
+        paper_slug,
+        effective_phase=webapp.paper_review_only_phase(paper_phase),
+    )
+    assert response.status_code == 200
+    assert expected_full != expected_review
+    assert captured["phase_data"]["phase_plan_version"] == expected_full
+    assert captured["phase_data"]["review_phase_plan_version"] == expected_review
 
 
 def test_csrf_rejects_missing_token_and_accepts_valid_start(
@@ -892,7 +1318,13 @@ def test_quick_rerun_recovers_special_plan_only_from_prior_run(
         data={
             "csrf_token": token,
             "project_identity": identity,
-            **_launch_tokens(web_env, paper_slug),
+            **_launch_tokens(
+                web_env,
+                paper_slug,
+                effective_phase=webapp.paper_review_only_phase(
+                    webapp.hub.get_phase_config(web_env["config"], paper_slug)
+                ),
+            ),
             "rerun_from": "prior-review",
             "preserve_frozen_plan": "1",
         },
@@ -908,6 +1340,15 @@ def test_quick_rerun_recovers_special_plan_only_from_prior_run(
     )
     assert paper_call.kwargs["review_target"] == (
         "draft/run/01/manuscript-post-review.md"
+    )
+    assert paper_call.kwargs["expected_phase_plan_version"] == (
+        webapp.launch_plan_version(
+            web_env["config"],
+            paper_slug,
+            effective_phase=webapp.paper_review_only_phase(
+                webapp.hub.get_phase_config(web_env["config"], paper_slug)
+            ),
+        )
     )
     assert paper_call.kwargs["review_target_sha256"] == "a" * 64
     assert exact.call_args_list[0].args == (project_dir, theory_slug, "prior-audit")
@@ -1645,6 +2086,11 @@ def test_client_controls_preserve_dirty_forms_and_mobile_focus_contract() -> Non
     assert 'class="revision-form" data-unsaved-guard' in phase_template
     assert "data-theory-audit-scope" in phase_template
     assert 'name="preserve_frozen_plan" value="1"' in phase_template
+    assert "repeat_plan_version = pd.review_phase_plan_version" in phase_template
+    assert (
+        'value="{{ pd.review_phase_plan_version | default(\'\') }}"'
+        in phase_template
+    )
     assert 'name="approval_kind" value="approve" required' in phase_template
     assert (
         'name="approval_kind" value="approve_with_limitations" required'

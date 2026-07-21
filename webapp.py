@@ -12,6 +12,7 @@ import ipaddress
 import json
 import os
 import secrets
+import stat
 import subprocess
 import sys
 import tempfile
@@ -21,7 +22,7 @@ from contextlib import contextmanager
 from functools import wraps
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Iterator, Mapping
 from urllib.parse import urlsplit
 
 from flask import (
@@ -40,7 +41,7 @@ from werkzeug.sansio.utils import host_is_trusted
 sys.path.insert(0, str(Path(__file__).parent.resolve()))
 
 import hub
-from scripts import project_state
+from scripts import profile_skills, project_state
 from scripts.launch_run import (
     LaunchError,
     NUMERICAL_VALIDATION_PHASE,
@@ -53,6 +54,7 @@ from scripts.launch_run import (
     exact_rerun_options,
     launch_plan_version,
     launch_run,
+    paper_review_only_phase,
     reconcile_active_run,
     retry_run_cleanup,
     run_log_path,
@@ -179,6 +181,150 @@ def _project_identity_key() -> bytes:
     if isinstance(key, bytes):
         return key
     return str(key).encode("utf-8")
+
+
+def _skill_action_key() -> bytes:
+    """Derive a purpose-specific key for recommended-skill actions."""
+
+    return hmac.new(
+        _project_identity_key(),
+        b"research-hub:recommended-skill-action:v1",
+        hashlib.sha256,
+    ).digest()
+
+
+def _skill_action_payload(
+    agent_id: str,
+    status: profile_skills.SkillStatus,
+) -> dict[str, Any]:
+    """Seal the exact role, profile, bundle, and installed state shown to a user."""
+
+    return {
+        "version": 1,
+        "agent_id": agent_id,
+        **status.to_dict(),
+    }
+
+
+def _encode_skill_action(action: dict[str, Any]) -> str:
+    payload = json.dumps(
+        action,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    encoded = base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+    signature = hmac.new(_skill_action_key(), payload, hashlib.sha256).hexdigest()
+    return f"{encoded}.{signature}"
+
+
+def _is_lower_hex(value: Any, length: int) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == length
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _decode_skill_action(token: str) -> dict[str, Any]:
+    message = "The skill action is missing or invalid. Reload the page"
+    if not token or len(token) > 16_384 or token.count(".") != 1:
+        raise ValueError(message)
+    encoded, supplied_signature = token.split(".", 1)
+    try:
+        payload = base64.b64decode(
+            encoded + "=" * (-len(encoded) % 4),
+            altchars=b"-_",
+            validate=True,
+        )
+    except (ValueError, TypeError) as exc:
+        raise ValueError(message) from exc
+    expected_signature = hmac.new(
+        _skill_action_key(), payload, hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(supplied_signature, expected_signature):
+        raise ValueError(message)
+    try:
+        action = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(message) from exc
+
+    expected_fields = {
+        "version",
+        "agent_id",
+        "profile",
+        "profile_path",
+        "skill",
+        "state",
+        "reason",
+        "expected_digest",
+        "installed_digest",
+        "source_revision",
+        "managed",
+    }
+    string_fields = {
+        "agent_id",
+        "profile",
+        "profile_path",
+        "skill",
+        "state",
+        "reason",
+        "expected_digest",
+        "source_revision",
+    }
+    if (
+        not isinstance(action, dict)
+        or set(action) != expected_fields
+        or action.get("version") != 1
+        or not all(
+            isinstance(action.get(field), str) and action.get(field)
+            for field in string_fields
+        )
+        or action.get("state") not in profile_skills.STATUS_STATES
+        or not isinstance(action.get("managed"), bool)
+        or (
+            action.get("installed_digest") is not None
+            and not isinstance(action.get("installed_digest"), str)
+        )
+        or not _is_lower_hex(action.get("expected_digest"), 64)
+        or not _is_lower_hex(action.get("source_revision"), 40)
+        or (
+            action.get("installed_digest") is not None
+            and not _is_lower_hex(action.get("installed_digest"), 64)
+        )
+    ):
+        raise ValueError(message)
+    try:
+        profile_skills.validate_profile_name(action["profile"])
+    except profile_skills.ProfileNameError as exc:
+        raise ValueError(message) from exc
+    return action
+
+
+def _make_skill_action_token(
+    agent_id: str,
+    status: profile_skills.SkillStatus,
+) -> str:
+    return _encode_skill_action(_skill_action_payload(agent_id, status))
+
+
+def _require_matching_skill_action(
+    action: dict[str, Any],
+    agent_id: str,
+    current: profile_skills.SkillStatus,
+) -> None:
+    expected = _skill_action_payload(agent_id, current)
+    supplied_payload = json.dumps(
+        action, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    expected_payload = json.dumps(
+        expected, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    if not hmac.compare_digest(supplied_payload, expected_payload):
+        raise ValueError(
+            "The skill status changed after this role card was shown. "
+            "Reload the page and review the action again"
+        )
 
 
 def _encode_project_identity(identity: dict[str, Any]) -> str:
@@ -523,21 +669,85 @@ def _profiles() -> list[dict[str, Any]]:
     return hub.get_agents(hub.load_config())
 
 
-def list_hermes_profiles() -> list[str]:
-    profiles_dir = Path.home() / ".hermes" / "profiles"
-    if not profiles_dir.is_dir():
-        return []
-    return sorted(
-        entry.name
-        for entry in profiles_dir.iterdir()
-        if entry.is_dir() and (entry / "config.yaml").is_file()
+def _unlinked_path_has_type(path: Path, mode_check: Callable[[int], bool]) -> bool:
+    """Check a path type without following links or Windows reparse points."""
+
+    try:
+        metadata = path.lstat()
+    except OSError:
+        return False
+    return not hub._metadata_is_link_or_reparse(metadata) and mode_check(
+        metadata.st_mode
     )
+
+
+def list_hermes_profiles() -> list[str]:
+    """List configured profiles from the same root Hermes uses on this platform."""
+
+    try:
+        root = profile_skills.resolve_hermes_root()
+    except profile_skills.ProfileSkillsError:
+        return []
+    if not _unlinked_path_has_type(root, stat.S_ISDIR):
+        return []
+
+    profiles: list[str] = []
+    if _unlinked_path_has_type(root / "config.yaml", stat.S_ISREG):
+        profiles.append("default")
+
+    profiles_dir = root / "profiles"
+    if not _unlinked_path_has_type(profiles_dir, stat.S_ISDIR):
+        return profiles
+    try:
+        entries = list(profiles_dir.iterdir())
+    except OSError:
+        return profiles
+    for entry in entries:
+        if entry.name == "default":
+            continue
+        try:
+            profile_skills.validate_profile_name(entry.name)
+        except profile_skills.ProfileNameError:
+            continue
+        if not _unlinked_path_has_type(entry, stat.S_ISDIR):
+            continue
+        if _unlinked_path_has_type(entry / "config.yaml", stat.S_ISREG):
+            profiles.append(entry.name)
+    return sorted(profiles)
+
+
+def _profile_options_for_agent(
+    agent: Mapping[str, Any],
+    agents: list[dict[str, Any]],
+    available: list[str],
+) -> list[str]:
+    """Hide assignments that would compromise the outside reviewer's independence."""
+
+    agent_id = str(agent.get("id", ""))
+    current = str(agent.get("profile", ""))
+    if agent_id == hub.INDEPENDENT_REVIEWER_AGENT_ID:
+        reserved = {
+            str(item.get("profile", ""))
+            for item in agents
+            if str(item.get("id", "")) != hub.INDEPENDENT_REVIEWER_AGENT_ID
+        }
+    else:
+        reserved = {
+            str(item.get("profile", ""))
+            for item in agents
+            if str(item.get("id", "")) == hub.INDEPENDENT_REVIEWER_AGENT_ID
+        }
+    return [
+        profile
+        for profile in available
+        if profile == current or profile not in reserved
+    ]
 
 
 def _read_profile_config(profile_name: str) -> dict[str, Any]:
     if profile_name not in list_hermes_profiles():
         return {"model": None, "provider": None, "base_url": None, "config_exists": False}
-    config_path = Path.home() / ".hermes" / "profiles" / profile_name / "config.yaml"
+    config_path = profile_skills.profile_home(profile_name) / "config.yaml"
     try:
         import yaml
 
@@ -548,6 +758,15 @@ def _read_profile_config(profile_name: str) -> dict[str, Any]:
             allow_empty=False,
         )
         data = yaml.safe_load(config_text) or {}
+        if not isinstance(data, dict):
+            raise ValueError("profile configuration must be a mapping")
+        raw_model = data.get("model") or {}
+        if isinstance(raw_model, str):
+            model = {"default": raw_model}
+        elif isinstance(raw_model, dict):
+            model = raw_model
+        else:
+            raise ValueError("profile model configuration must be a mapping or name")
     except Exception:
         return {
             "model": None,
@@ -556,7 +775,6 @@ def _read_profile_config(profile_name: str) -> dict[str, Any]:
             "config_exists": True,
             "config_error": True,
         }
-    model = data.get("model") or {}
     fallbacks: list[dict[str, Any]] = []
     raw_fallbacks = data.get("fallback_providers")
     if isinstance(raw_fallbacks, str):
@@ -584,17 +802,92 @@ def _read_profile_config(profile_name: str) -> dict[str, Any]:
     }
 
 
-def _enrich_agent(agent: dict[str, Any]) -> None:
-    memory = (
-        Path.home()
-        / ".hermes"
-        / "profiles"
-        / str(agent["profile"])
-        / "memories"
-        / "MEMORY.md"
+_SKILL_DESCRIPTIONS = {
+    "stat-paper-writing": (
+        "Author-side planning, drafting, and claim-preserving revision for "
+        "statistical and machine-learning manuscripts."
+    ),
+    "stat-paper-reviewer": (
+        "Independent, sequential assessment of statistical and "
+        "machine-learning manuscripts."
+    ),
+}
+
+_SKILL_STATUS_COPY = {
+    "profile_missing": (
+        "Profile unavailable",
+        "Create or select this Hermes profile before installing its recommended skill.",
+    ),
+    "missing": (
+        "Not installed",
+        "The recommended skill is not installed in this Hermes profile.",
+    ),
+    "current": (
+        "Installed",
+        "The installed content exactly matches the pinned bundled copy.",
+    ),
+    "modified": (
+        "Different managed copy",
+        "The managed copy differs from this pinned bundle. It may be older or locally edited, so Research Hub will not overwrite it automatically.",
+    ),
+    "conflict": (
+        "Different local copy",
+        "Another copy uses this skill name. Research Hub will not overwrite it automatically.",
+    ),
+    "invalid": (
+        "Unsafe path",
+        "The installed path or its metadata is not a safe regular skill directory. Resolve it manually before installing.",
+    ),
+}
+
+
+def _recommended_skill_views(agent: dict[str, Any]) -> list[dict[str, Any]]:
+    manifest = profile_skills.load_manifest()
+    required = profile_skills.role_requirements(str(agent["id"]), manifest=manifest)
+    statuses = profile_skills.profile_skill_statuses(
+        str(agent["profile"]), required, manifest=manifest
     )
-    agent["memory_exists"] = memory.is_file()
-    agent["memory_size"] = memory.stat().st_size if memory.is_file() else 0
+    views: list[dict[str, Any]] = []
+    for name in required:
+        status = statuses[name]
+        status_label, status_detail = _SKILL_STATUS_COPY[status.state]
+        views.append(
+            {
+                "name": name,
+                "description": _SKILL_DESCRIPTIONS.get(
+                    name, "Recommended scientific guidance for this research role."
+                ),
+                "status": status.state,
+                "status_label": status_label,
+                "status_detail": status_detail,
+                "can_install": status.state == "missing",
+                "can_replace": status.state in {"modified", "conflict"},
+                "action_token": _make_skill_action_token(str(agent["id"]), status),
+                "source_revision": status.source_revision[:8],
+                "network_note": (
+                    "Its optional helper sends search terms and any author, affiliation, "
+                    "or ORCID filters to OpenAlex only when an agent invokes it. "
+                    "Installation does not run the helper. Do not use confidential "
+                    "manuscript prose as a search query."
+                    if name == "stat-paper-reviewer"
+                    else None
+                ),
+            }
+        )
+    return views
+
+
+def _enrich_agent(agent: dict[str, Any]) -> None:
+    try:
+        profile_path = profile_skills.profile_home(str(agent["profile"]))
+    except profile_skills.ProfileSkillsError:
+        profile_path = None
+    memory = (
+        profile_path / "memories" / "MEMORY.md" if profile_path is not None else None
+    )
+    memory_exists = memory is not None and _unlinked_path_has_type(memory, stat.S_ISREG)
+    agent["memory_exists"] = memory_exists
+    agent["memory_size"] = memory.stat().st_size if memory_exists else 0
     runtime = _read_profile_config(str(agent["profile"]))
     agent["runtime_model"] = runtime["model"]
     agent["runtime_provider"] = runtime["provider"]
@@ -602,6 +895,13 @@ def _enrich_agent(agent: dict[str, Any]) -> None:
     agent["config_exists"] = runtime["config_exists"]
     agent["config_error"] = runtime.get("config_error", False)
     agent["fallbacks"] = runtime.get("fallbacks", [])
+    try:
+        agent["recommended_skills"] = _recommended_skill_views(agent)
+        agent["skills_error"] = None
+    except Exception as exc:
+        app.logger.exception("Recommended skill status failed for %s", agent.get("id"))
+        agent["recommended_skills"] = []
+        agent["skills_error"] = f"Recommended skill status is unavailable: {exc}"
 
 
 def _project_context(project_id: int) -> tuple[dict[str, Any], Path] | None:
@@ -784,6 +1084,12 @@ def project_view(project_id: int) -> Response | str:
         )
     if phase_data is not None and not phase_data.get("recovery_only"):
         phase_data["phase_plan_version"] = launch_plan_version(config, tab)
+        if tab == PAPER_WRITING_PHASE and phase_config is not None:
+            phase_data["review_phase_plan_version"] = launch_plan_version(
+                config,
+                tab,
+                effective_phase=paper_review_only_phase(phase_config),
+            )
     context = {
         "project": project,
         "projects": [dict(item) for item in hub.list_projects()],
@@ -1487,12 +1793,16 @@ def change_workspace() -> Response:
 @app.get("/profiles")
 def profiles_view() -> str:
     agents = [dict(agent) for agent in _profiles()]
+    all_profiles = list_hermes_profiles()
     for agent in agents:
         _enrich_agent(agent)
+        agent["profile_options"] = _profile_options_for_agent(
+            agent, agents, all_profiles
+        )
     return render_template(
         "profiles.html",
         agents=agents,
-        all_profiles=list_hermes_profiles(),
+        all_profiles=all_profiles,
         projects=[dict(project) for project in hub.list_projects()],
         project=None,
     )
@@ -1527,9 +1837,94 @@ def assign_agent_profile(agent_id: str) -> Response | tuple[str, int] | str:
         return "Agent role disappeared after update", 500
     rendered = dict(agent)
     _enrich_agent(rendered)
+    current_agents = [dict(item) for item in _profiles()]
+    rendered["profile_options"] = _profile_options_for_agent(
+        rendered, current_agents, available
+    )
     if request.headers.get("HX-Request") == "true":
         return render_template("_profile_card.html", a=rendered, all_profiles=available)
     flash(f"{rendered['name']} now uses the {new_profile} profile for future runs.", "success")
+    return redirect(url_for("profiles_view"))
+
+
+@app.post("/agent/<agent_id>/skills/install")
+def install_agent_skills(agent_id: str) -> Response:
+    """Provision one sealed role recommendation after an explicit user action."""
+
+    try:
+        action = _decode_skill_action(
+            _bounded_form_value("skill_action_token", 16_384, required=True)
+        )
+        replace_value = request.form.get("replace", "").strip()
+        if replace_value not in {"", "1"}:
+            raise ValueError("Invalid replacement request")
+        replace = replace_value == "1"
+
+        with hub.operation_lock():
+            config = hub.load_config()
+            agent = hub.get_agent(config, agent_id)
+            if not agent:
+                raise ValueError("Unknown research role")
+            profile_name = str(agent["profile"])
+            if not hmac.compare_digest(str(action["agent_id"]), agent_id):
+                raise ValueError("The skill action does not match this research role")
+            if not hmac.compare_digest(str(action["profile"]), profile_name):
+                raise ValueError(
+                    "The role's profile assignment changed. Review the updated role card before installing."
+                )
+
+            manifest = profile_skills.load_manifest()
+            requirements = profile_skills.role_requirements(agent_id, manifest=manifest)
+            if not requirements:
+                raise ValueError("This role has no bundled skill recommendation")
+            skill_name = str(action["skill"])
+            if skill_name not in requirements:
+                raise ValueError("This skill is not recommended for this research role")
+            if replace and str(action["state"]) not in {"modified", "conflict"}:
+                raise ValueError("Replacement was not offered for the reviewed skill state")
+
+            current = profile_skills.skill_status(
+                profile_name, skill_name, manifest=manifest
+            )
+            _require_matching_skill_action(action, agent_id, current)
+
+            for project in hub.list_projects():
+                project_dir = hub.get_project_dir(int(project["id"]))
+                if project_dir and project_state.get_active_run(project_dir):
+                    project_name = str(project["name"])
+                    raise ValueError(
+                        f"Stop the active run for {project_name} before changing a Hermes profile"
+                    )
+
+            result = profile_skills.provision_skill(
+                profile_name,
+                skill_name,
+                replace=replace,
+                expected_status=current,
+                manifest=manifest,
+            )
+    except (ValueError, profile_skills.ProfileSkillsError) as exc:
+        app.logger.warning(
+            "Recommended skill installation was refused for %s: %s", agent_id, exc
+        )
+        flash(f"Recommended skill was not installed: {exc}", "error")
+        return redirect(url_for("profiles_view"))
+    except Exception as exc:
+        app.logger.exception(
+            "Recommended skill installation failed unexpectedly for %s", agent_id
+        )
+        flash(f"Recommended skill was not installed: {exc}", "error")
+        return redirect(url_for("profiles_view"))
+
+    if result.backup_path:
+        flash(
+            f"Replaced {result.skill} in {profile_name}. The previous copy was preserved at {result.backup_path}.",
+            "success",
+        )
+    elif result.action in {"already_current", "adopted"}:
+        flash(f"{result.skill} is already current in {profile_name}.", "success")
+    else:
+        flash(f"Installed {result.skill} in {profile_name}.", "success")
     return redirect(url_for("profiles_view"))
 
 
@@ -1537,8 +1932,8 @@ def assign_agent_profile(agent_id: str) -> Response | tuple[str, int] | str:
 def profile_memory(name: str) -> str:
     if name not in list_hermes_profiles():
         abort(404, description="Unknown Hermes profile")
-    memory = Path.home() / ".hermes" / "profiles" / name / "memories" / "MEMORY.md"
-    if memory.is_file():
+    memory = profile_skills.profile_home(name) / "memories" / "MEMORY.md"
+    if _unlinked_path_has_type(memory, stat.S_ISREG):
         try:
             content = _bounded_utf8_file(
                 memory,
