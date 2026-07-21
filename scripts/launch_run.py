@@ -3650,6 +3650,7 @@ def _task_instructions(
     run_id: str,
     run_number: int,
     rounds: int,
+    board_slug: str = "",
 ) -> str:
     phase_slug = str(phase["slug"])
     output_root = project_dir / str(phase.get("folder", "")) / "run" / f"{run_number:02d}"
@@ -3784,8 +3785,19 @@ run-scoped checkpoint is sealed. Do not create any additional task.
             "user direction, frozen project brief, frozen approved summaries, prior-round "
             "artifacts, role playbook, output path, and an idempotency key.\n\n"
             + "\n\n".join(task_blocks)
-            + "\n\n4. Wait for every listed task to finish. Use `hermes kanban watch` "
-            "or inspect the board. Do not use a tight polling loop. Read every output.\n"
+            + "\n\n4. Wait for every listed task to finish BEFORE proceeding to the "
+            "next step. Run this wait command in the FOREGROUND terminal — it "
+            "blocks until all tasks complete:\n"
+            f"```text\nhermes kanban --board {board_slug} watch --poll 30 "
+            "--timeout 3600\n```\n"
+            "CRITICAL: This is a single-turn session with no background "
+            "callbacks. You MUST run this command in the FOREGROUND (not "
+            "backgrounded, no `&`, no `background=True`, no "
+            "`notify_on_complete`). Do NOT start it and then do other work. "
+            "Run it as a normal blocking terminal command and WAIT for it to "
+            "return. If you background it and end your turn, the entire run "
+            "will fail. Only after the watch command returns should you read "
+            "every output and proceed to step 5.\n"
             "5. Ask the helper to verify every recorded Hermes task is done and every "
             "artifact is nonempty before recording completion:\n"
             f"```text\n{complete}\n```"
@@ -5538,7 +5550,8 @@ def _build_lead_prompt(
         ensure_ascii=False,
     )
     task_plan = _task_instructions(
-        project_dir, phase, run_id, run_number, rounds
+        project_dir, phase, run_id, run_number, rounds,
+        board_slug=board_slug,
     )
     manuscript_paths_text = ""
     if phase_slug == PAPER_WRITING_PHASE:
