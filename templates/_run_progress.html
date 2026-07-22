@@ -50,7 +50,7 @@
         {% set cleanup_started = current.cleanup_started_at | default('') %}
         <small>
           {% if cleanup_pending %}Cleanup requested {% if cleanup_started %}<time datetime="{{ cleanup_started }}">{{ cleanup_started }}</time>{% else %}time not recorded{% endif %}
-          {% else %}Started {% if run_started %}<time datetime="{{ run_started }}">{{ run_started }}</time>{% else %}time not recorded{% endif %}
+          {% else %}Started {% if run_started %}<time datetime="{{ run_started }}">{{ run_started }}</time>{% else %}time not recorded{% endif %}{% if run_started %} · <span class="run-elapsed" data-started-at="{{ run_started }}">calculating…</span>{% endif %}
           {% endif %}
         </small>
       </div>

@@ -787,4 +787,56 @@
   restoreDraftsAfterError();
   initializeTheoryPlans();
   formatTimes();
+
+  // ── Sync Project brief panel height to "Current research choices" ledger ──
+  function syncBriefHeight() {
+    const goal = document.querySelector(".goal-panel");
+    const ledger = document.querySelector(".ledger-panel");
+    if (!goal || !ledger) return;
+    // Reset any prior override so we measure the ledger's natural height
+    goal.style.height = "";
+    if (window.innerWidth > 640) {
+      goal.style.height = ledger.offsetHeight + "px";
+    }
+  }
+  syncBriefHeight();
+  window.addEventListener("resize", syncBriefHeight);
+  document.body.addEventListener("htmx:afterSwap", syncBriefHeight);
+  window.addEventListener("load", syncBriefHeight);
+
+  // ── Position timeline dots by their global ordinal rank ──
+  // (Inline style="left: X%" gets eaten by CSSOM on HTMX-swapped content,
+  //  so we read data-left and apply it via JS instead.)
+  function positionTimelineDots() {
+    document.querySelectorAll(".tl-dot[data-left]").forEach((dot) => {
+      dot.style.left = dot.dataset.left + "%";
+    });
+  }
+  positionTimelineDots();
+  document.body.addEventListener("htmx:afterSwap", positionTimelineDots);
+
+  // ── Live elapsed-time indicator for active runs ──
+  // Shows "12m 34s" next to "Started ..." so a user watching a long
+  // numerical-validation run knows it's progressing, not stuck.
+  function formatElapsed(ms) {
+    const s = Math.floor(ms / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h > 0) return h + "h " + m + "m elapsed";
+    if (m > 0) return m + "m " + sec + "s elapsed";
+    return sec + "s elapsed";
+  }
+  function updateRunElapsed() {
+    document.querySelectorAll(".run-elapsed[data-started-at]").forEach((el) => {
+      const started = el.dataset.startedAt;
+      if (!started) return;
+      const start = new Date(started).getTime();
+      if (isNaN(start)) { el.textContent = ""; return; }
+      el.textContent = formatElapsed(Date.now() - start);
+    });
+  }
+  updateRunElapsed();
+  setInterval(updateRunElapsed, 1000);
+  document.body.addEventListener("htmx:afterSwap", updateRunElapsed);
 })();

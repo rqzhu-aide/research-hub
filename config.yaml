@@ -6,7 +6,7 @@ hub:
   workspace_dir: "~/research"    # where projects + database live (separate from app)
   # projects:    ~/research/projects/project-NNN-<slug>/
   # database:    ~/research/hub.db
-  run_timeout_minutes: 120
+  run_timeout_minutes: 240   # numerical phases run real MCMC — 120m was too short
 # Phase runs are explicitly started by the user. This permits the lead to
 # execute the project-local tools needed by Hermes after that decision.
   allow_unattended_tools: true

@@ -63,7 +63,7 @@
     {% if phase_summaries %}
     <div class="decision-ledger">
       <div class="ledger-columns" aria-hidden="true">
-        <span>Phase</span><span>Approved baseline</span><span>Latest activity</span><span>Your next choice</span>
+        <span>Phase</span><span>Approved baseline</span><span>Your next choice</span>
       </div>
       {% for s in phase_summaries %}
         {% set approved = s.approved_run | default(none) %}
@@ -92,24 +92,6 @@
               <strong>Approved result</strong><small>{{ s.run_count }} recorded run{{ '' if s.run_count == 1 else 's' }}</small>
             {% else %}
               <strong>None selected</strong><small>No baseline is being treated as accepted.</small>
-            {% endif %}
-          </span>
-
-          <span class="ledger-cell">
-            {% if latest %}
-              <strong>{{ latest.status | default('recorded') | replace('_', ' ') | title }}</strong>
-              {% set latest_time = latest.completed_at | default(latest.completed | default('')) %}
-              <small>Run {{ latest.number | default(latest.run_number | default(latest.id | default(''))) }}{% if latest_time %} · <time datetime="{{ latest_time }}">{{ latest_time }}</time>{% endif %}</small>
-              {% if latest.scientific_outcome %}
-              <small>Scientific outcome: {{ latest.scientific_outcome }}</small>
-              <small>Team recommendation: {{ latest.recommended_user_action_label }}</small>
-              {% endif %}
-            {% elif s.is_active | default(false) %}
-              <strong>Run in progress</strong><small>Open the phase for live controls.</small>
-            {% elif s.run_count | default(0) %}
-              <strong>{{ s.run_count }} run{{ '' if s.run_count == 1 else 's' }}</strong><small>Open the phase to inspect the record.</small>
-            {% else %}
-              <strong>No run yet</strong><small>Nothing happens until you launch one.</small>
             {% endif %}
           </span>
 
@@ -153,4 +135,71 @@
       </div>
     {% endif %}
   </section>
+
+<section class="panel timeline-panel" aria-labelledby="timeline-heading">
+  <div class="panel-head">
+    <div>
+      <p class="section-kicker">History</p>
+      <h2 id="timeline-heading">Project timeline</h2>
+    </div>
+    <span class="panel-count">{{ phase_summaries | map(attribute='timeline_runs') | map('length') | sum }} runs</span>
+  </div>
+
+  {% set all_runs = [] %}
+  {% for s in phase_summaries %}
+    {% for r in s.timeline_runs %}
+      {% set _ = all_runs.append({"phase": s.name, "phase_slug": s.slug, "status": r.status, "started": r.started, "completed": r.completed, "stale": s.stale}) %}
+    {% endfor %}
+  {% endfor %}
+
+  {% if all_runs %}
+    <div class="timeline-legend">
+      <span><i class="tl-dot tl-completed"></i> Completed</span>
+      <span><i class="tl-dot tl-running"></i> Running</span>
+      <span><i class="tl-dot tl-failed"></i> Failed</span>
+      <span class="tl-stale-badge">⚠ stale</span>
+    </div>
+
+    <div class="timeline-chart">
+      {% for s in phase_summaries %}
+        <div class="tl-row">
+          <div class="tl-label">
+            {% if s.stale %}<span class="tl-stale-badge" title="{{ s.stale_reason | default('Upstream phase changed') }}">⚠</span>{% endif %}
+            <a href="{{ url_for('project_view', project_id=project.id, tab=s.slug) }}"
+               hx-get="{{ url_for('project_view', project_id=project.id, tab=s.slug) }}"
+               hx-target="#project-tabs" hx-swap="outerHTML" hx-push-url="true">{{ s.name }}</a>
+          </div>
+          <div class="tl-track">
+            {% for r in s.timeline_runs %}
+              <a class="tl-dot tl-{{ r.status }}"
+                 href="{{ url_for('project_view', project_id=project.id, tab=s.slug) }}"
+                 hx-get="{{ url_for('project_view', project_id=project.id, tab=s.slug) }}"
+                 hx-target="#project-tabs" hx-swap="outerHTML" hx-push-url="true"
+                 data-left="{{ r.left_pct }}"
+                 title="{{ loop.index }} · {{ r.status | replace('_', ' ') }} · {{ r.started[:10] if r.started else '' }}{% if r.completed %} → {{ r.completed[:10] }}{% endif %}">
+              </a>
+            {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="timeline-events">
+      <p class="section-kicker">Recent events</p>
+      {% set recent = all_runs | sort(attribute='started') | list | reverse | list %}
+      {% for r in recent[:5] %}
+        {% set simple_status = 'Completed' if r.status in ['approved', 'awaiting_review', 'superseded', 'completed'] else ('Running' if r.status == 'running' else ('Failed' if r.status in ['failed', 'cancelled'] else r.status | replace('_', ' '))) %}
+        <div class="tl-event">
+          <time class="tl-event-time">{{ r.started[:16] | replace('T', ' ') if r.started else '' }}</time>
+          <span class="tl-event-text"><strong>{{ r.phase }}</strong> — {{ simple_status }}{% if r.stale %} <small>(stale)</small>{% endif %}</span>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="inline-empty">
+      <strong>No runs yet.</strong>
+      <span>Launch a phase to see the timeline populate.</span>
+    </div>
+  {% endif %}
+</section>
 </div>

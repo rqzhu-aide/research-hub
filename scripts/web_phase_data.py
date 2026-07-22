@@ -1020,6 +1020,29 @@ def prepare_overview_data(
     ]
     dependencies = _dependencies(phases_cfg)
     cards: list[dict[str, Any]] = []
+    # Pre-compute global ordinal rank for each run (by start time across ALL phases)
+    # This gives every run its own horizontal slot — no clustering regardless of time gaps.
+    from datetime import datetime
+    def _parse_iso(ts: str | None):
+        if not ts:
+            return None
+        try:
+            return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
+    _all_runs_for_rank: list[tuple[str, datetime]] = []
+    for phase_cfg in phases_cfg:
+        phase_slug = str(phase_cfg["slug"])
+        phase_state = phases_state.get(phase_slug, {})
+        for r in phase_state.get("runs", []):
+            if isinstance(r, Mapping):
+                rid = str(r.get("run_id", ""))
+                ts = _parse_iso(r.get("started"))
+                if rid and ts:
+                    _all_runs_for_rank.append((rid, ts))
+    _all_runs_for_rank.sort(key=lambda x: x[1])
+    _rank_by_id: dict[str, int] = {rid: i for i, (rid, _) in enumerate(_all_runs_for_rank)}
+    _total_ranked = max(len(_all_runs_for_rank), 1)
     for number, phase_cfg in enumerate(phases_cfg, 1):
         phase_slug = str(phase_cfg["slug"])
         phase_state = phases_state.get(
@@ -1120,5 +1143,23 @@ def prepare_overview_data(
             "summary_path": (
                 displayed_latest.get("summary_path") if displayed_latest else None
             ),
+            "timeline_runs": [
+                {
+                    "run_id": v.get("run_id", ""),
+                    "status": v.get("status", ""),
+                    "started": v.get("started"),
+                    "completed": v.get("completed"),
+                    "number": v.get("number") or v.get("run_number", ""),
+                    "scientific_outcome": v.get("scientific_outcome", ""),
+                    # Ordinal rank positioning: each run gets its own slot based on
+                    # global temporal order. 5%–95% range keeps dots off the edges.
+                    "left_pct": round(
+                        5 + (_rank_by_id.get(str(v.get("run_id", "")), 0) / max(_total_ranked - 1, 1)) * 90,
+                        1,
+                    ),
+                }
+                for v in views
+                if v.get("started")
+            ],
         })
     return cards
