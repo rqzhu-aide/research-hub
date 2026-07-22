@@ -171,8 +171,36 @@ def _completed_count(run: Mapping[str, Any]) -> int:
     return sum(1 for item in run.get("rounds", []) if item.get("completed"))
 
 
-def _summary_available(project_dir: Path, run: Mapping[str, Any]) -> bool:
+def _discover_summary_path(
+    project_dir: Path, run: Mapping[str, Any], phase_slug: str
+) -> str | None:
+    """Resolve the summary path. Falls back to the conventional location
+    (phase-summaries/<slug>/<run_id>.html) when the lead never recorded
+    final_summary in state — the 'failed but artifacts exist' case."""
     raw_path = run.get("final_summary")
+    if raw_path:
+        return str(raw_path)
+    # Fallback: check the conventional location by run_id
+    run_id = run.get("id") or run.get("run_id")
+    if not run_id:
+        return None
+    candidate = (
+        project_dir.resolve()
+        / "phase-summaries"
+        / phase_slug
+        / f"{run_id}.html"
+    )
+    if candidate.is_file() and candidate.stat().st_size > 0:
+        return str(candidate.relative_to(project_dir.resolve()))
+    return None
+
+
+def _summary_available(
+    project_dir: Path,
+    run: Mapping[str, Any],
+    phase_slug: str = "",
+) -> bool:
+    raw_path = _discover_summary_path(project_dir, run, phase_slug)
     if not raw_path:
         return False
     root = project_dir.resolve()
@@ -435,7 +463,7 @@ def _run_view(
     started_at = run.get("started") or run.get("created_at")
     completed_at = run.get("completed") or run.get("ended_at")
     decision_note = run.get("decision_note", "")
-    summary_available = _summary_available(project_dir, run)
+    summary_available = _summary_available(project_dir, run, phase_slug)
     integrity_report = (
         project_state.run_integrity_report(project_dir, phase_slug, run_id)
         if run.get("final_summary")
@@ -548,7 +576,7 @@ def _run_view(
         "revision_feedback": decision_note if status == "revision_requested" else "",
         "feedback": run.get("user_feedback", ""),
         "user_feedback": run.get("user_feedback", ""),
-        "summary_path": run.get("final_summary"),
+        "summary_path": _discover_summary_path(project_dir, run, phase_slug),
         "summary_available": summary_available,
         "summary_integrity_error": bool(run.get("final_summary") and not summary_available),
         "integrity_error": not bool(integrity_report.get("ok")),

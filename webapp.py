@@ -1603,6 +1603,16 @@ def phase_summary(project_id: int, phase_slug: str, run_id: str) -> Response:
         abort(404, description="Run not found")
     raw_path = run.get("final_summary")
     if not raw_path:
+        # Fallback: discover summary by convention for failed-but-complete runs
+        candidate_file = (
+            Path(project_dir).resolve()
+            / "phase-summaries"
+            / phase_slug
+            / f"{run_id}.html"
+        )
+        if candidate_file.is_file() and candidate_file.stat().st_size > 0:
+            raw_path = str(candidate_file.relative_to(Path(project_dir).resolve()))
+    if not raw_path:
         abort(404, description="This run has no submitted summary")
     summary = (project_dir / str(raw_path)).resolve()
     try:
