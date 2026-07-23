@@ -195,6 +195,23 @@ def _discover_summary_path(
     return None
 
 
+def _truncate_conclusion(text: str, max_chars: int = 140) -> str:
+    """First sentence(s) of a recommendation, truncated for an overview row."""
+    text = text.strip()
+    if not text:
+        return ""
+    # Try to cut at the first sentence boundary within range
+    for boundary in (". ", ".\n"):
+        idx = text.find(boundary)
+        if 0 < idx <= max_chars:
+            return text[:idx + 1]
+    if len(text) <= max_chars:
+        return text
+    # Hard truncate at word boundary
+    cut = text[:max_chars].rsplit(" ", 1)[0]
+    return cut + "…"
+
+
 def _summary_available(
     project_dir: Path,
     run: Mapping[str, Any],
@@ -547,12 +564,26 @@ def _run_view(
     else:
         plan_variant = None
 
+    # Display status: when a run is "failed" but real artifacts exist on disk
+    # (summary HTML written by the lead), show "partial" instead of "failed".
+    # The lead did the work but didn't formally submit it (round-tracking gap,
+    # crash after writing files, etc.). Underlying status stays "failed" so
+    # state logic is unaffected; only the user-facing label softens.
+    if status == "failed" and summary_available:
+        display_status = "partial"
+    else:
+        display_status = status
+
     return {
         "id": run_id,
         "run_id": run_id,
         "number": number,
         "status": status,
-        "status_label": status.replace("_", " ").title(),
+        "display_status": display_status,
+        "status_label": (
+            "Completed (partial)" if display_status == "partial"
+            else status.replace("_", " ").title()
+        ),
         "mode": run.get("mode", ""),
         "rounds_requested": requested,
         "requested_count": requested,
@@ -586,6 +617,11 @@ def _run_view(
             scientific_decision.get("scientific_outcome")
             if scientific_decision
             else None
+        ),
+        "conclusion": (
+            _truncate_conclusion(scientific_decision.get("recommendation", ""))
+            if scientific_decision and scientific_decision.get("recommendation")
+            else ""
         ),
         "recommended_user_action": (
             scientific_decision.get("recommended_user_action")
@@ -764,6 +800,10 @@ def _decision_state(
         if latest_status in project_state.ACTIVE_RUN_STATUSES:
             return latest_status
         if str(latest.get("run_id", "")) != str(phase_state.get("approved_run", "")):
+            # When the latest run failed but artifacts exist, surface "partial"
+            # so the phase row doesn't alarm with "failed" when work is usable.
+            if latest.get("display_status") == "partial":
+                return "partial"
             return latest_status
     if phase_state.get("stale"):
         return "stale"
@@ -1175,6 +1215,8 @@ def prepare_overview_data(
                 {
                     "run_id": v.get("run_id", ""),
                     "status": v.get("status", ""),
+                    "display_status": v.get("display_status", v.get("status", "")),
+                    "summary_available": bool(v.get("summary_available")),
                     "started": v.get("started"),
                     "completed": v.get("completed"),
                     "number": v.get("number") or v.get("run_number", ""),

@@ -397,6 +397,9 @@
         This result is approved. You can retain it as the baseline or launch another run.
       {% elif latest_status in ['revision_requested', 'needs_revision'] %}
         A revision was requested. Launch a new run with focused direction when ready.
+      {% elif latest_status in ['failed', 'cancelled'] and latest.display_status | default('') == 'partial' %}
+        The lead exited without formally submitting, but a summary and artifacts were written to disk.
+        Review them below — the work may be usable even though it cannot be auto-approved through normal gating.
       {% elif latest_status in ['failed', 'cancelled'] %}
         This run is preserved for inspection and does not replace an approved baseline.
       {% else %}

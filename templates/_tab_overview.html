@@ -88,6 +88,7 @@
                 <small>approved {% if approved_time %}<time datetime="{{ approved_time }}">{{ approved_time }}</time>{% else %}date not recorded{% endif %}</small>
               {% endif %}
               {% if approved.scientific_outcome %}<small>Scientific outcome: {{ approved.scientific_outcome }}</small>{% endif %}
+              {% if approved.conclusion %}<small class="ledger-conclusion">{{ approved.conclusion }}</small>{% endif %}
             {% elif row_status == 'approved' and s.run_count | default(0) %}
               <strong>Approved result</strong><small>{{ s.run_count }} recorded run{{ '' if s.run_count == 1 else 's' }}</small>
             {% else %}
@@ -148,13 +149,14 @@
   {% set all_runs = [] %}
   {% for s in phase_summaries %}
     {% for r in s.timeline_runs %}
-      {% set _ = all_runs.append({"phase": s.name, "phase_slug": s.slug, "status": r.status, "started": r.started, "completed": r.completed, "stale": s.stale}) %}
+      {% set _ = all_runs.append({"phase": s.name, "phase_slug": s.slug, "status": r.status, "summary_available": r.summary_available | default(false), "started": r.started, "completed": r.completed, "stale": s.stale}) %}
     {% endfor %}
   {% endfor %}
 
   {% if all_runs %}
     <div class="timeline-legend">
       <span><i class="tl-dot tl-completed"></i> Completed</span>
+      <span><i class="tl-dot tl-partial"></i> Completed (partial)</span>
       <span><i class="tl-dot tl-running"></i> Running</span>
       <span><i class="tl-dot tl-failed"></i> Failed</span>
       <span class="tl-stale-badge">⚠ stale</span>
@@ -171,12 +173,12 @@
           </div>
           <div class="tl-track">
             {% for r in s.timeline_runs %}
-              <a class="tl-dot tl-{{ r.status }}"
+              <a class="tl-dot tl-{{ r.display_status | default(r.status) }}"
                  href="{{ url_for('project_view', project_id=project.id, tab=s.slug) }}"
                  hx-get="{{ url_for('project_view', project_id=project.id, tab=s.slug) }}"
                  hx-target="#project-tabs" hx-swap="outerHTML" hx-push-url="true"
                  data-left="{{ r.left_pct }}"
-                 title="{{ loop.index }} · {{ r.status | replace('_', ' ') }} · {{ r.started[:10] if r.started else '' }}{% if r.completed %} → {{ r.completed[:10] }}{% endif %}">
+                 title="{{ loop.index }} · {{ r.display_status | default(r.status) | replace('_', ' ') }} · {{ r.started[:10] if r.started else '' }}{% if r.completed %} → {{ r.completed[:10] }}{% endif %}">
               </a>
             {% endfor %}
           </div>
@@ -188,7 +190,7 @@
       <p class="section-kicker">Recent events</p>
       {% set recent = all_runs | sort(attribute='started') | list | reverse | list %}
       {% for r in recent[:5] %}
-        {% set simple_status = 'Completed' if r.status in ['approved', 'awaiting_review', 'superseded', 'completed'] else ('Running' if r.status == 'running' else ('Failed' if r.status in ['failed', 'cancelled'] else r.status | replace('_', ' '))) %}
+        {% set simple_status = 'Completed' if r.status in ['approved', 'awaiting_review', 'superseded', 'completed'] else ('Running' if r.status == 'running' else ('Completed (partial)' if r.status == 'failed' and r.summary_available else ('Failed' if r.status in ['failed', 'cancelled'] else r.status | replace('_', ' ')))) %}
         <div class="tl-event">
           <time class="tl-event-time">{{ r.started[:16] | replace('T', ' ') if r.started else '' }}</time>
           <span class="tl-event-text"><strong>{{ r.phase }}</strong> — {{ simple_status }}{% if r.stale %} <small>(stale)</small>{% endif %}</span>

@@ -853,10 +853,16 @@ progress::-moz-progress-bar { background: var(--running); }
 .timeline-legend .tl-dot { position: static; transform: none; width: 11px; height: 11px; border-width: 0; box-shadow: none; }
 .timeline-legend .tl-dot:hover { transform: none; box-shadow: none; }
 
-/* Status colors for dots — simplified to Completed / Running / Failed */
+/* Status colors for dots — simplified to Completed / Completed (partial) / Running / Failed */
 .tl-completed, .tl-approved, .tl-awaiting_review, .tl-superseded { background: var(--approved, #66d8c2); }
+.tl-partial { background: var(--review, #f4c46d); }  /* amber: work exists but tracking incomplete */
 .tl-running { background: var(--running, #70baff); animation: tl-pulse 2s ease-in-out infinite; }
-.tl-failed { background: var(--danger, #ff8189); }
+.tl-failed, .tl-cancelled { background: var(--danger, #ff8189); }
+.ledger-conclusion {
+  display: block; color: var(--text-3, #8b95a5); font-style: italic;
+  font-size: 0.82rem; line-height: 1.4; margin-top: 0.15rem;
+  max-width: 320px; overflow: hidden; text-overflow: ellipsis;
+}
 .tl-stale-badge {
   color: var(--review, #f4c46d); font-size: .85rem;
   cursor: help; display: inline-flex; align-items: center; gap: .15rem;

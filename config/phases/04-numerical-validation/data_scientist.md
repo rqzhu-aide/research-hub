@@ -121,6 +121,35 @@ an error:
 - tests of input validity, array dimensions, signs, indexing, and failed numerical
   routines.
 
+**Record every diagnostic check in `diagnostics/diagnostic_results.json`.** Each
+entry must include: a descriptive `name` (what was checked), the `measured_value`
+(the actual number you observed, not a placeholder), the `expected_value` or
+`expected_range`, and a `passed` boolean. Example structure:
+
+```json
+{
+  "checks": [
+    {
+      "name": "Score gradient vs numerical gradient (max abs error)",
+      "measured_value": 2.3e-7,
+      "expected_value": "< 1e-5",
+      "passed": true
+    },
+    {
+      "name": "ULA stationary mean — 2D isotropic Gaussian (true = [0, 0])",
+      "measured_value": [0.012, -0.008],
+      "expected_range": "[-0.05, 0.05] per dimension",
+      "passed": true
+    }
+  ],
+  "summary": "5 of 6 checks passed; the FEP covariance estimate failed at N=4."
+}
+```
+
+Do NOT write a stub with zero values — if a check was not run, omit it or mark
+`"passed": null` with a `"reason"`. Every non-null entry must reflect a real
+measurement from your code.
+
 When a central result depends on a delicate implementation, use an independent
 reference calculation or separately implemented benchmark. Do not validate a
 result only with the same code path that generated it.
