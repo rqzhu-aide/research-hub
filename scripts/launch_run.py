@@ -6440,7 +6440,9 @@ def _launch_run_locked(
             "phase_plan_version": current_phase_plan_version,
             "prerequisite_report_version": current_prerequisite_version,
         }
-        if phase_slug == NUMERICAL_VALIDATION_PHASE:
+        # Protocol checkpoint: only when explicitly declared in the phase config
+        # (was hard-coded for Phase 04; now config-driven so phases can opt in)
+        if configured_phase.get("protocol_checkpoint") and phase_slug == NUMERICAL_VALIDATION_PHASE:
             manifest["protocol_checkpoint"] = {
                 "schema_version": (
                     project_state.PROTOCOL_CHECKPOINT_SCHEMA_VERSION

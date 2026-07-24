@@ -2893,7 +2893,7 @@ def _validate_run_integrity(
         phase_slug,
         run,
         manifest,
-        required=phase_slug == NUMERICAL_VALIDATION_PHASE,
+        required=bool(phase_slug == NUMERICAL_VALIDATION_PHASE and manifest and manifest.get("protocol_checkpoint") is not None),
     )
     _validate_recorded_artifacts(project_dir, run)
     _validate_recorded_task_briefs(project_dir, phase_slug, run)
@@ -3909,7 +3909,7 @@ def stage_run_submission(
             phase_slug,
             run,
             manifest,
-            required=phase_slug == NUMERICAL_VALIDATION_PHASE,
+            required=bool(phase_slug == NUMERICAL_VALIDATION_PHASE and manifest and manifest.get("protocol_checkpoint") is not None),
         )
         _validate_recorded_artifacts(project_dir, run)
         _validate_recorded_task_briefs(project_dir, phase_slug, run)

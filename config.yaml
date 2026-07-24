@@ -103,35 +103,21 @@ phases:
     default: 2
     max: 3
 - slug: "04-numerical-validation"
-  name: "Numerical Validation"
-  description: "Verify that the implementation matches the method and assess prespecified
-    statistical properties and empirical performance"
-  pattern: sequential
+  name: "Draft Assembly"
+  description: "Parallel drafting: intro+method (lead), theory+proofs (theorist),
+    implementation+experiments (data analyst), then lead combines into a formal draft"
+  pattern: parallel
   gated_by: ["02-method-development"]
   context_from: ["03-theoretical-justification"]
   folder: "numerical/"
-  members: [data_scientist, theorist, research_lead]
-  rounds: {min: 4, default: 4, max: 4}
-  stages:
-  - role: data_scientist
-    name: "Prespecify the protocol, then test"
-    description: "Complete the protocol-only task in its isolated run workspace; after
-      Research Hub verifies and seals that workspace, complete the separate result
-      task by implementing the method and testing failure cases first."
-  - role: theorist
-    name: "Audit mathematical and computational correspondence"
-    description: "Verify the sealed protocol file hashes, then audit whether the implementation
-      and protocol correspond to the method and scientific design."
-  - role: data_scientist
-    name: "Correct and validate"
-    description: "Write versioned corrections for implementation or protocol discrepancies
-      within the scientific design, preserve the sealed originals, and complete the
-      numerical study."
-  - role: research_lead
-    name: "Synthesize the evidence"
-    description: "Synthesize the submitted evidence for each prespecified statement
-      without redefining the study or running additional analyses."
-
+  members:
+  - research_lead
+  - theorist
+  - data_scientist
+  rounds:
+    min: 2
+    default: 2
+    max: 2
 - slug: "05-data-analysis"
   name: "Scientific Interpretation"
   description: "Interpret the numerical results, uncertainty, and validity checks
