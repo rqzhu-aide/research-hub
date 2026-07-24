@@ -119,15 +119,29 @@ phases:
     default: 2
     max: 2
 - slug: "05-data-analysis"
-  name: "Scientific Interpretation"
-  description: "Interpret the numerical results, uncertainty, and validity checks
-    and determine the scope of each scientific conclusion"
-  pattern: debate
+  name: "Review & Revision"
+  description: "Paper reviewer audits the Phase 4 draft using stat-paper-reviewer;
+    lead revises into final manuscript"
+  pattern: sequential
   gated_by: ["04-numerical-validation"]
   context_from: ["03-theoretical-justification"]
   folder: "draft/analysis/"
-  members: [theorist, research_lead, data_scientist]
-  rounds: {min: 2, default: 2, max: 3}
+  members:
+  - paper_reviewer
+  - research_lead
+  rounds:
+    min: 2
+    default: 2
+    max: 2
+  stages:
+  - name: Review
+    role: paper_reviewer
+    description: Audit the complete draft — soundness, clarity, significance, 
+      originality. Produce ranked revision recommendations.
+  - name: Revise
+    role: research_lead
+    description: Address each review point, revise the draft, produce the final 
+      manuscript with a revision log.
 
 - slug: "06-paper-writing"
   name: "Paper Writing"

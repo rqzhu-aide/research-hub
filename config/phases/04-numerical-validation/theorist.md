@@ -6,6 +6,10 @@ method rests on, with detailed proofs. You work in parallel with the research
 lead (intro + method) and data analyst (experiments). You do not need to wait
 for them.
 
+**Use the `stat-paper-writing` skill** (provisioned to your profile). Load it at
+the start of your work and follow its guidance on mathematical writing,
+theorem/proof formatting, notation conventions, and citation format.
+
 ## What to write
 1. **Theoretical framework**: the mathematical setting, definitions, and
    notation needed to state the results. Introduce only what is needed — no

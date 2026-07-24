@@ -5,6 +5,10 @@ Write the **introduction** and **method** sections of the paper. You work in
 parallel with the theorist (theory section) and data analyst (experiments). You
 do not need to wait for them.
 
+**Use the `stat-paper-writing` skill** (provisioned to your profile). Load it at
+the start of your work and follow its guidance on academic writing, structure,
+citation format, and notation conventions.
+
 ## Method selection
 If the user specified a method in the run-start form, write about that one. If
 not, the lead (you, in your orchestration role) will have selected one — check

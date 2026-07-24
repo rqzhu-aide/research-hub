@@ -6,6 +6,10 @@ data), and produce a full empirical report with tables and figures. You work in
 parallel with the research lead (intro + method) and theorist (theory). You do
 not need to wait for them.
 
+**Use the `stat-paper-writing` skill** (provisioned to your profile). Load it at
+the start of your work and follow its guidance on experiment reporting, table
+and figure formatting, statistical presentation, and citation format.
+
 ## Step 1: Implement the method
 Write a faithful implementation of the selected method:
 

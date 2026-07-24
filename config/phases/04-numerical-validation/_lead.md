@@ -22,6 +22,15 @@ Identify the selected method: its Phase 2 definition, its Phase 3 evaluation
 across all four dimensions, and any open questions flagged during evaluation.
 
 ## Step 2: Round 1 — parallel drafting
+**All three members use the `stat-paper-writing` skill** (provisioned to their
+profiles) for their sections. This ensures consistent paper conventions across
+all three.
+
+Create a **method-specific subdirectory** under the output root named after the
+method's stable ID (or a readable slug). All three members write into this same
+subdirectory. This way, reruns for different ideas produce parallel independent
+papers, not overwrites.
+
 Dispatch three independent tasks:
 
 1. **You (research lead)**: write the introduction and method section.

@@ -33,6 +33,20 @@ The data analyst's empirical work retains these scientific-integrity practices:
 - **Computational reproducibility**: record seeds, software versions, hardware,
   and the exact commands needed to reproduce each result.
 
+## Skill requirement
+All three members **must use the `stat-paper-writing` skill** (provisioned to
+your profile) for your section. Load it at the start of your work and follow its
+guidance on structure, notation, figure quality, citation format, and academic
+writing standards. The skill ensures all three sections use consistent paper
+conventions so the lead can combine them cleanly.
+
+## Method-specific folders
+Each run targets one method. The output path includes the method so that
+reruns for different ideas produce **parallel independent papers**, not
+overwrites. The lead creates a subdirectory under the output root named after
+the method's stable ID (or a readable slug derived from it). All three members
+write into that same method subdirectory.
+
 The heavy sealed-protocol-checkpoint machinery (hash-locked study designs,
 cross-stage audits, protocol-only first rounds) has been **archived** — it
 belonged to the old sequential structure and is not needed for parallel
