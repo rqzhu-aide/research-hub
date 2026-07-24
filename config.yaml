@@ -69,7 +69,8 @@ agents:
 phases:
 - slug: "01-literature-review"
   name: "Literature Review"
-  description: "Assess direct prior work, theoretical foundations, related methods, existing implementations, and originality"
+  description: "Assess direct prior work, theoretical foundations, related methods,
+    existing implementations, and originality"
   pattern: parallel
   gated_by: []
   folder: "references/literature-review/"
@@ -78,8 +79,9 @@ phases:
 
 - slug: "02-method-development"
   name: "Method Development"
-  description: "Define the estimand and method, then specify validity conditions and results that would contradict its stated properties"
-  pattern: debate
+  description: "Brainstorm genuinely new ideas — new mechanisms, frameworks, or insights
+    — with a unique position distinct from any existing method"
+  pattern: parallel
   gated_by: ["01-literature-review"]
   folder: "ideas/"
   members: [theorist, research_lead, data_scientist]
@@ -87,7 +89,8 @@ phases:
 
 - slug: "03-theoretical-justification"
   name: "Theoretical Analysis"
-  description: "Derive theoretical results and state their assumptions, scope, and limitations"
+  description: "Derive theoretical results and state their assumptions, scope, and
+    limitations"
   pattern: sequential
   gated_by: ["02-method-development"]
   folder: "draft/theory/"
@@ -97,22 +100,27 @@ phases:
     stage:
       role: paper_reviewer
       name: "Audit the final theoretical analysis independently"
-      description: "Check the exact sealed theory artifact, assumptions, proof dependencies, and central conclusions without revising the theory."
+      description: "Check the exact sealed theory artifact, assumptions, proof dependencies,
+        and central conclusions without revising the theory."
   rounds: {min: 3, default: 3, max: 3}
   stages:
   - role: theorist
     name: "Develop the theory"
-    description: "Develop the necessary results, their dependencies, assumptions, scope, and proofs."
+    description: "Develop the necessary results, their dependencies, assumptions,
+      scope, and proofs."
   - role: research_lead
     name: "Assess theoretical support"
-    description: "Assess how the results support the claims, including scope and unresolved gaps."
+    description: "Assess how the results support the claims, including scope and unresolved
+      gaps."
   - role: theorist
     name: "Revise the analysis"
-    description: "Revise the analysis where needed and state any unresolved mathematical questions explicitly."
+    description: "Revise the analysis where needed and state any unresolved mathematical
+      questions explicitly."
 
 - slug: "04-numerical-validation"
   name: "Numerical Validation"
-  description: "Verify that the implementation matches the method and assess prespecified statistical properties and empirical performance"
+  description: "Verify that the implementation matches the method and assess prespecified
+    statistical properties and empirical performance"
   pattern: sequential
   gated_by: ["02-method-development"]
   context_from: ["03-theoretical-justification"]
@@ -122,20 +130,27 @@ phases:
   stages:
   - role: data_scientist
     name: "Prespecify the protocol, then test"
-    description: "Complete the protocol-only task in its isolated run workspace; after Research Hub verifies and seals that workspace, complete the separate result task by implementing the method and testing failure cases first."
+    description: "Complete the protocol-only task in its isolated run workspace; after
+      Research Hub verifies and seals that workspace, complete the separate result
+      task by implementing the method and testing failure cases first."
   - role: theorist
     name: "Audit mathematical and computational correspondence"
-    description: "Verify the sealed protocol file hashes, then audit whether the implementation and protocol correspond to the method and scientific design."
+    description: "Verify the sealed protocol file hashes, then audit whether the implementation
+      and protocol correspond to the method and scientific design."
   - role: data_scientist
     name: "Correct and validate"
-    description: "Write versioned corrections for implementation or protocol discrepancies within the scientific design, preserve the sealed originals, and complete the numerical study."
+    description: "Write versioned corrections for implementation or protocol discrepancies
+      within the scientific design, preserve the sealed originals, and complete the
+      numerical study."
   - role: research_lead
     name: "Synthesize the evidence"
-    description: "Synthesize the submitted evidence for each prespecified statement without redefining the study or running additional analyses."
+    description: "Synthesize the submitted evidence for each prespecified statement
+      without redefining the study or running additional analyses."
 
 - slug: "05-data-analysis"
   name: "Scientific Interpretation"
-  description: "Interpret the numerical results, uncertainty, and validity checks and determine the scope of each scientific conclusion"
+  description: "Interpret the numerical results, uncertainty, and validity checks
+    and determine the scope of each scientific conclusion"
   pattern: debate
   gated_by: ["04-numerical-validation"]
   context_from: ["03-theoretical-justification"]
@@ -145,7 +160,8 @@ phases:
 
 - slug: "06-paper-writing"
   name: "Paper Writing"
-  description: "Write and independently assess a manuscript consistent with the theory and evidence"
+  description: "Write and independently assess a manuscript consistent with the theory
+    and evidence"
   pattern: sequential
   gated_by: ["03-theoretical-justification", "05-data-analysis"]
   folder: "draft/"
@@ -154,16 +170,20 @@ phases:
   stages:
   - role: research_lead
     name: "Define the manuscript claims and structure"
-    description: "Draft the scientific argument and the sections assigned to the research lead."
+    description: "Draft the scientific argument and the sections assigned to the research
+      lead."
   - role: theorist
     name: "Write the theory"
     description: "Draft the theory section for the stated claims and method."
   - role: data_scientist
     name: "Write experiments and results"
-    description: "Report the estimates, uncertainty, negative results, and limitations directly."
+    description: "Report the estimates, uncertainty, negative results, and limitations
+      directly."
   - role: paper_reviewer
     name: "Read the manuscript independently"
-    description: "Record a first-reader assessment using only the exact manuscript under review."
+    description: "Record a first-reader assessment using only the exact manuscript
+      under review."
   - role: paper_reviewer
     name: "Assess the manuscript against the evidence"
-    description: "Compare the preserved first reading with the internal scientific record and complete the assessment."
+    description: "Compare the preserved first reading with the internal scientific
+      record and complete the assessment."
