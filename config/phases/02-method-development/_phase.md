@@ -30,8 +30,12 @@ A candidate idea should have:
 Requires a current Phase 01 summary approved by the user. If that summary is
 unavailable, the web UI identifies the missing prior evidence, but the user may
 choose to proceed. The lead must then state what prior evidence is unavailable.
-For a rerun, use a trusted current approved Phase 02 result as the scientific
-baseline. Treat a stale Phase 02 result only as comparison evidence.
+
+**On rerun:** the prior Phase 02 run is provided as **comparison evidence** —
+"here is what the team proposed before." The new run should generate **fresh
+ideas**, not merely refine the prior set. Ideas from the prior run may be
+extended, combined, or replaced. The team should think broadly again, informed
+by (but not constrained to) what was proposed before.
 
 ## Study structure
 Each role proposes multiple ideas independently in round 1, working from their

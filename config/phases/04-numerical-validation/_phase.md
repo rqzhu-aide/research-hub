@@ -54,10 +54,24 @@ drafting.
 
 ## Prior information
 Requires a current Phase 03 summary approved by the user (contains the idea
-rankings). If the user specifies an idea in the run-start form, the team works
-on that idea. If not, the lead selects one from the Phase 3 rankings and states
-the choice. The lead must identify the idea by its Phase 2 method ID and the
-Phase 3 evaluation outcome.
+rankings). Phases 01 (literature) and 02 (ideas) are also provided automatically.
+If the user specifies an idea in the run-start form, the team works on that idea.
+If not, the lead selects one from the Phase 3 rankings and states the choice. The
+lead must identify the idea by its Phase 2 method ID and the Phase 3 evaluation
+outcome.
+
+**On rerun for the same method:** the prior Phase 04 draft is provided as
+**comparison evidence**. The new run should improve on it — address weaknesses,
+deepen sections, fix issues. The method-specific folder preserves the prior
+draft, so the new run can reference and build on it.
+
+**On rerun for a different method:** the prior Phase 04 run was for a different
+method. It is provided as comparison evidence only ("here's another paper we
+drafted"). The new run starts fresh in a new method-specific folder. Each
+method's draft is an independent paper.
+
+Either way, the output goes into a **method-specific subdirectory** so papers
+for different ideas do not overwrite each other.
 
 ## Files and outputs
 Write all outputs under `numerical/run/NN/`:

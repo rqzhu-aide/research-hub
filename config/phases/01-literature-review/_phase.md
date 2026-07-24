@@ -20,6 +20,12 @@ than treating originality as a binary judgment.
 ## When this phase may be run
 The user may run or rerun this phase at any time. No earlier phase is required.
 
+**On rerun:** the prior Phase 01 run is provided as **comparison evidence** —
+"here is what the team found before." The new run should conduct a fresh search,
+informed by but not constrained to prior findings. A focused re-scan (narrower
+scope, specific gap to chase) and an initial survey use the same role
+instructions; they differ only in the lead's directives.
+
 ## Study structure
 All three roles search independently from their scientific perspective. The
 research lead then writes an evidence-weighted synthesis that states the

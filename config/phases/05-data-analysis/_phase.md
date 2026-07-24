@@ -22,9 +22,22 @@ each method's paper — draft, review, and final — self-contained.
 
 ## Prior information
 Requires a current Phase 04 summary approved by the user (the combined draft).
-The reviewer reads the draft, not just the summary — the full manuscript is the
-object of review. The reviewer also reads the Phase 01–03 context for
-positioning and theory grounding.
+Phases 01–03 are also provided automatically. The reviewer reads the draft, not
+just the summary — the full manuscript is the object of review. The reviewer
+also reads the Phase 01–03 context for positioning and theory grounding.
+
+**On rerun for the same draft:** the prior Phase 05 review+revision is provided
+as **comparison evidence**. The new review should be independent — re-read the
+draft fresh, not just repeat the prior review. The revision should address the
+new review's points.
+
+**On rerun after a Phase 4 rerun (different/new draft):** if Phase 4 produced a
+new or revised draft for the same method, Phase 5 automatically becomes stale.
+The new Phase 5 run reviews the current draft, not the old one. The prior Phase
+5 review is comparison evidence only.
+
+Phase 5 operates on the **same method-specific folder** as Phase 4 — the draft,
+review, and final manuscript all live together.
 
 ## Study structure
 **Sequential, 2 stages:**

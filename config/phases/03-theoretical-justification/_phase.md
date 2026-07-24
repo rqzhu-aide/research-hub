@@ -23,11 +23,17 @@ The four evaluation dimensions:
 
 ## Prior information
 Requires a current Phase 02 summary approved by the user. The Phase 02 summary
-contains the full idea set to be evaluated. If that summary is unavailable, the
-web UI identifies the missing prior evidence, but the user may choose to proceed.
-The lead must then state what prior evidence is unavailable. For a rerun, use a
-trusted current approved Phase 03 result as the scientific baseline. Treat a
-stale Phase 03 result only as comparison evidence.
+contains the full idea set to be evaluated. Phase 01 (literature review) is also
+provided automatically — use it to judge methodological novelty against existing
+work. If either summary is unavailable, the web UI identifies the missing prior
+evidence, but the user may choose to proceed. The lead must then state what prior
+evidence is unavailable.
+
+**On rerun:** the prior Phase 03 evaluation is provided as **comparison
+evidence** — "here is how the team rated these ideas before." The new run should
+re-evaluate independently, informed by but not constrained to the prior ratings.
+If the Phase 02 idea set changed (new ideas added), the new evaluation must cover
+all current ideas, not just the ones evaluated before.
 
 ## Study structure
 **Debate pattern.** All three roles evaluate all ideas independently in round 1.
