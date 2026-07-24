@@ -88,35 +88,20 @@ phases:
   rounds: {min: 2, default: 2, max: 3}
 
 - slug: "03-theoretical-justification"
-  name: "Theoretical Analysis"
-  description: "Derive theoretical results and state their assumptions, scope, and
-    limitations"
-  pattern: sequential
+  name: "Idea Evaluation"
+  description: "Evaluate all Phase 2 ideas across correctness, methodological novelty,
+    theoretical rigor, and computational cost, then rank them"
+  pattern: debate
   gated_by: ["02-method-development"]
   folder: "draft/theory/"
-  members: [theorist, research_lead, paper_reviewer]
-  proof_audit:
-    plans: [standard, standard_with_audit, audit_only]
-    stage:
-      role: paper_reviewer
-      name: "Audit the final theoretical analysis independently"
-      description: "Check the exact sealed theory artifact, assumptions, proof dependencies,
-        and central conclusions without revising the theory."
-  rounds: {min: 3, default: 3, max: 3}
-  stages:
-  - role: theorist
-    name: "Develop the theory"
-    description: "Develop the necessary results, their dependencies, assumptions,
-      scope, and proofs."
-  - role: research_lead
-    name: "Assess theoretical support"
-    description: "Assess how the results support the claims, including scope and unresolved
-      gaps."
-  - role: theorist
-    name: "Revise the analysis"
-    description: "Revise the analysis where needed and state any unresolved mathematical
-      questions explicitly."
-
+  members:
+  - theorist
+  - research_lead
+  - data_scientist
+  rounds:
+    min: 2
+    default: 2
+    max: 3
 - slug: "04-numerical-validation"
   name: "Numerical Validation"
   description: "Verify that the implementation matches the method and assess prespecified

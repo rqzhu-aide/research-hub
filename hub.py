@@ -393,7 +393,11 @@ def validate_config(cfg: object, *, config_root: Optional[Path] = None) -> dict:
             raise ConfigurationError(f"{field}.members cannot contain duplicates")
 
         proof_audit = phase.get("proof_audit")
-        if slug == "03-theoretical-justification":
+        if proof_audit is not None:
+            if slug != "03-theoretical-justification":
+                raise ConfigurationError(
+                    f"{field}.proof_audit is only valid for Phase 03"
+                )
             if not isinstance(proof_audit, dict) or set(proof_audit) != {"plans", "stage"}:
                 raise ConfigurationError(
                     f"{field}.proof_audit must contain exactly plans and stage"
@@ -427,10 +431,6 @@ def validate_config(cfg: object, *, config_root: Optional[Path] = None) -> dict:
                     f"{field}.proof_audit.stage.role must be paper_reviewer and "
                     "listed in phase members"
                 )
-        elif proof_audit is not None:
-            raise ConfigurationError(
-                f"{field}.proof_audit is only valid for Phase 03"
-            )
 
         gates = phase.get("gated_by")
         if not isinstance(gates, list):
