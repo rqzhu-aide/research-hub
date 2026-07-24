@@ -31,9 +31,7 @@ stale Phase 03 result only as comparison evidence.
 
 ## Study structure
 **Debate pattern.** All three roles evaluate all ideas independently in round 1.
-In later rounds, they read one another's evaluations, surface disagreements, and
-reconcile where possible. The lead then synthesizes the evaluations into
-rankings.
+In later rounds, they read one another's evaluations, debate disagreements from their own perspectives, and revise their own ratings based on the arguments heard. The lead then synthesizes the (possibly still disagreeing) evaluations into rankings.
 
 Each role evaluates every idea on all four dimensions, but brings their deepest
 expertise to specific ones:

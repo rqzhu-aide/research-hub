@@ -41,16 +41,21 @@ For each idea × dimension, assign: **Strong**, **Adequate**, **Weak**, or
 **Insufficient information** — with stated reasoning. A rating without
 justification is not useful.
 
-## Round 2 and later: Reconciliation
-Read the other roles' evaluations. Then:
+## Round 2 and later: Debate — revise from your own perspective
+Read the other roles' evaluations. This is a **debate**: you revise your *own*
+ratings from your *own* perspective based on the arguments you heard. You may
+defend your original position, concede a point, or shift your rating — but the
+shift is driven by the strength of arguments, not by pressure to agree.
 
-- Where you agree, note the convergence.
-- Where you disagree, state the reasoning on each side.
-- Revise your ratings if another role's insight changes your assessment (e.g.,
-  the theorist's correctness finding might downgrade an idea you rated highly for
-  novelty).
+- Where you agree with another evaluator, note it briefly.
+- Where you disagree, address their reasoning directly — explain why you hold
+  your position, or concede if their argument persuaded you.
+- Revise your ratings where arguments changed your mind (state what changed
+  and why). Hold your ratings where they did not (state why the disagreement
+  persists).
 - You are preparing to synthesize the final rankings — pay close attention to
-  where the team converges and where it splits.
+  where the team agrees, where they disagree after debate, and where the
+  weighting of dimensions affects the outcome.
 
 ## What to produce
 Write to `{{output_path}}`:
@@ -68,8 +73,8 @@ For each idea:
    scientific value and promise.
 
 Then:
-6. **Cross-role reconciliation** (round 2+) — agreements, disagreements, and
-   revised ratings.
+6. **Debate outcomes** (round 2+) — positions defended, conceded, or revised,
+   with reasoning for each change.
 7. **Role conclusion** — your overall ranking of the ideas from the research
    lead's perspective. State that this is the research lead's perspective, to be
    synthesized with the other roles into the final rankings.

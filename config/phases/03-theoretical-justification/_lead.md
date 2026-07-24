@@ -12,7 +12,7 @@ synthesize the evaluations into clear rankings the user can act on.
 2. Ensure every idea from Phase 02 is evaluated — no idea is skipped.
 3. Assign each role their evaluation focus while requiring all roles to assess
    all ideas on all four dimensions.
-4. In later rounds, surface and reconcile disagreements between evaluators.
+4. In the debate round, ensure each role reads the others' evaluations and revises their own ratings from their own perspective — defending positions where they disagree, conceding where arguments persuade them.
 5. Synthesize the final rankings and present them to the user with a
    recommendation.
 
@@ -53,20 +53,27 @@ information — with stated reasoning.
 The roles work independently in round 1. Encourage honest, direct assessment —
 an idea that is exciting but logically shaky should be rated accordingly.
 
-## Step 3: Reconciliation in later rounds
-From round 2 onward, require every role to read the available named reports from
-the prior round. Each new report should:
+## Step 3: Debate round — revise from your own perspective
+From round 2 onward, require every role to read the available named reports
+from the prior round. This is a **debate**, not a negotiation: each member
+revises their *own* ratings from their *own* perspective based on the arguments
+they heard. They may defend their original position, concede a point, or shift
+their rating — but the shift is driven by the strength of arguments, not by
+pressure to agree.
 
-- identify where evaluators agreed or disagreed on each idea × dimension;
-- for disagreements, state the reasoning on each side and attempt to reconcile;
-- refine ratings based on cross-role insights (e.g., the data analyst's cost
-  analysis might change the theorist's rigor assessment);
+Each new report must:
+
+- respond to specific disagreements: where another evaluator rated differently,
+  address their reasoning directly — agree, push back, or refine;
+- revise ratings where arguments persuaded them (state what changed and why);
+- hold positions where arguments did not persuade them (state why the
+  disagreement persists);
 - flag ideas where the team's assessment is genuinely split and the user needs
   to weigh in.
 
-The goal is to converge where the evidence supports convergence and to clearly
-flag where it does not. Do not force agreement — an honest split is more useful
-than a false consensus.
+The goal is **not consensus**. An honest, well-argued disagreement is more
+valuable than a forced compromise. After the debate, the lead synthesizes the
+final positions — including any that remain split — into the rankings.
 
 ## Step 4: Final synthesis — rankings
 Write the final HTML summary to the exact path provided for this run.
@@ -83,8 +90,7 @@ Present:
    weightings would change the ranking, show that.
 3. **Idea profiles**: for each idea, a compact summary of its strengths and
    weaknesses across all four dimensions.
-4. **Team disagreements**: where evaluators could not reconcile, present both
-   views so the user can judge.
+4. **Team disagreements**: where evaluators still disagree after the debate, present each side's final position with their reasoning so the user can judge.
 5. **Recommendation**: which idea(s) you recommend pursuing in Phase 04 and why.
    State this as a recommendation, not a decision.
 
@@ -105,7 +111,7 @@ forward and whether to proceed to Phase 04.
 - Ensure every Phase 02 idea is evaluated — no idea is skipped.
 - Every rating must have stated reasoning. "Strong" or "Weak" without
   justification is not useful to the user.
-- Be honest about disagreements. A split evaluation is more valuable than a
-  forced consensus.
+- Be honest about disagreements after debate. A well-argued split is more
+  valuable than a forced compromise.
 - Weight the dimensions transparently in your overall ranking. If the ranking is
   weighting-sensitive, say so.

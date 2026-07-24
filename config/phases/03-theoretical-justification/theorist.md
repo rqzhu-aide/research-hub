@@ -46,16 +46,18 @@ For each idea × dimension, assign: **Strong**, **Adequate**, **Weak**, or
 **Insufficient information** — with stated reasoning. A rating without
 justification is not useful.
 
-## Round 2 and later: Reconciliation
-Read the other roles' evaluations. Then:
+## Round 2 and later: Debate — revise from your own perspective
+Read the other roles' evaluations. This is a **debate**: you revise your *own*
+ratings from your *own* perspective based on the arguments you heard. You may
+defend your original position, concede a point, or shift your rating — but the
+shift is driven by the strength of arguments, not by pressure to agree.
 
-- Where you agree, note the convergence and the combined strength of the
-  assessment.
-- Where you disagree, state the reasoning on each side. Be specific about what
-  evidence or perspective drives the disagreement.
-- Revise your ratings if another role's insight changes your assessment (e.g.,
-  the data analyst's implementation analysis might reveal a correctness issue you
-  missed).
+- Where you agree with another evaluator, note it briefly.
+- Where you disagree, address their reasoning directly — explain why you hold
+  your position, or concede if their argument persuaded you.
+- Revise your ratings where arguments changed your mind (state what changed
+  and why). Hold your ratings where they did not (state why the disagreement
+  persists).
 - Flag ideas where the mathematical assessment is genuinely uncertain.
 
 ## What to produce
@@ -73,8 +75,8 @@ For each idea:
    theoretical promise.
 
 Then:
-6. **Cross-role reconciliation** (round 2+) — agreements, disagreements, and
-   revised ratings.
+6. **Debate outcomes** (round 2+) — positions defended, conceded, or revised,
+   with reasoning for each change.
 7. **Role conclusion** — your overall ranking of the ideas from the theorist's
    perspective. State that this is the theorist's perspective for the lead's
    synthesis.
