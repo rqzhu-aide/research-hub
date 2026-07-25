@@ -1273,7 +1273,8 @@ def test_method_menu_branch_selection_drives_run_specific_identity(
     assert response.status_code == 200
     assert 'name="method_branch"' in body
     assert "Spectral Graph Coupling" in body
-    assert "old-idea" not in body  # retired branches are not offered
+    # retired branches are shown greyed in the roster but not selectable
+    assert 'value="old-idea"' not in body
 
     launched = Mock(return_value={"run_number": 1, "rounds_requested": 1})
     monkeypatch.setattr(webapp, "launch_run", launched)
@@ -3063,3 +3064,105 @@ def test_run_log_is_contained_and_served_only_as_plain_text(
     )
     assert escaped.status_code == 404
     assert b"outside secret" not in escaped.data
+
+
+# ---------------------------------------------------------------------------
+# Branch retirement (Stage 3c)
+# ---------------------------------------------------------------------------
+
+def test_retire_branch_removes_it_from_picker(
+    web_env: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """POSTing /branch/retire flips status and drops the branch from the picker."""
+    theory_slug = "03-idea-evaluation"
+    web_env["config"]["phases"].append(_theory_phase_config())
+    _write_menu_file(web_env["project_dir"], "spectral-graph-coupling", "recommended")
+    _write_menu_file(web_env["project_dir"], "alt-method", "viable")
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+    monkeypatch.setattr(webapp, "theory_audit_source_options", lambda _project: [])
+
+    client = web_env["client"]
+    token = _csrf(client)
+    identity = _project_identity(web_env)
+
+    # Before: both branches visible
+    before = client.get(f"/project/{PROJECT_ID}?tab={theory_slug}")
+    assert "Spectral Graph Coupling" in before.get_data(as_text=True)
+    assert "Alt Method" in before.get_data(as_text=True)
+
+    # Retire spectral-graph-coupling
+    response = client.post(
+        f"/project/{PROJECT_ID}/phase/{theory_slug}/branch/retire",
+        data={"csrf_token": token, "project_identity": identity, "stable_id": "spectral-graph-coupling"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "retired" in body.lower()
+
+    # After: retired branch gone from picker, alt still present
+    after = client.get(f"/project/{PROJECT_ID}?tab={theory_slug}")
+    after_body = after.get_data(as_text=True)
+    assert "Alt Method" in after_body
+    # spectral is no longer selectable as a new run's method
+    assert 'value="spectral-graph-coupling"' not in after_body
+
+
+def test_retire_unknown_branch_returns_404(
+    web_env: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    theory_slug = "03-idea-evaluation"
+    web_env["config"]["phases"].append(_theory_phase_config())
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+    monkeypatch.setattr(webapp, "theory_audit_source_options", lambda _project: [])
+
+    client = web_env["client"]
+    token = _csrf(client)
+    identity = _project_identity(web_env)
+
+    response = client.post(
+        f"/project/{PROJECT_ID}/phase/{theory_slug}/branch/retire",
+        data={"csrf_token": token, "project_identity": identity, "stable_id": "ghost"},
+    )
+    assert response.status_code == 404
+
+
+def test_retire_already_retired_returns_409(
+    web_env: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    theory_slug = "03-idea-evaluation"
+    web_env["config"]["phases"].append(_theory_phase_config())
+    _write_menu_file(web_env["project_dir"], "old-idea", "retired")
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+    monkeypatch.setattr(webapp, "theory_audit_source_options", lambda _project: [])
+
+    client = web_env["client"]
+    token = _csrf(client)
+    identity = _project_identity(web_env)
+
+    response = client.post(
+        f"/project/{PROJECT_ID}/phase/{theory_slug}/branch/retire",
+        data={"csrf_token": token, "project_identity": identity, "stable_id": "old-idea"},
+    )
+    assert response.status_code == 409
+
+
+def test_retire_blocked_on_non_binding_phase(
+    web_env: dict,
+) -> None:
+    """Retiring on a phase that doesn't manage branches returns 404."""
+    client = web_env["client"]
+    token = _csrf(client)
+    identity = _project_identity(web_env)
+    # Phase 01 does not bind methods
+    response = client.post(
+        f"/project/{PROJECT_ID}/phase/01-literature/branch/retire",
+        data={"csrf_token": token, "project_identity": identity, "stable_id": "anything"},
+    )
+    assert response.status_code == 404

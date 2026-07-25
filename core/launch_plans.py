@@ -574,6 +574,28 @@ def _method_selection_for_run(
     )
 
 
+def _branch_aware_output_root(
+    project_dir: Path,
+    phase_folder: str,
+    *,
+    run_number: int,
+    method_selection: Mapping[str, Any] | None,
+) -> Path:
+    """Compute a run's output directory, redirecting into a branch folder.
+
+    Method-bound runs (Phase 03/04/05 with a sealed method identity) write
+    inside ``branches/<stable_id>/<folder>/run/NN/`` so each method's
+    artifacts accumulate independently. Runs without a method selection keep
+    the legacy flat path ``<folder>/run/NN/``.
+    """
+
+    base = Path(str(phase_folder or ""))
+    tail = base / "run" / f"{run_number:02d}"
+    if method_selection and method_selection.get("stable_id"):
+        return project_dir / "branches" / str(method_selection["stable_id"]) / tail
+    return project_dir / tail
+
+
 def _paper_manuscript_paths(output_root: str | Path) -> dict[str, Path]:
     root = Path(output_root).resolve()
     return {

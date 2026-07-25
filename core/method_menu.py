@@ -25,6 +25,14 @@ _REQUIRED_KEYS = ("stable_id", "version", "label", "status")
 _FRONTMATTER_DELIMITER = "---"
 
 
+class BranchNotFound(KeyError):
+    """Raised when retiring a branch that has no menu file."""
+
+
+class BranchAlreadyRetired(ValueError):
+    """Raised when retiring a branch that is already retired."""
+
+
 def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str | None]:
     """Return (frontmatter mapping, error). Error is None on success."""
     lines = text.splitlines()
@@ -142,3 +150,51 @@ def find_selectable_entry(
             return None, "it is retired and cannot start new runs"
         return entry, None
     return None, "no method menu file defines this branch"
+
+
+def retire_branch(project_dir: str | Path, stable_id: str) -> dict[str, Any]:
+    """Retire a branch by flipping its frontmatter ``status`` to ``retired``.
+
+    The menu file is rewritten in place; the branch folder and sealed run
+    artifacts are never touched. Returns the updated entry dict.
+
+    Raises:
+        BranchNotFound: no menu file for ``stable_id``.
+        BranchAlreadyRetired: the branch is already retired.
+    """
+    stable_id = str(stable_id).strip()
+    root = Path(project_dir).resolve()
+    path = root / METHOD_MENU_DIR / f"{stable_id}.md"
+    if not path.is_file():
+        raise BranchNotFound(stable_id)
+    text = path.read_text(encoding="utf-8")
+    data, error = _parse_frontmatter(text)
+    if error is not None:
+        raise BranchNotFound(f"{stable_id}: {error}")
+    if str(data.get("status", "")).strip() == "retired":
+        raise BranchAlreadyRetired(stable_id)
+
+    # Rewrite only the status line inside the frontmatter block.
+    lines = text.splitlines(keepends=True)
+    end = None
+    for index in range(1, len(lines)):
+        if lines[index].strip() == _FRONTMATTER_DELIMITER:
+            end = index
+            break
+    if end is None:
+        raise BranchNotFound(f"{stable_id}: frontmatter not closed")
+
+    replaced = False
+    for index in range(1, end):
+        stripped = lines[index].strip()
+        if stripped.startswith("status:") or stripped.startswith("status :"):
+            lines[index] = f"status: retired\n"
+            replaced = True
+            break
+    if not replaced:
+        # Insert a status line before the closing delimiter.
+        lines.insert(end, f"status: retired\n")
+
+    path.write_text("".join(lines), encoding="utf-8")
+    entry = parse_method_file(path, root)
+    return entry

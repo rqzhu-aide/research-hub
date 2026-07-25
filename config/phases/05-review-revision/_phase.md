@@ -76,12 +76,17 @@ The prior manuscript and review are starting material, not a constraint. The
 new run should read them carefully and build on them.
 
 ## Files and outputs
-Write all outputs under `draft/revised/run/NN/`:
+Write all outputs under `branches/<stable_id>/draft/revised/run/NN/`:
 
 - `round-01/research_lead.md`: assembled manuscript
 - `round-02/paper_reviewer.md`: structured review
 - `round-03/research_lead.md`: revised manuscript + revision log
 - Write the HTML summary to the exact path provided for this run.
+
+**This phase continues a method branch.** The exact method identity (stable ID +
+version) is frozen into this run. Read the branch's Phase 03 theory and Phase 04
+experiments under `branches/<stable_id>/` and assemble the paper for that specific
+method. Different methods accumulate in separate branch folders.
 
 ## Files in this folder
 - `_lead.md`: instructions for the research lead.

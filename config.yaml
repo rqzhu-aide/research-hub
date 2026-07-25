@@ -106,6 +106,7 @@ phases:
   description: "Implement the method in code, run pre-specified experiments with
     diagnostics, and validate theoretical predictions against measured results"
   pattern: parallel
+  method_binding: true
   gated_by:
   - 03-idea-evaluation
   folder: "draft/sections/"
@@ -122,6 +123,7 @@ phases:
   description: "Assemble the paper from theory and experiments, then independent
     paper review and revision into final manuscript"
   pattern: sequential
+  method_binding: true
   gated_by: ["04-draft-assembly"]
   folder: "draft/revised/"
   members:

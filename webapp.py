@@ -1388,6 +1388,34 @@ def phase_progress(project_id: int, phase_slug: str) -> str:
         abort(409, description=str(exc))
 
 
+@app.post("/project/<int:project_id>/phase/<phase_slug>/branch/retire")
+@_locked_project_mutation
+def retire_branch(project_id: int, phase_slug: str) -> Response:
+    resolved = _project_context(project_id)
+    if not resolved:
+        abort(404, description="Project not found")
+    _, project_dir = resolved
+    config, phase = _phase_or_404(phase_slug)
+    if not phase_requires_method_binding(phase):
+        abort(404, description="This phase does not manage method branches")
+    try:
+        project_identity = _submitted_project_identity(project_id)
+        _matching_project_context(project_id, project_identity)
+    except ValueError:
+        abort(409, description="Project identity mismatch — reload the page and try again")
+    stable_id = _bounded_form_value("stable_id", 200)
+    if not stable_id:
+        abort(400, description="No branch selected to retire")
+    try:
+        method_menu.retire_branch(project_dir, stable_id)
+    except method_menu.BranchNotFound:
+        abort(404, description=f"No method menu file for branch '{stable_id}'")
+    except method_menu.BranchAlreadyRetired:
+        abort(409, description=f"Branch '{stable_id}' is already retired")
+    flash(f"Branch '{stable_id}' retired — it will no longer appear in the launch picker.", "info")
+    return redirect(url_for("project_view", project_id=project_id, tab=phase_slug))
+
+
 @app.post("/project/<int:project_id>/phase/<phase_slug>/run/<run_id>/approve")
 @_locked_project_mutation
 def approve_run(project_id: int, phase_slug: str, run_id: str) -> Response:

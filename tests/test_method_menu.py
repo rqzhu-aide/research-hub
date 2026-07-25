@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from core import method_menu
 
 
@@ -132,3 +134,53 @@ def test_find_selectable_entry_rejects_unknown_and_invalid(tmp_path: Path) -> No
     entry, error = method_menu.find_selectable_entry(tmp_path, "ghost")
     assert entry is None
     assert error is not None and "no method menu file" in error
+
+
+# ---------------------------------------------------------------------------
+# Branch retirement (Stage 3c)
+# ---------------------------------------------------------------------------
+
+def test_retire_branch_sets_status_to_retired(tmp_path: Path) -> None:
+    """Retiring a branch flips its frontmatter status to 'retired'."""
+    menu_dir = tmp_path / "ideas" / "methods"
+    menu_dir.mkdir(parents=True)
+    (menu_dir / "spectral-graph-coupling.md").write_text(
+        "---\n"
+        "stable_id: spectral-graph-coupling\n"
+        "version: v1\n"
+        "label: Spectral Graph Coupling\n"
+        "status: recommended\n"
+        "---\n\n# Spectral Graph Coupling\n",
+        encoding="utf-8",
+    )
+
+    method_menu.retire_branch(tmp_path, "spectral-graph-coupling")
+
+    menu = method_menu.load_method_menu(tmp_path)
+    entry = next(e for e in menu["entries"] if e["stable_id"] == "spectral-graph-coupling")
+    assert entry["status"] == "retired"
+
+
+def test_retire_branch_rejects_unknown_branch(tmp_path: Path) -> None:
+    """Retiring a branch that doesn't exist raises an error."""
+    menu_dir = tmp_path / "ideas" / "methods"
+    menu_dir.mkdir(parents=True)
+    with pytest.raises(method_menu.BranchNotFound):
+        method_menu.retire_branch(tmp_path, "ghost-branch")
+
+
+def test_retire_branch_rejects_already_retired(tmp_path: Path) -> None:
+    """Retiring an already-retired branch raises an error."""
+    menu_dir = tmp_path / "ideas" / "methods"
+    menu_dir.mkdir(parents=True)
+    (menu_dir / "old-idea.md").write_text(
+        "---\n"
+        "stable_id: old-idea\n"
+        "version: v1\n"
+        "label: Old Idea\n"
+        "status: retired\n"
+        "---\n\n# Old Idea\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(method_menu.BranchAlreadyRetired):
+        method_menu.retire_branch(tmp_path, "old-idea")

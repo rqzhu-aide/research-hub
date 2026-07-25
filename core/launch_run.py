@@ -607,11 +607,27 @@ def _launch_run_locked(
         )
         index = launch_common._run_index(project_dir, phase_slug, run_id)
         run_number = index + 1
-        output_root = (
-            project_dir
-            / str(phase.get("folder", ""))
-            / "run"
-            / f"{run_number:02d}"
+        context_inputs = launch_prompts._trusted_context(
+            project_dir, phase_slug, config,
+            include_downstream=include_downstream,
+        )
+        project_state.set_run_context(
+            project_dir, phase_slug, run_id, context_inputs
+        )
+        snapshots = launch_prompts._snapshot_run_inputs(
+            project_dir, phase, run_id, context_inputs
+        )
+        method_selection = launch_plans._method_selection_for_run(
+            phase,
+            snapshots,
+            run_specific_method_id,
+            run_specific_method_version,
+        )
+        output_root = launch_plans._branch_aware_output_root(
+            project_dir,
+            str(phase.get("folder", "")),
+            run_number=run_number,
+            method_selection=method_selection,
         )
         launch_common._ensure_contained_directory(
             output_root, project_dir, label="run output directory"
@@ -648,22 +664,6 @@ def _launch_run_locked(
             }
             if phase_slug == launch_common.PAPER_WRITING_PHASE and not review_source
             else {}
-        )
-        context_inputs = launch_prompts._trusted_context(
-            project_dir, phase_slug, config,
-            include_downstream=include_downstream,
-        )
-        project_state.set_run_context(
-            project_dir, phase_slug, run_id, context_inputs
-        )
-        snapshots = launch_prompts._snapshot_run_inputs(
-            project_dir, phase, run_id, context_inputs
-        )
-        method_selection = launch_plans._method_selection_for_run(
-            phase,
-            snapshots,
-            run_specific_method_id,
-            run_specific_method_version,
         )
         if review_source:
             paper_review["source_baseline"] = launch_plans._freeze_source_baseline(

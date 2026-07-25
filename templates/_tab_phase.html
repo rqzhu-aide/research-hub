@@ -261,6 +261,7 @@
         {% if method_bound_phase %}
         {% set method_menu = pd.method_menu | default(none) %}
         {% set menu_branches = (method_menu.entries | selectattr('status', 'ne', 'retired') | rejectattr('errors') | list) if method_menu else [] %}
+        {% set retired_branches = (method_menu.entries | selectattr('status', 'equalto', 'retired') | rejectattr('errors') | list) if method_menu else [] %}
         <fieldset class="form-row method-selection-control" data-method-selection-control>
           <legend class="form-label">Exact method for this run</legend>
           {% if approved_method %}
@@ -282,6 +283,34 @@
             <p class="form-help"><strong>Menu warning:</strong> {{ method_menu.warnings | join(' ') }}</p>
             {% endif %}
           </div>
+          <div class="branch-roster" data-branch-roster>
+            <p class="form-label-small">Method branches in this project</p>
+            <ul class="branch-list">
+              {% for entry in menu_branches %}
+              <li class="branch-item branch-{{ entry.status }}">
+                <span class="branch-name">{{ entry.label }}</span>
+                <span class="branch-meta"><code>{{ entry.stable_id }}</code> · {{ entry.version }} · <span class="branch-status">{{ entry.status }}</span></span>
+                <form action="{{ url_for('retire_branch', project_id=project.id, phase_slug=pc.slug) }}"
+                      method="post" class="retire-form"
+                      data-confirm="Retire the '{{ entry.label }}' branch? It will no longer be selectable for new runs. Existing run artifacts are preserved.">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="project_identity" value="{{ project_identity }}">
+                  <input type="hidden" name="stable_id" value="{{ entry.stable_id }}">
+                  <button type="submit" class="btn btn-subtle btn-retire">Retire</button>
+                </form>
+              </li>
+              {% endfor %}
+              {% for entry in retired_branches %}
+              <li class="branch-item branch-retired is-retired">
+                <span class="branch-name">{{ entry.label }}</span>
+                <span class="branch-meta"><code>{{ entry.stable_id }}</code> · {{ entry.version }} · <span class="branch-status">retired</span></span>
+                <span class="branch-note">retired — hidden from picker</span>
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% elif method_menu and method_menu.entries %}
+          <p class="form-help">All branches in this project are retired. Add or un-retire a method in <code>ideas/methods/</code> to enable selection.</p>
           {% endif %}
           <div class="form-row two-column-fields">
             <label for="method-id-{{ pc.slug }}">Stable method ID

@@ -105,11 +105,16 @@ new run should read them carefully and build on them. Re-running the same
 experiments from scratch without improvement is not useful.
 
 ## Files and outputs
-Write all outputs under `draft/sections/run/NN/`:
+Write all outputs under `branches/<stable_id>/draft/sections/run/NN/`:
 
 - `round-01/<role>.md`, `round-02/<role>.md`, ...: per-round reports
 - The data analyst's code files live alongside the report
 - Write the HTML summary to the exact path provided for this run.
+
+**This phase continues a method branch.** The exact method identity (stable ID +
+version) is frozen into this run. Read the branch's Phase 03 results under
+`branches/<stable_id>/evaluations/` and build on that specific method's theory.
+Different methods accumulate in separate branch folders.
 
 ## What the user decides
 The user starts every run. After the experiments, the lead presents the findings

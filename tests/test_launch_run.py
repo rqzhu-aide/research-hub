@@ -3955,3 +3955,75 @@ def test_worker_passes_a_short_bootstrap_instead_of_the_full_prompt(
     assert all(unique_prompt_text not in argument for argument in command)
     assert failure_calls == []
     assert pid_calls[0][1]["process_identity"] == "test-process"
+
+
+# ---------------------------------------------------------------------------
+# Branch-folder output roots (Stage 3a)
+# ---------------------------------------------------------------------------
+
+def test_branch_output_root_redirects_into_method_folder() -> None:
+    """A method-bound run writes inside branches/<stable_id>/<folder>/run/NN/."""
+    from pathlib import Path
+
+    selection = {
+        "kind": "method",
+        "stable_id": "spectral-graph-coupling",
+        "version": "v1",
+    }
+    root = launcher.launch_plans._branch_aware_output_root(
+        Path("/project"),
+        "evaluations/",
+        run_number=1,
+        method_selection=selection,
+    )
+    assert root == Path("/project/branches/spectral-graph-coupling/evaluations/run/01")
+
+
+def test_branch_output_root_unchanged_without_method_selection() -> None:
+    """A non-method run keeps the legacy flat path."""
+    from pathlib import Path
+
+    root = launcher.launch_plans._branch_aware_output_root(
+        Path("/project"),
+        "references/literature-review/",
+        run_number=3,
+        method_selection=None,
+    )
+    assert root == Path("/project/references/literature-review/run/03")
+
+
+# ---------------------------------------------------------------------------
+# Phase 04/05 branch continuation (Stage 3b)
+# ---------------------------------------------------------------------------
+
+def test_phase04_binds_and_routes_into_branch_folder() -> None:
+    """Phase 04 with method_binding routes its output into the branch folder."""
+    selection = {
+        "kind": "method",
+        "stable_id": "spectral-graph-coupling",
+        "version": "v1",
+    }
+    root = launcher.launch_plans._branch_aware_output_root(
+        Path("/project"),
+        "draft/sections/",
+        run_number=2,
+        method_selection=selection,
+    )
+    assert root == Path(
+        "/project/branches/spectral-graph-coupling/draft/sections/run/02"
+    )
+
+
+def test_shipped_phase04_and_phase05_bind_methods() -> None:
+    """The shipped config must bind Phase 04 and Phase 05 to a method branch."""
+    import hub
+    from core import launch_manifest
+
+    cfg = hub.load_config()
+    by_slug = {p["slug"]: p for p in cfg["phases"]}
+    assert launch_manifest.phase_requires_method_binding(
+        by_slug["04-draft-assembly"]
+    ), "Phase 04 must bind a method branch"
+    assert launch_manifest.phase_requires_method_binding(
+        by_slug["05-review-revision"]
+    ), "Phase 05 must bind a method branch"
