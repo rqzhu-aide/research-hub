@@ -413,6 +413,7 @@ summary::-webkit-details-marker { display: none; }
 .run-complete-badge { padding: 2px 8px; border-radius: var(--radius-sm); background: var(--approved-soft); color: var(--approved); font-size: .72rem; font-weight: 600; }
 .run-failed-badge { padding: 2px 8px; border-radius: var(--radius-sm); background: var(--danger-soft); color: var(--danger); font-size: .72rem; font-weight: 600; }
 .run-status-badge { padding: 2px 8px; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--accent-bright); font-size: .72rem; font-weight: 600; }
+.method-count-badge { padding: 2px 8px; border-radius: var(--radius-sm); background: var(--surface-raised); color: var(--text-soft); font-size: .72rem; font-weight: 500; border: 1px solid var(--line-strong); }
 .run-switcher { display: flex; align-items: center; gap: 6px; }
 .run-switcher-label { font-size: .75rem; color: var(--muted); }
 .run-selector-dropdown {

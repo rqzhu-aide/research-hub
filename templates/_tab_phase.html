@@ -84,6 +84,14 @@
         {% else %}
         <span class="run-status-badge">{{ latest_status | replace('_', ' ') }}</span>
         {% endif %}
+        {# Method count for method development phase #}
+        {% set method_menu = pd.method_menu | default(none) %}
+        {% if method_menu and method_menu.entries %}
+          {% set active_methods = method_menu.entries | rejectattr('status', 'equalto', 'retired') | rejectattr('errors') | list %}
+          {% if active_methods %}
+        <span class="method-count-badge">{{ active_methods | length }} method{{ 's' if active_methods | length != 1 }} developed</span>
+          {% endif %}
+        {% endif %}
       </div>
 
       {% if history | length > 1 %}

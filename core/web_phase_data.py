@@ -1240,6 +1240,7 @@ def prepare_phase_data(
         "method_menu": (
             method_menu.load_method_menu(project_dir)
             if phase_requires_method_binding(phase_cfg)
+               or phase_slug == project_state.METHOD_DEVELOPMENT_PHASE
             else None
         ),
         "approval_context_report": approval_report,
