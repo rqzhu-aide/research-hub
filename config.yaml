@@ -69,6 +69,7 @@ agents:
 phases:
 - slug: "01-literature-review"
   name: "Literature Review"
+  short_name: "Literature"
   description: "Assess direct prior work, theoretical foundations, related methods,
     existing implementations, and originality"
   pattern: parallel
@@ -78,6 +79,7 @@ phases:
   rounds: {min: 1, default: 2, max: 5}
 - slug: "02-method-development"
   name: "Method Development"
+  short_name: "Method"
   description: "Brainstorm genuinely new ideas — new mechanisms, frameworks, or insights
     — with a unique position distinct from any existing method"
   pattern: parallel
@@ -87,6 +89,7 @@ phases:
   rounds: {min: 2, default: 2, max: 3}
 - slug: "03-idea-evaluation"
   name: "Theoretical Development"
+  short_name: "Theory"
   description: "Derive and prove the main theorems and rate bounds for the selected
     method, with computational cost assessment and cross-audit"
   pattern: debate
@@ -103,6 +106,7 @@ phases:
     max: 3
 - slug: "04-draft-assembly"
   name: "Implementation & Experiments"
+  short_name: "Experiments"
   description: "Implement the method in code, run pre-specified experiments with
     diagnostics, and validate theoretical predictions against measured results"
   pattern: parallel
@@ -120,6 +124,7 @@ phases:
     max: 2
 - slug: "05-review-revision"
   name: "Paper Assembly & Review"
+  short_name: "Paper"
   description: "Assemble the paper from theory and experiments, then independent
     paper review and revision into final manuscript"
   pattern: sequential
