@@ -797,6 +797,24 @@ def _launch_run_locked(
         )
         launch_manifest._verify_frozen_inputs(project_dir, phase_slug, run_id, manifest)
 
+        # Pre-flight: verify the worker subprocess can import the core package.
+        # The worker runs with cwd=<project_workspace>, so `core` must be
+        # importable via the installed package path, not the repo directory.
+        # Without this check, a missing editable install produces a cryptic
+        # ModuleNotFoundError inside the worker log instead of a clear error here.
+        try:
+            subprocess.run(
+                [sys.executable, "-c", "from core import launch_common"],
+                capture_output=True,
+                timeout=10,
+                check=True,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            raise launch_common.LaunchError(
+                "The 'core' package is not importable from the worker Python. "
+                "Install it with: pip install -e . (in the venv used by the service)"
+            ) from exc
+
         worker_args = [
             sys.executable,
             Path(__file__).resolve(),
@@ -1128,7 +1146,9 @@ def _build_parser() -> argparse.ArgumentParser:
     finish.add_argument("--outputs", help=argparse.SUPPRESS)
 
     status = commands.add_parser("status", help="Show active run status")
-    status.add_argument("--project-dir", required=True)
+    status.add_argument("--project-dir", help="Project workspace directory")
+    status.add_argument("--all-projects", action="store_true",
+                        help="Scan all projects in the workspace root")
 
     worker = commands.add_parser("worker", help=argparse.SUPPRESS)
     worker.add_argument("--project-dir", required=True)
@@ -1136,6 +1156,61 @@ def _build_parser() -> argparse.ArgumentParser:
     worker.add_argument("--run-id", required=True)
     worker.add_argument("--manifest", required=True)
     return parser
+
+
+def _status_all_projects() -> str:
+    """Summarize active and approved runs across all projects in the workspace."""
+    # The workspace root is read from the hub database config. Since hub.py
+    # lives outside the core package, we resolve the workspace from the
+    # config.yaml in the repo root (parent of the core package directory).
+    repo_root = Path(__file__).resolve().parent.parent
+    config_path = repo_root / "config.yaml"
+    workspace = Path.home() / "research" / "projects"
+    if config_path.is_file():
+        try:
+            import yaml
+            with open(config_path) as f:
+                cfg = yaml.safe_load(f)
+            hub_cfg = cfg.get("hub", {})
+            if hub_cfg.get("workspace_dir"):
+                workspace = Path(hub_cfg["workspace_dir"]).expanduser() / "projects"
+        except Exception:
+            pass
+
+    lines: list[str] = []
+    active_total = 0
+    for dirname in sorted(os.listdir(workspace)):
+        if not dirname.startswith("project-"):
+            continue
+        full = workspace / dirname
+        try:
+            data = project_state.load(full)
+        except Exception:
+            continue
+        name = data.get("project", {}).get("name", dirname)
+        project_lines: list[str] = []
+        for slug, phase in sorted(data.get("phases", {}).items()):
+            if not isinstance(phase, dict):
+                continue
+            approved = phase.get("approved_run")
+            label = slug.split("-", 1)[1] if "-" in slug else slug
+            for run in phase.get("runs", []):
+                if not isinstance(run, dict):
+                    continue
+                status = run.get("status", "?")
+                rid = run.get("run_id", "?")[:12]
+                if status in ("running", "awaiting_review", "staged", "stopping"):
+                    active_total += 1
+                    badge = "🔄" if status == "running" else "⏸️"
+                    project_lines.append(f"  {badge} **{label}** — run {rid} — {status}")
+                elif run.get("run_id") == approved:
+                    project_lines.append(f"  ✅ **{label}** — run {rid} — approved")
+        if project_lines:
+            lines.append(f"## {name}")
+            lines.extend(project_lines)
+    if not lines:
+        return "No active runs across all projects."
+    return "\n".join(lines)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -1264,7 +1339,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             print(f"Round {args.round} completed with {len(outputs)} artifacts.")
         elif args.command == "status":
-            print(json.dumps(launch_supervision.get_run_status(args.project_dir), indent=2))
+            if args.all_projects:
+                print(_status_all_projects())
+            elif args.project_dir:
+                print(json.dumps(launch_supervision.get_run_status(args.project_dir), indent=2))
+            else:
+                print("error: status requires --project-dir or --all-projects", file=sys.stderr)
+                exit_code = 2
         elif args.command == "worker":
             log_path = launch_common.run_log_path(
                 Path(args.project_dir).resolve(), args.phase, args.run_id

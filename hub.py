@@ -733,7 +733,6 @@ def _artifact_directories(cfg: dict) -> list[PurePosixPath]:
         PurePosixPath("references"),
         PurePosixPath("ideas"),
         PurePosixPath("draft"),
-        PurePosixPath("numerical"),
     }
     for phase in get_phases_config(cfg):
         paths.add(PurePosixPath(phase["folder"]))

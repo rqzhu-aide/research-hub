@@ -579,7 +579,7 @@
       {% if selected_object %}
       <label class="check-row" for="approve-selection-{{ pc.slug }}-{{ latest_id }}">
         <input type="checkbox" id="approve-selection-{{ pc.slug }}-{{ latest_id }}" name="accept_selected_scientific_object" value="1" required>
-        <span>I also select method <code>{{ selected_object.stable_id }}</code>, version <code>{{ selected_object.version }}</code>, for downstream study. This does not start another phase.</span>
+        <span>I approve the selected method: <strong>{{ selected_object.stable_id }}</strong> (version {{ selected_object.version }}). This becomes the method that downstream phases develop and evaluate.</span>
       </label>
       {% endif %}
       <fieldset class="plan-options">
@@ -817,7 +817,7 @@
             {% elif run.cleanup_reason %}
               <small>Cleanup reason: {{ run.cleanup_reason }}</small>
             {% elif run.error %}
-              <small>Failure: {{ run.error }}</small>
+              <small>{% if run.error_category == 'infrastructure' %}Infrastructure failure: {% else %}Failure: {% endif %}{{ run.error }}</small>
             {% elif run.cancel_reason %}
               <small>Cancellation: {{ run.cancel_reason }}</small>
             {% endif %}

@@ -150,7 +150,6 @@ def test_clean_workspace_auto_initializes_and_cli_is_idempotent(configured_hub):
         "ideas",
         "draft",
         "draft/validation",
-        "numerical",
     ):
         assert (project_dir / relative).is_dir()
     assert project_state.state_dir(project_dir).is_dir()

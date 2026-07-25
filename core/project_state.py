@@ -895,6 +895,26 @@ def _resolve_slug(slug: str) -> str:
     """Map a possibly-legacy slug to its current name (no-op for current slugs)."""
     return SLUG_ALIASES.get(slug, slug)
 
+
+_ERROR_PATTERNS_INFRA = (
+    "modulenotfounderror",
+    "no module named",
+    "can't open file",
+    "no such file or directory",
+    "importerror",
+    "worker exited before completing",
+    "not importable",
+)
+
+
+def _classify_error(error_text: str) -> str:
+    """Classify a run failure as 'infrastructure' or 'research'."""
+    lower = error_text.lower()
+    if any(pat in lower for pat in _ERROR_PATTERNS_INFRA):
+        return "infrastructure"
+    return "research"
+
+
 def _migrate_sealed_decision_record(root: Path, run: dict[str, Any]) -> None:
     """Repair a sealed decision record whose origins name a legacy slug.
 
@@ -4649,6 +4669,7 @@ def finalize_run_cleanup(
         run["status"] = outcome
         if outcome == "failed":
             run["error"] = str(run.get("cleanup_reason") or "run cleanup failed")
+            run["error_category"] = _classify_error(run["error"])
         else:
             run["cancel_reason"] = str(run.get("cleanup_reason") or "")
         run["cleanup_completed_at"] = timestamp
