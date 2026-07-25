@@ -456,15 +456,16 @@ summary::-webkit-details-marker { display: none; }
 .score-medium { background: var(--accent-soft); color: var(--accent-bright); }
 .score-high { background: var(--review-soft, rgba(244,196,109,.15)); color: var(--review, #f4c46d); }
 .score-very-high { background: var(--danger-soft); color: var(--danger); }
-.method-ranking-table .actions-col { text-align: center; white-space: nowrap; width: 60px; }
+.method-ranking-table .actions-col { text-align: center; white-space: nowrap; width: 80px; }
+.method-ranking-table .actions-col .btn-xs { margin: 0 2px; }
 .phase-light { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
 .phase-done { background: var(--approved); box-shadow: 0 0 4px rgba(102,216,194,.4); }
 .phase- { background: var(--line-strong); opacity: .3; }
-.btn-xs { min-height: 22px; padding: 1px 6px; font-size: .68rem; border-radius: 3px; border: 1px solid var(--line-strong); }
-.btn-select-method { background: var(--accent-soft); color: var(--accent-bright); border-color: var(--accent); }
-.btn-select-method:hover { background: var(--accent); color: var(--surface); }
-.btn-retire-method { background: transparent; color: var(--muted); }
-.btn-retire-method:hover { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
+.btn-xs { min-height: 26px; padding: 2px 8px; font-size: .72rem; border-radius: 4px; border: 1px solid var(--line-strong); }
+.btn-select-method { background: var(--accent); color: var(--surface); border-color: var(--accent); font-weight: 600; }
+.btn-select-method:hover { background: var(--accent-bright); border-color: var(--accent-bright); }
+.btn-retire-method { background: transparent; color: var(--danger); border-color: var(--danger); border-width: 1px; font-weight: 600; }
+.btn-retire-method:hover { background: var(--danger); color: var(--surface); }
 .retire-form-inline { display: inline; }
 
 /* ── Method browser (Phase 02) ── */
