@@ -213,7 +213,8 @@ def _truncate_conclusion(text: str, max_chars: int = 140) -> str:
     return cut + "…"
 
 
-_SUMMARY_HIGHLIGHT_MAX = 200
+_SUMMARY_HIGHLIGHT_TARGET_WORDS = 250
+_SUMMARY_HIGHLIGHT_MAX_CHARS = 2000
 
 
 def _summary_highlight(
@@ -221,11 +222,10 @@ def _summary_highlight(
     run: Mapping[str, Any],
     phase_slug: str,
 ) -> str:
-    """Extract a short text highlight from a run's HTML summary.
+    """Extract a ~250-word abstract from a run's HTML summary.
 
-    Strips CSS/style blocks, then takes the first <p> after the first <h1>.
-    Falls back to the first 200 chars of body text if no <p> is found.
-    Returns an empty string if no summary exists or can't be read.
+    Concatenates content paragraphs (skipping meta/info) until the target
+    word count is reached, then truncates cleanly.
     """
     import re
 
@@ -242,27 +242,41 @@ def _summary_highlight(
     # Remove style/script blocks
     html = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
     html = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
-    # Try first <p> after first <h1>, skipping meta paragraphs
     h1_match = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.DOTALL | re.IGNORECASE)
     search_from = h1_match.end() if h1_match else 0
-    # Find all <p> tags, skip those with class="meta" or that are just metadata
-    text = ""
+    # Collect content paragraphs until we hit the word target
+    collected: list[str] = []
+    total_words = 0
     for p_match in re.finditer(r"<p([^>]*)>(.*?)</p>", html[search_from:], re.DOTALL | re.IGNORECASE):
         attrs = p_match.group(1)
         raw = p_match.group(2)
-        # Skip meta/info paragraphs
         if "meta" in attrs.lower() or "info" in attrs.lower():
             continue
         text = re.sub(r"<[^>]+>", "", raw).strip()
-        if text and len(text) > 20:
-            return _truncate_conclusion(text, _SUMMARY_HIGHLIGHT_MAX)
-    # Fallback: first 200 chars of body text after h1
-    if not text:
+        if not text or len(text) <= 20:
+            continue
+        wc = len(text.split())
+        if total_words + wc > _SUMMARY_HIGHLIGHT_TARGET_WORDS and collected:
+            # Truncate this paragraph to fit the remaining budget
+            remaining = _SUMMARY_HIGHLIGHT_TARGET_WORDS - total_words
+            words = text.split()
+            text = " ".join(words[:remaining]) + "…"
+            collected.append(text)
+            break
+        collected.append(text)
+        total_words += wc
+        if total_words >= _SUMMARY_HIGHLIGHT_TARGET_WORDS:
+            break
+    result = "\n\n".join(collected)
+    if not result:
+        # Fallback: first 2000 chars of body text
         body = re.sub(r"<[^>]+>", " ", html[search_from:])
-        text = re.sub(r"\s+", " ", body).strip()
-    if not text:
+        result = re.sub(r"\s+", " ", body).strip()
+    if not result:
         return ""
-    return _truncate_conclusion(text, _SUMMARY_HIGHLIGHT_MAX)
+    if len(result) > _SUMMARY_HIGHLIGHT_MAX_CHARS:
+        result = result[:_SUMMARY_HIGHLIGHT_MAX_CHARS].rsplit(" ", 1)[0] + "…"
+    return result
 
 
 def _cross_phase_context(

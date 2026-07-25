@@ -39,10 +39,9 @@
 <section class="phase-status-upper" id="latest-result">
   <div class="phase-title-bar">
     <div>
-      <h2>{{ pc.name }}</h2>
+      <h2><span class="phase-roman">Phase {{ pc.slug.split('-')[0] | int | default('') }}</span>: {{ pc.name }}</h2>
       <p class="phase-description">{{ pc.description }}</p>
     </div>
-    <span class="state-badge state-{{ phase_status }}"><i class="status-marker" aria-hidden="true"></i>{{ phase_status | replace('_', ' ') }}</span>
   </div>
 
   {% if recovery_only %}
