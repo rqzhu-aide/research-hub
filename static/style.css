@@ -514,8 +514,15 @@ summary::-webkit-details-marker { display: none; }
 .check-row-compact { font-size: .78rem; color: var(--text-soft); display: flex; align-items: center; gap: 6px; }
 
 /* ── Launch footer ── */
-.launch-footer-compact { display: flex; justify-content: flex-start; }
+.launch-footer-compact { display: flex; justify-content: flex-start; align-items: center; gap: 12px; flex-wrap: wrap; }
 .launch-footer-compact .btn { min-width: 160px; }
+.rounds-inline-at-button { font-size: .82rem; color: var(--text-soft); display: inline-flex; align-items: center; gap: 4px; }
+.rounds-dropdown-inline {
+  padding: 3px 6px; font-size: .8rem; font-weight: 600;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text);
+}
+.rounds-dropdown-inline:focus { border-color: var(--accent); outline: 0; }
 
 /* ── Responsive ── */
 @media (max-width: 760px) {

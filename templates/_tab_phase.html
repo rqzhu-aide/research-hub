@@ -277,22 +277,8 @@
   </fieldset>
   {% endif %}
 
-  {# ── Rounds / passes — only show when user has a choice ── #}
-  {% if round_min != round_max %}
-  <fieldset class="launch-fieldset-compact">
-    <div class="method-row">
-      <span class="field-label">{{ 'Rounds' if pc.pattern == 'debate' else 'Passes' }}:</span>
-      <div class="rounds-inline">
-        {% set options = rounds_policy.options | default(range(round_min, round_max + 1)) %}
-        {% for option in options %}
-        <input class="round-radio" type="radio" name="rounds" id="rounds-{{ pc.slug }}-{{ option }}"
-               value="{{ option }}" {% if option | string == round_default | string %}checked{% endif %}>
-        <label class="round-option-mini" for="rounds-{{ pc.slug }}-{{ option }}">{{ option }}</label>
-        {% endfor %}
-      </div>
-    </div>
-  </fieldset>
-  {% else %}
+  {# ── Rounds value (hidden — only surfaced inline at the button) ── #}
+  {% if round_min == round_max %}
     <input type="hidden" name="rounds" value="{{ round_default }}">
   {% endif %}
 
@@ -319,11 +305,25 @@
   </label>
   {% endif %}
 
-  {# ── Launch button ── #}
+  {# ── Launch button with inline rounds selector ── #}
   <div class="launch-footer-compact">
     <button type="submit" class="btn btn-primary btn-large" {% if not unattended_tools %}disabled aria-disabled="true"{% endif %}>
       {{ 'Run' if history else 'Launch' }} {{ pc.name }}
     </button>
+    {% if round_min != round_max %}
+    <span class="rounds-inline-at-button">
+      for
+      <select name="rounds" class="rounds-dropdown-inline">
+        {% set effective_max = round_max if round_max <= 3 else 3 %}
+        {% set raw_options = rounds_policy.options | default(range(round_min, effective_max + 1)) %}
+        {% set options = raw_options | select('le', effective_max) | list %}
+        {% for option in options %}
+        <option value="{{ option }}" {% if option | string == round_default | string %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+      {{ 'rounds of debate' if pc.pattern == 'debate' else 'rounds of refinement' }}
+    </span>
+    {% endif %}
   </div>
 </form>
 
