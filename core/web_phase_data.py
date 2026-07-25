@@ -437,47 +437,112 @@ def _method_comparison_data(project_dir: Path) -> str:
     return text.strip()[:3000]
 
 
-def _method_ranking_table(project_dir: Path) -> list[dict[str, str]]:
-    """Parse the Full Idea Set HTML table into structured rows.
+def _method_ranking_rows(project_dir: Path) -> list[dict[str, Any]]:
+    """Parse the Full Idea Set table and enrich with downstream phase status.
 
-    Returns a list of dicts, each with keys from the table headers.
+    Returns simplified rows: {name, note, p3, p4, p5, stable_id}
+    where p3/p4/p5 are 'done' / 'pending' / '' for green/gray/empty lights.
     """
     import re
+    from . import project_state as ps
 
+    # Parse the ranking table from the summary HTML
     summary_dir = project_dir.resolve() / "phase-summaries" / "02-method-development"
     if not summary_dir.is_dir():
         return []
-    summaries = sorted(
-        summary_dir.glob("*.html"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
+    summaries = sorted(summary_dir.glob("*.html"), key=lambda p: p.stat().st_mtime, reverse=True)
     if not summaries:
         return []
     try:
         html = summaries[0].read_text(encoding="utf-8", errors="replace")
     except OSError:
         return []
-    # Find all tables, look for the one with "Idea" and "Source" headers
+
     tables = re.findall(r"<table[^>]*>(.*?)</table>", html, re.DOTALL | re.IGNORECASE)
+    raw_rows: list[dict[str, str]] = []
     for table_html in tables:
         headers = re.findall(r"<th[^>]*>(.*?)</th>", table_html, re.DOTALL | re.IGNORECASE)
         headers = [re.sub(r"<[^>]+>", "", h).strip() for h in headers]
-        if not any("Idea" in h or "idea" in h for h in headers):
+        if not any("Idea" in h for h in headers):
             continue
-        if not any("Source" in h or "source" in h for h in headers):
-            continue
-        # This is the ranking table — parse rows
-        rows: list[dict[str, str]] = []
         row_matches = re.findall(r"<tr[^>]*>(.*?)</tr>", table_html, re.DOTALL | re.IGNORECASE)
-        for row_html in row_matches[1:]:  # skip header row
+        for row_html in row_matches[1:]:
             cells = re.findall(r"<td[^>]*>(.*?)</td>", row_html, re.DOTALL | re.IGNORECASE)
             cells = [re.sub(r"<[^>]+>", "", c).strip() for c in cells]
             if len(cells) != len(headers):
                 continue
-            rows.append(dict(zip(headers, cells)))
-        return rows
-    return []
+            raw_rows.append(dict(zip(headers, cells)))
+        break
+
+    if not raw_rows:
+        return []
+
+    # Load method files to match names to stable_ids
+    method_dir = project_dir.resolve() / "ideas" / "methods"
+    name_to_id: dict[str, str] = {}
+    if method_dir.is_dir():
+        for path in method_dir.glob("*.md"):
+            try:
+                raw = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            fm = re.match(r"^---\s*\n(.*?)\n---", raw, re.DOTALL)
+            if not fm:
+                continue
+            fm_text = fm.group(1)
+            label_m = re.search(r'^label:\s*"?([^"\n]+?)"?\s*$', fm_text, re.MULTILINE)
+            sid_m = re.search(r'^stable_id:\s*"?([^"\n]+?)"?\s*$', fm_text, re.MULTILINE)
+            if label_m and sid_m:
+                name_to_id[label_m.group(1).strip().lower()] = sid_m.group(1).strip()
+
+    # Check which phases have runs
+    state = ps.load(project_dir)
+    phases_state = state.get("phases", {})
+    p03_has = bool(phases_state.get("03-idea-evaluation", {}).get("runs"))
+    p04_has = bool(phases_state.get("04-draft-assembly", {}).get("runs"))
+    p05_has = bool(phases_state.get("05-review-revision", {}).get("runs"))
+
+    # Determine which method is the approved one
+    approved_method_id = ""
+    p02_state = phases_state.get("02-method-development", {})
+    approved_run_id = str(p02_state.get("approved_run") or "")
+    for r in p02_state.get("runs", []):
+        if str(r.get("run_id", "")) == approved_run_id:
+            dr = r.get("decision_record", {})
+            sel = dr.get("data", {}).get("selected_scientific_object", {}) if isinstance(dr.get("data"), dict) else {}
+            if isinstance(sel, dict) and sel.get("stable_id"):
+                approved_method_id = str(sel["stable_id"])
+            break
+
+    # Build simplified rows
+    result: list[dict[str, Any]] = []
+    for row in raw_rows:
+        idea = row.get("Idea", row.get("idea", ""))
+        note = row.get("Phase 03 status", row.get("Phase 03 Status", ""))
+        # Also include mechanism class as part of note if present
+        mech = row.get("Mechanism class", row.get("Mechanism Class", "")
+        )
+        brief = f"{mech}: {note}" if mech and note else (note or mech or "")
+
+        # Match to stable_id
+        stable_id = name_to_id.get(idea.lower().strip(), "")
+
+        # Phase lights: green for approved method if phase has runs
+        is_approved = stable_id and stable_id == approved_method_id
+        p3 = "done" if (is_approved and p03_has) else ""
+        p4 = "done" if (is_approved and p04_has) else ""
+        p5 = "done" if (is_approved and p05_has) else ""
+
+        result.append({
+            "name": idea,
+            "note": brief,
+            "p3": p3,
+            "p4": p4,
+            "p5": p5,
+            "stable_id": stable_id,
+            "is_method": bool(stable_id),
+        })
+    return result
 
 
 def _summary_available(
@@ -1415,7 +1480,7 @@ def prepare_phase_data(
             else ""
         ),
         "method_ranking_table": (
-            _method_ranking_table(project_dir)
+            _method_ranking_rows(project_dir)
             if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE
             else []
         ),

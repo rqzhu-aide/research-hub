@@ -119,34 +119,34 @@
       <table class="method-ranking-table">
         <thead>
           <tr>
-            {% for key in pd.method_ranking_table[0].keys() %}
-            <th>{{ key }}</th>
-            {% endfor %}
-            <th class="actions-col">Actions</th>
+            <th>Idea</th>
+            <th>Note</th>
+            <th class="phase-col" title="Theory">P3</th>
+            <th class="phase-col" title="Experiments">P4</th>
+            <th class="phase-col" title="Paper">P5</th>
+            <th class="actions-col"></th>
           </tr>
         </thead>
         <tbody>
           {% for row in pd.method_ranking_table %}
           <tr>
-            {% for key, val in row.items() %}
-            <td>{{ val }}</td>
-            {% endfor %}
+            <td>{{ row.name }}</td>
+            <td class="note-col">{{ row.note }}</td>
+            <td class="phase-col"><span class="phase-light phase-{{ row.p3 | default('') }}" title="{{ 'Has records' if row.p3 == 'done' else 'No records' }}"></span></td>
+            <td class="phase-col"><span class="phase-light phase-{{ row.p4 | default('') }}" title="{{ 'Has records' if row.p4 == 'done' else 'No records' }}"></span></td>
+            <td class="phase-col"><span class="phase-light phase-{{ row.p5 | default('') }}" title="{{ 'Has records' if row.p5 == 'done' else 'No records' }}"></span></td>
             <td class="actions-col">
-              {% set idea_name = row.get('Idea', row.get('idea', '')) %}
-              {# Match idea name to method stable_id for actions #}
-              {% for m in pd.method_details %}
-                {% if m.label | lower in idea_name | lower or idea_name | lower in m.label | lower %}
-              <button class="btn btn-xs btn-select-method" title="Use for following phases">{{ '✓' if m.status == 'recommended' else '→' }}</button>
+              {% if row.is_method %}
+              <button class="btn btn-xs btn-select-method" title="Use for following phases">→</button>
               <form action="{{ url_for('retire_branch', project_id=project.id, phase_slug=pc.slug) }}"
                     method="post" class="retire-form-inline"
-                    data-confirm="Retire '{{ m.label }}'?">
+                    data-confirm="Retire '{{ row.name }}'?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="project_identity" value="{{ project_identity }}">
-                <input type="hidden" name="stable_id" value="{{ m.stable_id }}">
-                <button type="submit" class="btn btn-xs btn-retire-method" title="Retire this method" {% if m.status == 'retired' %}disabled{% endif %}>×</button>
+                <input type="hidden" name="stable_id" value="{{ row.stable_id }}">
+                <button type="submit" class="btn btn-xs btn-retire-method" title="Retire">×</button>
               </form>
-                {% endif %}
-              {% endfor %}
+              {% endif %}
             </td>
           </tr>
           {% endfor %}

@@ -444,11 +444,15 @@ summary::-webkit-details-marker { display: none; }
 }
 .method-ranking-table td {
   padding: 6px 10px; border-bottom: 1px solid var(--line); color: var(--text-soft);
-  white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis;
 }
 .method-ranking-table td:first-child { font-weight: 600; color: var(--text); }
+.method-ranking-table .note-col { color: var(--muted); font-size: .74rem; max-width: 300px; }
 .method-ranking-table tbody tr:hover { background: var(--accent-soft); }
-.method-ranking-table .actions-col { text-align: center; white-space: nowrap; width: 70px; }
+.method-ranking-table .phase-col { text-align: center; width: 32px; }
+.method-ranking-table .actions-col { text-align: center; white-space: nowrap; width: 60px; }
+.phase-light { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.phase-done { background: var(--approved); box-shadow: 0 0 4px rgba(102,216,194,.4); }
+.phase- { background: var(--line-strong); opacity: .3; }
 .btn-xs { min-height: 22px; padding: 1px 6px; font-size: .68rem; border-radius: 3px; border: 1px solid var(--line-strong); }
 .btn-select-method { background: var(--accent-soft); color: var(--accent-bright); border-color: var(--accent); }
 .btn-select-method:hover { background: var(--accent); color: var(--surface); }
