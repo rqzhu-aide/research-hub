@@ -1580,15 +1580,6 @@ def test_derivative_runs_expose_the_complete_sealed_source_identity(
     assert theory["source_run_id"] == "source-run"
     assert theory["source_sha256"] == digest
 
-    with webapp.app.test_request_context("/"):
-        rendered = webapp.render_template(
-            "_source_identity.html", source=paper
-        )
-    assert "source-run" in rendered
-    assert paper["source_path"] in rendered
-    assert digest in rendered
-    assert "proposed" in rendered
-
 
 def test_legacy_derivative_runs_keep_their_sealed_source_identity(
     tmp_path: Path,

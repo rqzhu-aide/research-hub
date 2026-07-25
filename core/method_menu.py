@@ -188,12 +188,12 @@ def retire_branch(project_dir: str | Path, stable_id: str) -> dict[str, Any]:
     for index in range(1, end):
         stripped = lines[index].strip()
         if stripped.startswith("status:") or stripped.startswith("status :"):
-            lines[index] = f"status: retired\n"
+            lines[index] = "status: retired\n"
             replaced = True
             break
     if not replaced:
         # Insert a status line before the closing delimiter.
-        lines.insert(end, f"status: retired\n")
+        lines.insert(end, "status: retired\n")
 
     path.write_text("".join(lines), encoding="utf-8")
     entry = parse_method_file(path, root)
