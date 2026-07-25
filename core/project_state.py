@@ -29,11 +29,20 @@ from typing import Any, Iterator, Mapping, Sequence
 import yaml
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 PAPER_WRITING_PHASE = "06-paper-writing"
-NUMERICAL_VALIDATION_PHASE = "04-numerical-validation"
+DRAFT_ASSEMBLY_PHASE = "04-draft-assembly"
 METHOD_DEVELOPMENT_PHASE = "02-method-development"
+
+# Slug renames: old → new.  Used by _migrate_slug_aliases to rewrite
+# existing project state and filesystem layout so sealed history
+# remains accessible after slugs are renamed in config.yaml.
+SLUG_ALIASES: dict[str, str] = {
+    "03-theoretical-justification": "03-idea-evaluation",
+    "04-numerical-validation": "04-draft-assembly",
+    "05-data-analysis": "05-review-revision",
+}
 PHASE_SIX_SUBMISSION_ARTIFACTS = {
     "post_review_manuscript": ("manuscript-post-review.md", False),
     "review_diff": ("manuscript-post-review.diff", True),
@@ -307,7 +316,7 @@ def _project_lock(project_dir: str | Path, timeout: float = 15.0) -> Iterator[No
     must use this module rather than writing ``project.yaml`` directly.
     """
 
-    directory = _ensure_control_directory(project_dir)
+    _ensure_control_directory(project_dir)
     path = lock_file(project_dir)
     flags = os.O_RDWR | os.O_CREAT | os.O_APPEND | getattr(os, "O_BINARY", 0)
     if hasattr(os, "O_NOFOLLOW"):
@@ -882,6 +891,335 @@ def _restore_legacy_active_process_pid(data: dict[str, Any]) -> None:
         run["process_pid"] = pid
 
 
+def _resolve_slug(slug: str) -> str:
+    """Map a possibly-legacy slug to its current name (no-op for current slugs)."""
+    return SLUG_ALIASES.get(slug, slug)
+
+def _migrate_sealed_decision_record(root: Path, run: dict[str, Any]) -> None:
+    """Repair a sealed decision record whose origins name a legacy slug.
+
+    The change origins are validated against the manifest's (already migrated)
+    phase slug, so the sealed file must be rewritten and its recorded hash,
+    size, and parsed copy recomputed.
+    """
+
+    record = run.get("decision_record")
+    if not isinstance(record, dict):
+        return
+    relative = str(record.get("path", "")).strip()
+    if not relative:
+        return
+    path = (root / relative).resolve()
+    try:
+        path.relative_to(root)
+        payload = path.read_bytes()
+        data = json.loads(payload.decode("utf-8"))
+    except (OSError, ValueError, UnicodeError, json.JSONDecodeError):
+        return
+    if not isinstance(data, dict):
+        return
+    changed = False
+    changes = data.get("scientific_record_changes")
+    if isinstance(changes, list):
+        for change in changes:
+            if not isinstance(change, dict):
+                continue
+            origin = change.get("change_origin")
+            if isinstance(origin, dict):
+                old = str(origin.get("phase", ""))
+                if _resolve_slug(old) != old:
+                    origin["phase"] = _resolve_slug(old)
+                    changed = True
+    if not changed:
+        return
+    try:
+        normalized = validate_decision_record(data)
+    except (ProjectStateError, StateValidationError, ValueError, TypeError):
+        return
+    new_payload = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
+    path.write_bytes(new_payload)
+    record["sha256"] = hashlib.sha256(new_payload).hexdigest()
+    record["size"] = len(new_payload)
+    record["data"] = normalized
+
+def _migrate_sealed_protocol_checkpoint(root: Path, run: dict[str, Any]) -> None:
+    """Repair a sealed protocol checkpoint whose identity names a legacy slug."""
+
+    record = run.get("protocol_checkpoint")
+    if not isinstance(record, dict):
+        return
+    relative = str(record.get("path", "")).strip()
+    if not relative:
+        return
+    path = (root / relative).resolve()
+    try:
+        path.relative_to(root)
+        payload = path.read_bytes()
+        data = json.loads(payload.decode("utf-8"))
+    except (OSError, ValueError, UnicodeError, json.JSONDecodeError):
+        return
+    if not isinstance(data, dict):
+        return
+    old = str(data.get("phase_slug", ""))
+    if _resolve_slug(old) == old:
+        return
+    data["phase_slug"] = _resolve_slug(old)
+    new_payload = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
+    path.write_bytes(new_payload)
+    record["sha256"] = hashlib.sha256(new_payload).hexdigest()
+    record["size"] = len(new_payload)
+    record["data"] = data
+
+def _rewrite_slug_path_strings(
+    value: Any, old_slug: str, new_slug: str
+) -> tuple[Any, bool]:
+    """Recursively rewrite run-state path strings for a renamed phase slug.
+
+    The migration moves ``runs/<old>/`` and ``phase-summaries/<old>/`` on
+    disk; every recorded path string (snapshot paths, prompt and summary
+    paths, decision-record paths, ``final_summary``) must follow or sealed
+    integrity checks fail against files that no longer exist at the recorded
+    location.
+    """
+
+    runs_old = f"/runs/{old_slug}/"
+    runs_new = f"/runs/{new_slug}/"
+    summaries_old = f"phase-summaries/{old_slug}/"
+    summaries_new = f"phase-summaries/{new_slug}/"
+    if isinstance(value, dict):
+        changed = False
+        rewritten: dict[str, Any] = {}
+        for key, item in value.items():
+            new_item, item_changed = _rewrite_slug_path_strings(
+                item, old_slug, new_slug
+            )
+            rewritten[key] = new_item
+            changed = changed or item_changed
+        return rewritten, changed
+    if isinstance(value, list):
+        changed = False
+        rewritten_list: list[Any] = []
+        for item in value:
+            new_item, item_changed = _rewrite_slug_path_strings(
+                item, old_slug, new_slug
+            )
+            rewritten_list.append(new_item)
+            changed = changed or item_changed
+        return rewritten_list, changed
+    if isinstance(value, str) and (runs_old in value or summaries_old in value):
+        return (
+            value.replace(runs_old, runs_new).replace(
+                summaries_old, summaries_new
+            ),
+            True,
+        )
+    return value, False
+
+def _migrate_slug_aliases(
+    project_dir: str | Path, data: dict[str, Any]
+) -> None:
+    """Rewrite legacy phase slugs in state and move filesystem directories.
+
+    Idempotent: if no legacy slugs are present, it returns immediately.
+    Touches: phase dict keys, dependencies, context_inputs, prerequisite
+    snapshot requirements, and the sealed manifest ``phase_slug`` field +
+    recomputed hash.  Moves ``runs/<old>/`` and ``phase-summaries/<old>/``
+    on disk.
+    """
+
+    if not SLUG_ALIASES:
+        return
+    phases = data.get("phases", {})
+    if not isinstance(phases, dict):
+        return
+
+    # Detect whether any alias work is needed in the state data.
+    old_keys = [k for k in phases if k in SLUG_ALIASES]
+    deps = data.get("dependencies", {})
+    stale_deps = False
+    if isinstance(deps, dict):
+        stale_deps = any(
+            old in SLUG_ALIASES
+            for prereqs in deps.values()
+            if isinstance(prereqs, list)
+            for old in prereqs
+        )
+    if not old_keys and not stale_deps:
+        # State is already migrated, but filesystem dirs may still
+        # have legacy names from a previous incomplete migration.
+        pass
+    else:
+        # 1. Rename phase dict keys
+        for old_slug, new_slug in SLUG_ALIASES.items():
+            if old_slug in phases and old_slug != new_slug:
+                phases[new_slug] = phases.pop(old_slug)
+
+    # 2. Rewrite dependencies
+    deps = data.get("dependencies", {})
+    if isinstance(deps, dict):
+        new_deps: dict[str, list[str]] = {}
+        for phase_key, prereqs in deps.items():
+            resolved_key = _resolve_slug(phase_key)
+            if isinstance(prereqs, list):
+                new_deps[resolved_key] = [_resolve_slug(p) for p in prereqs]
+            else:
+                new_deps[resolved_key] = prereqs
+        data["dependencies"] = new_deps
+
+    # 3. Rewrite every run's context_inputs and prerequisite_snapshot
+    for phase_slug, phase in phases.items():
+        if not isinstance(phase, dict):
+            continue
+        runs = phase.get("runs", [])
+        if not isinstance(runs, list):
+            continue
+        for run_index, run in enumerate(runs):
+            if not isinstance(run, dict):
+                continue
+            # context_inputs
+            ctx = run.get("context_inputs")
+            if isinstance(ctx, list):
+                for entry in ctx:
+                    if isinstance(entry, dict) and entry.get("phase"):
+                        entry["phase"] = _resolve_slug(str(entry["phase"]))
+            # prerequisite_snapshot requirements
+            snap = run.get("prerequisite_snapshot")
+            if isinstance(snap, dict):
+                for req in snap.get("requirements", []):
+                    if isinstance(req, dict) and req.get("phase"):
+                        req["phase"] = _resolve_slug(str(req["phase"]))
+                snap["phase"] = _resolve_slug(str(snap.get("phase", "")))
+            # Path strings: final_summary, decision_record.path, manifest_path,
+            # and any other recorded path must follow the moved directories.
+            for old_slug, new_slug in SLUG_ALIASES.items():
+                if old_slug == new_slug:
+                    continue
+                rewritten_run, run_changed = _rewrite_slug_path_strings(
+                    runs[run_index], old_slug, new_slug
+                )
+                if run_changed:
+                    runs[run_index] = rewritten_run
+        # latest_run reference is already inside the phase dict (resolved key)
+
+    # 4. Rewrite active_run marker
+    active = data.get("active_run")
+    if isinstance(active, dict) and active.get("phase_slug"):
+        active["phase_slug"] = _resolve_slug(str(active["phase_slug"]))
+
+    # 5. Move filesystem directories and patch manifests
+    runs_root = state_dir(project_dir) / "runs"
+    summaries_root = Path(project_dir).resolve() / "phase-summaries"
+
+    for old_slug, new_slug in SLUG_ALIASES.items():
+        if old_slug == new_slug:
+            continue
+        # Move runs/<old>/ → runs/<new>/
+        old_runs = runs_root / old_slug
+        new_runs = runs_root / new_slug
+        if old_runs.is_dir():
+            new_runs.parent.mkdir(parents=True, exist_ok=True)
+            if new_runs.exists():
+                # Merge: move individual files
+                for item in old_runs.iterdir():
+                    target = new_runs / item.name
+                    if not target.exists():
+                        item.rename(target)
+                old_runs.rmdir()
+            else:
+                old_runs.rename(new_runs)
+        # Move phase-summaries/<old>/ → phase-summaries/<new>/
+        old_sum = summaries_root / old_slug
+        new_sum = summaries_root / new_slug
+        if old_sum.is_dir():
+            new_sum.parent.mkdir(parents=True, exist_ok=True)
+            if new_sum.exists():
+                for item in old_sum.iterdir():
+                    target = new_sum / item.name
+                    if not target.exists():
+                        item.rename(target)
+                old_sum.rmdir()
+            else:
+                old_sum.rename(new_sum)
+
+    # 6. Patch phase_slug in sealed manifests and recompute hashes.
+    #    Also fix manifest_path to point at the renamed runs/ directory.
+    for phase_slug, phase in phases.items():
+        if not isinstance(phase, dict):
+            continue
+        for run in phase.get("runs", []):
+            if not isinstance(run, dict):
+                continue
+            manifest_path = run.get("manifest_path")
+            if not manifest_path:
+                continue
+            manifest_file = Path(str(manifest_path))
+            # If the path still references a legacy slug, resolve it.
+            resolved_manifest_path = runs_root / phase_slug / manifest_file.name
+            if manifest_file.resolve() != resolved_manifest_path.resolve():
+                manifest_file = resolved_manifest_path
+            if not manifest_file.is_file():
+                continue
+            try:
+                payload = manifest_file.read_bytes()
+                manifest = json.loads(payload.decode("utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                continue
+            changed = False
+            old_in_manifest = manifest.get("phase_slug", "")
+            if old_in_manifest and _resolve_slug(old_in_manifest) != old_in_manifest:
+                manifest["phase_slug"] = _resolve_slug(old_in_manifest)
+                changed = True
+            # The frozen phase plan records its slug; rerun and display logic
+            # compare it against the current phase slug.
+            frozen_phase = manifest.get("phase")
+            if isinstance(frozen_phase, dict):
+                frozen_slug = str(frozen_phase.get("slug", ""))
+                if _resolve_slug(frozen_slug) != frozen_slug:
+                    frozen_phase["slug"] = _resolve_slug(frozen_slug)
+                    changed = True
+            # Frozen summary context references prerequisite phases by slug.
+            summaries = manifest.get("snapshots", {}).get("summaries")
+            if isinstance(summaries, list):
+                for entry in summaries:
+                    if isinstance(entry, dict) and entry.get("phase"):
+                        old_entry_slug = str(entry["phase"])
+                        if _resolve_slug(old_entry_slug) != old_entry_slug:
+                            entry["phase"] = _resolve_slug(old_entry_slug)
+                            changed = True
+            # Every recorded path (snapshots, prompt, summary, decision,
+            # checkpoint) must follow the moved runs/ and phase-summaries/
+            # directories or sealed integrity verification fails.
+            for old_slug, new_slug in SLUG_ALIASES.items():
+                if old_slug == new_slug:
+                    continue
+                manifest, paths_changed = _rewrite_slug_path_strings(
+                    manifest, old_slug, new_slug
+                )
+                changed = changed or paths_changed
+            if str(manifest_file) != str(run.get("manifest_path", "")):
+                changed = True
+            if changed:
+                # Rewrite and recompute hash
+                new_payload = json.dumps(
+                    manifest, indent=2, ensure_ascii=False
+                ).encode("utf-8")
+                manifest_file.write_bytes(new_payload)
+                run["manifest_sha256"] = hashlib.sha256(new_payload).hexdigest()
+                run["manifest_path"] = str(manifest_file)
+
+    # 7. Repair sealed decision records and protocol checkpoints whose
+    #    embedded run identity names a legacy slug.
+    root = Path(project_dir).resolve()
+    for phase_slug, phase in phases.items():
+        if not isinstance(phase, dict):
+            continue
+        for run in phase.get("runs", []):
+            if not isinstance(run, dict):
+                continue
+            _migrate_sealed_decision_record(root, run)
+            _migrate_sealed_protocol_checkpoint(root, run)
+
+
 def _migrate(data: dict[str, Any]) -> dict[str, Any]:
     """Upgrade legacy state in place while retaining unknown and old fields."""
 
@@ -1094,6 +1432,7 @@ def load(project_dir: str | Path) -> dict[str, Any]:
         raw = _read_unlocked(project_dir)
         before = copy.deepcopy(raw)
         data = _migrate(raw)
+        _migrate_slug_aliases(project_dir, data)
         _seal_safe_legacy_approved_evidence(project_dir, data)
         if data != before:
             _save_unlocked(project_dir, data)
@@ -1586,16 +1925,26 @@ def _manifest_protocol_checkpoint_spec(
     except (TypeError, ValueError) as exc:
         raise StateValidationError("run manifest schema version is invalid") from exc
     declared = manifest.get("protocol_checkpoint")
-    if phase_slug != NUMERICAL_VALIDATION_PHASE:
+    phase = manifest.get("phase")
+    phase_declares = isinstance(phase, Mapping) and bool(
+        phase.get("protocol_checkpoint")
+    )
+    repurposed = isinstance(phase, Mapping) and str(
+        phase.get("pattern", "")
+    ) in {"parallel", "debate"}
+    legacy_checkpoint_phase = (
+        _resolve_slug(phase_slug) == DRAFT_ASSEMBLY_PHASE and not repurposed
+    )
+    if not phase_declares and not legacy_checkpoint_phase:
         if declared is not None:
             raise StateValidationError(
-                "a protocol checkpoint is valid only for Phase 04"
+                "a protocol checkpoint requires the phase configuration to opt in"
             )
         return None
     if declared is None:
         if schema_version >= 5:
             raise StateValidationError(
-                "modern Phase 04 manifest has no protocol checkpoint declaration"
+                "modern manifest has no protocol checkpoint declaration"
             )
         return None
     required_fields = {
@@ -1983,10 +2332,6 @@ def seal_protocol_checkpoint(
         data = _migrate(_read_unlocked(project_dir))
         _, run, _ = _resolve_run(data, phase_slug, run_ref)
         _ensure_status(run, {"running"}, "seal a protocol checkpoint for")
-        if phase_slug != NUMERICAL_VALIDATION_PHASE:
-            raise StateValidationError(
-                "a protocol checkpoint may be sealed only for Phase 04"
-            )
         rounds = run.get("rounds", [])
         if (
             len(rounds) != 1
@@ -2001,7 +2346,7 @@ def seal_protocol_checkpoint(
         spec = _manifest_protocol_checkpoint_spec(project_dir, phase_slug, manifest)
         if spec is None:
             raise StateValidationError(
-                "this legacy run has no protocol checkpoint declaration"
+                "this run has no protocol checkpoint declaration"
             )
         existing = run.get("protocol_checkpoint")
         if spec.get("protocol_root") is not None:
@@ -2893,7 +3238,7 @@ def _validate_run_integrity(
         phase_slug,
         run,
         manifest,
-        required=bool(phase_slug == NUMERICAL_VALIDATION_PHASE and manifest and manifest.get("protocol_checkpoint") is not None),
+        required=bool(phase_slug == DRAFT_ASSEMBLY_PHASE and manifest and manifest.get("protocol_checkpoint") is not None),
     )
     _validate_recorded_artifacts(project_dir, run)
     _validate_recorded_task_briefs(project_dir, phase_slug, run)
@@ -3607,7 +3952,7 @@ def start_round(
             raise StateConflict(
                 f"run requested exactly {run['rounds_requested']} rounds; no more may start"
             )
-        if phase_slug == NUMERICAL_VALIDATION_PHASE and expected > 1:
+        if phase_slug == DRAFT_ASSEMBLY_PHASE and expected > 1:
             manifest = _validate_recorded_manifest(project_dir, phase_slug, run)
             _validate_recorded_protocol_checkpoint(
                 project_dir, phase_slug, run, manifest, required=True
@@ -3723,7 +4068,7 @@ def record_task(
                 brief_path=brief,
                 brief_sha256=normalized_brief_hash,
             )
-        if phase_slug == NUMERICAL_VALIDATION_PHASE and round_n == 1:
+        if phase_slug == DRAFT_ASSEMBLY_PHASE and round_n == 1:
             manifest = _validate_recorded_manifest(project_dir, phase_slug, run)
             spec = _manifest_protocol_checkpoint_spec(
                 project_dir, phase_slug, manifest
@@ -3782,7 +4127,7 @@ def record_task(
             raise StateValidationError(
                 "specialized task kinds are valid only for Phase 04 round 1"
             )
-        elif phase_slug == NUMERICAL_VALIDATION_PHASE:
+        elif phase_slug == DRAFT_ASSEMBLY_PHASE:
             manifest = _validate_recorded_manifest(project_dir, phase_slug, run)
             if int(manifest.get("schema_version", 1)) >= 7:
                 expected_workspace = (
@@ -3843,7 +4188,7 @@ def complete_round(
             raise StateConflict(f"round {round_n} is already completed")
         if round_n != len(run["rounds"]):
             raise StateConflict("only the currently open round may be completed")
-        if phase_slug == NUMERICAL_VALIDATION_PHASE:
+        if phase_slug == DRAFT_ASSEMBLY_PHASE:
             manifest = _validate_recorded_manifest(project_dir, phase_slug, run)
             _validate_recorded_protocol_checkpoint(
                 project_dir, phase_slug, run, manifest, required=True
@@ -3909,7 +4254,7 @@ def stage_run_submission(
             phase_slug,
             run,
             manifest,
-            required=bool(phase_slug == NUMERICAL_VALIDATION_PHASE and manifest and manifest.get("protocol_checkpoint") is not None),
+            required=bool(phase_slug == DRAFT_ASSEMBLY_PHASE and manifest and manifest.get("protocol_checkpoint") is not None),
         )
         _validate_recorded_artifacts(project_dir, run)
         _validate_recorded_task_briefs(project_dir, phase_slug, run)

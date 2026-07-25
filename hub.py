@@ -3,7 +3,7 @@
 
 The database is intentionally small: it is the registry of projects. Runtime
 and phase history live in a sibling control directory managed by the run-state
-helpers in ``scripts/``.
+helpers in ``core``.
 """
 
 from __future__ import annotations
@@ -394,7 +394,7 @@ def validate_config(cfg: object, *, config_root: Optional[Path] = None) -> dict:
 
         proof_audit = phase.get("proof_audit")
         if proof_audit is not None:
-            if slug != "03-theoretical-justification":
+            if slug != "03-idea-evaluation":
                 raise ConfigurationError(
                     f"{field}.proof_audit is only valid for Phase 03"
                 )
@@ -431,6 +431,20 @@ def validate_config(cfg: object, *, config_root: Optional[Path] = None) -> dict:
                     f"{field}.proof_audit.stage.role must be paper_reviewer and "
                     "listed in phase members"
                 )
+
+        protocol_checkpoint = phase.get("protocol_checkpoint", False)
+        if not isinstance(protocol_checkpoint, bool):
+            raise ConfigurationError(
+                f"{field}.protocol_checkpoint must be a boolean"
+            )
+        if protocol_checkpoint and pattern != "sequential":
+            raise ConfigurationError(
+                f"{field}.protocol_checkpoint requires a sequential stage plan"
+            )
+
+        method_binding = phase.get("method_binding", False)
+        if not isinstance(method_binding, bool):
+            raise ConfigurationError(f"{field}.method_binding must be a boolean")
 
         gates = phase.get("gated_by")
         if not isinstance(gates, list):
@@ -801,7 +815,7 @@ def _create_project_locked(
                 setting_content=_build_setting_md(clean_name, description, brief),
             )
             project_tree_created = True
-            from scripts import project_state
+            from core import project_state
 
             control_dir = project_state.state_dir(project_dir)
             control_dir.mkdir(parents=True, exist_ok=False)

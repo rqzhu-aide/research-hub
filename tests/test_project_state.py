@@ -5,19 +5,13 @@ import json
 import multiprocessing
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 import yaml
 
 
-SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
-sys.path.insert(0, str(SCRIPTS))
-
-import project_state as state
-
-
+from core import project_state as state
 DEPENDENCIES = {
     "01-literature": [],
     "02-method": ["01-literature"],
@@ -417,7 +411,7 @@ def test_decision_record_schema_two_rejects_malformed_selected_method_identities
         ),
     ],
 )
-def test_schema_seven_phase_two_binds_the_decision_to_the_selected_method(
+def test_decision_record_binds_the_selected_method_to_the_phase_two_run(
     selected_method: dict[str, str] | None,
     decision_requested: str,
     message: str,
@@ -1620,7 +1614,7 @@ def test_round_artifacts_are_rejected_above_the_safety_limit(
 def test_phase_four_requires_and_preserves_a_pre_result_protocol_checkpoint(
     project: Path,
 ) -> None:
-    phase = state.NUMERICAL_VALIDATION_PHASE
+    phase = state.DRAFT_ASSEMBLY_PHASE
     dependencies = {**DEPENDENCIES, phase: []}
     state.init(
         project,
@@ -1701,7 +1695,7 @@ def test_phase_four_requires_and_preserves_a_pre_result_protocol_checkpoint(
 def test_modern_phase_four_separates_protocol_and_result_tasks(
     project: Path,
 ) -> None:
-    phase = state.NUMERICAL_VALIDATION_PHASE
+    phase = state.DRAFT_ASSEMBLY_PHASE
     dependencies = {**DEPENDENCIES, phase: []}
     state.init(
         project,
@@ -1834,10 +1828,10 @@ def test_modern_phase_four_separates_protocol_and_result_tasks(
     ).hexdigest()
 
 
-def test_schema_seven_phase_four_seals_an_isolated_protocol_workspace(
+def test_phase_four_seals_an_isolated_protocol_workspace(
     project: Path,
 ) -> None:
-    phase = state.NUMERICAL_VALIDATION_PHASE
+    phase = state.DRAFT_ASSEMBLY_PHASE
     dependencies = {**DEPENDENCIES, phase: []}
     state.init(
         project,
@@ -2003,3 +1997,201 @@ def test_schema_seven_phase_four_seals_an_isolated_protocol_workspace(
     )
     with pytest.raises(state.StateValidationError, match="protocol-stage report"):
         state.finalize_run_submission(project, phase, run_id)
+
+
+def test_slug_alias_migration_repairs_paths_and_sealed_content(
+    tmp_path: Path,
+) -> None:
+    old_theory = "03-theoretical-justification"
+    old_numerical = "04-numerical-validation"
+    new_theory = state.SLUG_ALIASES[old_theory]
+    new_numerical = state.SLUG_ALIASES[old_numerical]
+    project = tmp_path / "project"
+    project.mkdir()
+    phases = [old_theory, old_numerical]
+    dependencies = {old_theory: [], old_numerical: []}
+    state.init(project, "project-001", "example", "Example",
+               phase_slugs=phases, dependencies=dependencies)
+
+    control = state.state_dir(project)
+
+    # --- Phase 03 run with a sealed summary and decision record ---
+    theory_run = state.reserve_run(
+        project, old_theory, "theory", rounds_requested=1,
+        dependencies=dependencies,
+    )
+    context_file = (
+        control / "runs" / old_theory / f"{theory_run}.context"
+        / "project" / "setting.md"
+    )
+    context_file.parent.mkdir(parents=True)
+    context_file.write_text("research brief", encoding="utf-8")
+    summaries_dir = project / "phase-summaries" / old_theory
+    summaries_dir.mkdir(parents=True)
+    theory_summary = summaries_dir / f"{theory_run}.html"
+    theory_summary.write_text("<h1>Theory</h1>", encoding="utf-8")
+    theory_decision = summaries_dir / f"{theory_run}.decision.json"
+    decision = decision_payload("Complete", phase=old_theory, run=theory_run)
+    decision["schema_version"] = 2
+    decision["selected_scientific_object"] = None
+    theory_decision.write_text(json.dumps(decision), encoding="utf-8")
+    theory_manifest = {
+        "schema_version": 8,
+        "run_id": theory_run,
+        "phase_slug": old_theory,
+        "timeout_minutes": 30,
+        "output_root": str(project / "draft" / "theory" / "run" / "01"),
+        "phase": {
+            "slug": old_theory,
+            "members": ["theorist"],
+            "pattern": "sequential",
+        },
+        "snapshots": {
+            "setting": {
+                "path": str(context_file),
+                "sha256": hashlib.sha256(context_file.read_bytes()).hexdigest(),
+            },
+            "summaries": [{
+                "phase": old_theory,
+                "path": str(theory_summary),
+                "sha256": hashlib.sha256(theory_summary.read_bytes()).hexdigest(),
+            }],
+        },
+        "summary_path": str(theory_summary),
+        "decision_path": str(theory_decision),
+    }
+    theory_manifest_path = (
+        control / "runs" / old_theory / f"{theory_run}.manifest.json"
+    )
+    theory_manifest_path.write_text(
+        json.dumps(theory_manifest, indent=2), encoding="utf-8"
+    )
+    state.seal_run_manifest(project, old_theory, theory_run, theory_manifest_path)
+    state.set_process_pid(project, old_theory, theory_run, 9901)
+    state.start_round(project, old_theory, theory_run, "Draft", ["theorist"], 1)
+    theory_report = project / "draft" / "theory" / "run" / "01" / "round-01" / "theorist.md"
+    theory_report.parent.mkdir(parents=True)
+    theory_report.write_text(
+        "Scientific completion outcome: Complete\n", encoding="utf-8"
+    )
+    state.complete_round(project, old_theory, theory_run, 1, [theory_report])
+    state.stage_run_submission(
+        project, old_theory, theory_run, theory_summary, theory_decision
+    )
+    state.finalize_run_submission(project, old_theory, theory_run)
+
+    # --- Phase 04 run with a sealed protocol checkpoint ---
+    numerical_run = state.reserve_run(
+        project, old_numerical, "numerical", rounds_requested=4,
+        dependencies=dependencies,
+    )
+    output_root = project / "numerical" / "run" / "01"
+    output_root.mkdir(parents=True)
+    checkpoint = output_root / "protocol-checkpoint.json"
+    numerical_manifest = {
+        "schema_version": 5,
+        "run_id": numerical_run,
+        "phase_slug": old_numerical,
+        "timeout_minutes": 30,
+        "output_root": str(output_root),
+        "protocol_checkpoint": {
+            "schema_version": state.PROTOCOL_CHECKPOINT_SCHEMA_VERSION,
+            "path": str(checkpoint),
+            "max_bytes": state.MAX_PROTOCOL_CHECKPOINT_BYTES,
+        },
+    }
+    numerical_manifest_path = (
+        control / "runs" / old_numerical / f"{numerical_run}.manifest.json"
+    )
+    numerical_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    numerical_manifest_path.write_text(
+        json.dumps(numerical_manifest), encoding="utf-8"
+    )
+    state.seal_run_manifest(
+        project, old_numerical, numerical_run, numerical_manifest_path
+    )
+    state.set_process_pid(project, old_numerical, numerical_run, 9901)
+    state.start_round(
+        project, old_numerical, numerical_run, "Prespecify", ["data_scientist"], 1
+    )
+    protocol = output_root / "study-config.yaml"
+    protocol.write_text("replications: 200\nseed: 42\n", encoding="utf-8")
+    payload = protocol.read_bytes()
+    checkpoint.write_text(
+        json.dumps({
+            "schema_version": state.PROTOCOL_CHECKPOINT_SCHEMA_VERSION,
+            "phase_slug": old_numerical,
+            "run_id": numerical_run,
+            "main_results_generated": False,
+            "protocol_files": [{
+                "path": protocol.relative_to(project).as_posix(),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "size": len(payload),
+                "purpose": "Executable numerical study configuration",
+            }],
+        }),
+        encoding="utf-8",
+    )
+    state.seal_protocol_checkpoint(
+        project, old_numerical, numerical_run, checkpoint
+    )
+
+    # --- Migrate ---
+    data = state.load(project)
+
+    assert old_theory not in data["phases"]
+    assert new_theory in data["phases"]
+    assert not (control / "runs" / old_theory).exists()
+    assert (control / "runs" / new_theory).is_dir()
+    assert not (project / "phase-summaries" / old_theory).exists()
+    assert (project / "phase-summaries" / new_theory).is_dir()
+
+    migrated_theory = next(
+        run for run in data["phases"][new_theory]["runs"]
+        if run["run_id"] == theory_run
+    )
+    assert migrated_theory["final_summary"].startswith(
+        f"phase-summaries/{new_theory}/"
+    )
+    migrated_manifest = json.loads(
+        (control / "runs" / new_theory / f"{theory_run}.manifest.json").read_text()
+    )
+    assert migrated_manifest["phase_slug"] == new_theory
+    assert migrated_manifest["phase"]["slug"] == new_theory
+    assert migrated_manifest["snapshots"]["summaries"][0]["phase"] == new_theory
+    assert new_theory in migrated_manifest["snapshots"]["setting"]["path"]
+    assert new_theory in migrated_manifest["summary_path"]
+
+    migrated_decision = (
+        project / "phase-summaries" / new_theory / f"{theory_run}.decision.json"
+    )
+    assert not theory_decision.exists()
+    repaired = json.loads(migrated_decision.read_text())
+    origin = repaired["scientific_record_changes"][0]["change_origin"]
+    assert origin["phase"] == new_theory
+    record = migrated_theory["decision_record"]
+    assert record["sha256"] == hashlib.sha256(
+        migrated_decision.read_bytes()
+    ).hexdigest()
+    assert record["data"] == state.validate_decision_record(repaired)
+
+    migrated_numerical = next(
+        run for run in data["phases"][new_numerical]["runs"]
+        if run["run_id"] == numerical_run
+    )
+    checkpoint_record = migrated_numerical["protocol_checkpoint"]
+    assert checkpoint_record["data"]["phase_slug"] == new_numerical
+    assert checkpoint_record["sha256"] == hashlib.sha256(
+        checkpoint.read_bytes()
+    ).hexdigest()
+
+    # Full integrity validation passes for the migrated sealed runs.
+    state._validate_run_integrity(
+        project, new_theory, migrated_theory, require_summary=True
+    )
+    manifest = state._validate_recorded_manifest(
+        project, new_numerical, migrated_numerical
+    )
+    state._validate_recorded_protocol_checkpoint(
+        project, new_numerical, migrated_numerical, manifest, required=True
+    )

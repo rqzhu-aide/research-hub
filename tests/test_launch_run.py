@@ -12,12 +12,7 @@ from pathlib import Path
 import pytest
 
 
-SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
-sys.path.insert(0, str(SCRIPTS))
-
-import launch_run as launcher
-
-
+from core import launch_run as launcher
 def test_launch_run_revalidates_the_project_inside_the_operation_lock(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -219,7 +214,7 @@ def test_launch_plan_version_tracks_phase_config_and_instructions(
     team_dir = hub_dir / "config" / "team"
     souls_dir = hub_dir / "config" / "souls"
     phases_dir = hub_dir / "config" / "phases"
-    phase_dir = phases_dir / launcher.THEORETICAL_ANALYSIS_PHASE
+    phase_dir = phases_dir / launcher.IDEA_EVALUATION_PHASE
     for directory in (team_dir, souls_dir, phase_dir):
         directory.mkdir(parents=True, exist_ok=True)
 
@@ -235,10 +230,18 @@ def test_launch_plan_version_tracks_phase_config_and_instructions(
     for path, content in instructions.items():
         path.write_text(content, encoding="utf-8")
 
-    monkeypatch.setattr(launcher, "HUB_DIR", hub_dir)
-    monkeypatch.setattr(launcher, "TEAM_DIR", team_dir)
-    monkeypatch.setattr(launcher, "SOULS_DIR", souls_dir)
-    monkeypatch.setattr(launcher, "PHASES_DIR", phases_dir)
+    monkeypatch.setattr(
+        launcher.launch_common,
+        "HUB_DIR", hub_dir)
+    monkeypatch.setattr(
+        launcher.launch_common,
+        "TEAM_DIR", team_dir)
+    monkeypatch.setattr(
+        launcher.launch_common,
+        "SOULS_DIR", souls_dir)
+    monkeypatch.setattr(
+        launcher.launch_common,
+        "PHASES_DIR", phases_dir)
     config = {
         "hub": {
             "allow_unattended_tools": False,
@@ -250,7 +253,7 @@ def test_launch_plan_version_tracks_phase_config_and_instructions(
         ],
         "phases": [
             {
-                "slug": launcher.THEORETICAL_ANALYSIS_PHASE,
+                "slug": launcher.IDEA_EVALUATION_PHASE,
                 "members": ["theorist"],
                 "rounds": {"min": 1, "default": 2, "max": 4},
             }
@@ -258,13 +261,13 @@ def test_launch_plan_version_tracks_phase_config_and_instructions(
     }
 
     original = launcher.launch_plan_version(
-        config, launcher.THEORETICAL_ANALYSIS_PHASE
+        config, launcher.IDEA_EVALUATION_PHASE
     )
     changed_config = json.loads(json.dumps(config))
     changed_config["phases"][0]["rounds"]["default"] = 3
     assert (
         launcher.launch_plan_version(
-            changed_config, launcher.THEORETICAL_ANALYSIS_PHASE
+            changed_config, launcher.IDEA_EVALUATION_PHASE
         )
         != original
     )
@@ -273,7 +276,7 @@ def test_launch_plan_version_tracks_phase_config_and_instructions(
     phase_instruction.write_text("Revised phase theorist instructions\n", encoding="utf-8")
     assert (
         launcher.launch_plan_version(
-            config, launcher.THEORETICAL_ANALYSIS_PHASE
+            config, launcher.IDEA_EVALUATION_PHASE
         )
         != original
     )
@@ -349,9 +352,7 @@ def test_launch_plan_tracks_recommended_skill_status_without_requiring_it(
     assert current_snapshot["roles"]["theorist"]["skills"][0]["preload"] is True
     assert current_version != missing_version
 
-    monkeypatch.setattr(
-        launcher,
-        "_recommended_skills_snapshot",
+    monkeypatch.setattr(launcher.launch_plans, "_recommended_skills_snapshot",
         lambda *_args, **_kwargs: pytest.fail(
             "a supplied skill snapshot must be used without rereading live state"
         ),
@@ -404,18 +405,18 @@ def test_preloaded_skill_is_rechecked_and_drift_fails_safely(
             {"id": "paper_reviewer", "profile": "review-profile"},
         ],
         "phases": [{
-            "slug": launcher.THEORETICAL_ANALYSIS_PHASE,
+            "slug": launcher.IDEA_EVALUATION_PHASE,
             "members": ["paper_reviewer"],
         }],
     }
     snapshot = launcher._recommended_skills_snapshot(
         config,
-        launcher.THEORETICAL_ANALYSIS_PHASE,
+        launcher.IDEA_EVALUATION_PHASE,
     )
     assert set(snapshot["roles"]) == {"paper_reviewer"}
     assert snapshot["roles"]["paper_reviewer"]["skills"][0]["preload"] is True
     manifest = {
-        "phase_slug": launcher.THEORETICAL_ANALYSIS_PHASE,
+        "phase_slug": launcher.IDEA_EVALUATION_PHASE,
         "profiles": {
             "research_lead": "lead-profile",
             "paper_reviewer": "review-profile",
@@ -551,8 +552,12 @@ def test_preflight_uses_cross_platform_profile_home_resolution(
         "model: theory\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(launcher, "PHASES_DIR", phase_root)
-    monkeypatch.setattr(launcher, "SOULS_DIR", soul_root)
+    monkeypatch.setattr(
+        launcher.launch_common,
+        "PHASES_DIR", phase_root)
+    monkeypatch.setattr(
+        launcher.launch_common,
+        "SOULS_DIR", soul_root)
     monkeypatch.setattr(launcher.shutil, "which", lambda _name: "hermes")
     monkeypatch.setattr(
         launcher.profile_skills,
@@ -584,7 +589,9 @@ def test_board_setup_binds_hermes_root_without_mutating_parent_environment(
 
     monkeypatch.setenv("HERMES_HOME", "parent-home")
     monkeypatch.setenv("RESEARCH_HUB_HERMES_ROOT", "parent-root")
-    monkeypatch.setattr(launcher, "_run_command", run_command)
+    monkeypatch.setattr(
+        launcher.launch_process,
+        "_run_command", run_command)
 
     launcher._ensure_board(
         "hermes",
@@ -620,10 +627,10 @@ def test_locked_launch_rejects_a_stale_phase_plan_version(
 ) -> None:
     phase_slug = "01-literature-review"
     config = {"phases": [{"slug": phase_slug}]}
-    monkeypatch.setattr(launcher, "_load_hub_config", lambda: config)
     monkeypatch.setattr(
-        launcher,
-        "launch_plan_version",
+        launcher.launch_plans,
+        "_load_hub_config", lambda: config)
+    monkeypatch.setattr(launcher.launch_plans, "launch_plan_version",
         lambda *_args, **_kwargs: "a" * 64,
     )
 
@@ -638,7 +645,7 @@ def test_locked_launch_rejects_a_stale_phase_plan_version(
 
 def test_method_selection_freezes_the_approved_phase_two_decision() -> None:
     selection = launcher._method_selection_for_run(
-        {"slug": launcher.THEORETICAL_ANALYSIS_PHASE},
+        {"slug": launcher.IDEA_EVALUATION_PHASE},
         _approved_method_snapshots(),
         "",
         "",
@@ -661,7 +668,7 @@ def test_method_selection_freezes_the_approved_phase_two_decision() -> None:
 
 def test_run_specific_method_identity_overrides_the_approved_selection() -> None:
     selection = launcher._method_selection_for_run(
-        {"slug": launcher.NUMERICAL_VALIDATION_PHASE},
+        {"slug": launcher.DRAFT_ASSEMBLY_PHASE},
         _approved_method_snapshots(),
         "user-selected-method",
         "2026.07",
@@ -681,8 +688,8 @@ def test_run_specific_method_identity_overrides_the_approved_selection() -> None
 @pytest.mark.parametrize(
     "phase_slug",
     [
-        launcher.THEORETICAL_ANALYSIS_PHASE,
-        launcher.NUMERICAL_VALIDATION_PHASE,
+        launcher.IDEA_EVALUATION_PHASE,
+        launcher.DRAFT_ASSEMBLY_PHASE,
     ],
 )
 def test_standard_method_phases_reject_a_missing_method_identity(
@@ -699,7 +706,7 @@ def test_standard_method_phases_reject_a_missing_method_identity(
 
 def test_audit_only_phase_three_requires_no_method_selection() -> None:
     phase = {
-        "slug": launcher.THEORETICAL_ANALYSIS_PHASE,
+        "slug": launcher.IDEA_EVALUATION_PHASE,
         "audit_only": True,
     }
 
@@ -707,7 +714,7 @@ def test_audit_only_phase_three_requires_no_method_selection() -> None:
         phase, {"summaries": []}, "", ""
     ) is None
     assert launcher._validated_manifest_method_selection({
-        "phase_slug": launcher.THEORETICAL_ANALYSIS_PHASE,
+        "phase_slug": launcher.IDEA_EVALUATION_PHASE,
         "phase": phase,
         "method_selection": None,
     }) is None
@@ -726,7 +733,7 @@ def test_manifest_method_selection_rejects_decision_provenance_mismatch(
 ) -> None:
     snapshots = _approved_method_snapshots()
     selection = launcher._method_selection_for_run(
-        {"slug": launcher.THEORETICAL_ANALYSIS_PHASE},
+        {"slug": launcher.IDEA_EVALUATION_PHASE},
         snapshots,
         "",
         "",
@@ -737,8 +744,8 @@ def test_manifest_method_selection_rejects_decision_provenance_mismatch(
         "decisions/a-different-decision.json" if field == "path" else "c" * 64
     )
     manifest = {
-        "phase_slug": launcher.THEORETICAL_ANALYSIS_PHASE,
-        "phase": {"slug": launcher.THEORETICAL_ANALYSIS_PHASE},
+        "phase_slug": launcher.IDEA_EVALUATION_PHASE,
+        "phase": {"slug": launcher.IDEA_EVALUATION_PHASE},
         "snapshots": snapshots,
         "method_selection": mismatched,
     }
@@ -914,12 +921,12 @@ def test_v5_phase_four_manifest_requires_exact_protocol_checkpoint(
 ) -> None:
     project = (tmp_path / "project").resolve()
     output_root = project / "numerical" / "run" / "01"
-    summary = project / "phase-summaries" / "04-numerical-validation" / "run.html"
+    summary = project / "phase-summaries" / "04-draft-assembly" / "run.html"
     manifest = _schema_v2_manifest()
     manifest.update({
         "schema_version": 5,
         "project_dir": str(project),
-        "phase_slug": launcher.NUMERICAL_VALIDATION_PHASE,
+        "phase_slug": launcher.DRAFT_ASSEMBLY_PHASE,
         "output_root": str(output_root),
         "submission_outputs": {},
         "summary_path": str(summary),
@@ -971,12 +978,12 @@ def test_v6_phase_four_manifest_fixes_a_run_scoped_protocol_directory(
 ) -> None:
     project = (tmp_path / "project").resolve()
     output_root = project / "numerical" / "run" / "01"
-    summary = project / "phase-summaries" / "04-numerical-validation" / "run.html"
+    summary = project / "phase-summaries" / "04-draft-assembly" / "run.html"
     manifest = _schema_v2_manifest()
     manifest.update({
         "schema_version": 6,
         "project_dir": str(project),
-        "phase_slug": launcher.NUMERICAL_VALIDATION_PHASE,
+        "phase_slug": launcher.DRAFT_ASSEMBLY_PHASE,
         "output_root": str(output_root),
         "submission_outputs": {},
         "summary_path": str(summary),
@@ -1133,10 +1140,18 @@ def test_context_snapshot_rejects_a_source_changed_during_copy(
             source.write_text("changed during copy", encoding="utf-8")
         original_write(path, payload)
 
-    monkeypatch.setattr(launcher, "TEAM_DIR", team_dir)
-    monkeypatch.setattr(launcher, "SOULS_DIR", souls_dir)
-    monkeypatch.setattr(launcher, "PHASES_DIR", phases_dir)
-    monkeypatch.setattr(launcher, "_write_bytes_atomic", change_before_write)
+    monkeypatch.setattr(
+        launcher.launch_common,
+        "TEAM_DIR", team_dir)
+    monkeypatch.setattr(
+        launcher.launch_common,
+        "SOULS_DIR", souls_dir)
+    monkeypatch.setattr(
+        launcher.launch_common,
+        "PHASES_DIR", phases_dir)
+    monkeypatch.setattr(
+        launcher.launch_common,
+        "_write_bytes_atomic", change_before_write)
 
     with pytest.raises(launcher.LaunchError, match="changed while the run was being frozen"):
         launcher._snapshot_run_inputs(
@@ -1181,10 +1196,18 @@ def test_snapshot_rejects_a_soul_changed_during_copy(
             lead_soul.write_text("lead soul after", encoding="utf-8")
         original_write(path, payload)
 
-    monkeypatch.setattr(launcher, "TEAM_DIR", team_dir)
-    monkeypatch.setattr(launcher, "SOULS_DIR", souls_dir)
-    monkeypatch.setattr(launcher, "PHASES_DIR", phases_dir)
-    monkeypatch.setattr(launcher, "_write_bytes_atomic", change_before_write)
+    monkeypatch.setattr(
+        launcher.launch_common,
+        "TEAM_DIR", team_dir)
+    monkeypatch.setattr(
+        launcher.launch_common,
+        "SOULS_DIR", souls_dir)
+    monkeypatch.setattr(
+        launcher.launch_common,
+        "PHASES_DIR", phases_dir)
+    monkeypatch.setattr(
+        launcher.launch_common,
+        "_write_bytes_atomic", change_before_write)
 
     with pytest.raises(launcher.LaunchError, match="changed while the run was being frozen"):
         launcher._snapshot_run_inputs(
@@ -1215,9 +1238,15 @@ def test_snapshot_freezes_member_and_research_lead_souls(
     phase_dir.mkdir(parents=True)
     for name in ("_lead.md", "_phase.md", "theorist.md"):
         (phase_dir / name).write_text(name, encoding="utf-8")
-    monkeypatch.setattr(launcher, "TEAM_DIR", team_dir)
-    monkeypatch.setattr(launcher, "SOULS_DIR", souls_dir)
-    monkeypatch.setattr(launcher, "PHASES_DIR", phases_dir)
+    monkeypatch.setattr(
+        launcher.launch_common,
+        "TEAM_DIR", team_dir)
+    monkeypatch.setattr(
+        launcher.launch_common,
+        "SOULS_DIR", souls_dir)
+    monkeypatch.setattr(
+        launcher.launch_common,
+        "PHASES_DIR", phases_dir)
 
     snapshots = launcher._snapshot_run_inputs(
         project,
@@ -1375,14 +1404,16 @@ def test_exact_rerun_options_recovers_phase_three_variants(
     project.mkdir()
     manifest = {
         "phase": {
-            "slug": launcher.THEORETICAL_ANALYSIS_PHASE,
+            "slug": launcher.IDEA_EVALUATION_PHASE,
             "run_plan": launcher.THEORY_PLAN_STANDARD_WITH_AUDIT,
         }
     }
-    monkeypatch.setattr(launcher, "_read_manifest", lambda *_args: manifest)
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "_read_manifest", lambda *_args: manifest)
 
     assert launcher.exact_rerun_options(
-        project, launcher.THEORETICAL_ANALYSIS_PHASE, "prior-run"
+        project, launcher.IDEA_EVALUATION_PHASE, "prior-run"
     ) == {
         "kind": "theory",
         "theory_plan": launcher.THEORY_PLAN_STANDARD_WITH_AUDIT,
@@ -1394,14 +1425,10 @@ def test_exact_rerun_options_recovers_phase_three_variants(
         "run_id": "source-run",
         "target": {"sha256": target_digest},
     }
-    monkeypatch.setattr(
-        launcher,
-        "_verified_frozen_theory_audit_source",
+    monkeypatch.setattr(launcher.launch_plans, "_verified_frozen_theory_audit_source",
         lambda *_args: frozen_source,
     )
-    monkeypatch.setattr(
-        launcher,
-        "_resolve_theory_audit_source",
+    monkeypatch.setattr(launcher.launch_plans, "_resolve_theory_audit_source",
         lambda *_args: {
             "run_id": "source-run",
             "target": {"sha256": target_digest},
@@ -1409,7 +1436,7 @@ def test_exact_rerun_options_recovers_phase_three_variants(
     )
 
     assert launcher.exact_rerun_options(
-        project, launcher.THEORETICAL_ANALYSIS_PHASE, "prior-audit"
+        project, launcher.IDEA_EVALUATION_PHASE, "prior-audit"
     ) == {
         "kind": "theory",
         "theory_plan": launcher.THEORY_PLAN_AUDIT_ONLY,
@@ -1424,32 +1451,28 @@ def test_exact_audit_rerun_rejects_changed_source(
     project = tmp_path / "project"
     project.mkdir()
     monkeypatch.setattr(
-        launcher,
+        launcher.launch_manifest,
         "_read_manifest",
         lambda *_args: {
             "phase": {
-                "slug": launcher.THEORETICAL_ANALYSIS_PHASE,
+                "slug": launcher.IDEA_EVALUATION_PHASE,
                 "run_plan": launcher.THEORY_PLAN_AUDIT_ONLY,
             }
         },
     )
-    monkeypatch.setattr(
-        launcher,
-        "_verified_frozen_theory_audit_source",
+    monkeypatch.setattr(launcher.launch_plans, "_verified_frozen_theory_audit_source",
         lambda *_args: {
             "run_id": "source-run",
             "target": {"sha256": "a" * 64},
         },
     )
-    monkeypatch.setattr(
-        launcher,
-        "_resolve_theory_audit_source",
+    monkeypatch.setattr(launcher.launch_plans, "_resolve_theory_audit_source",
         lambda *_args: {"target": {"sha256": "b" * 64}},
     )
 
     with pytest.raises(launcher.LaunchError, match="source changed"):
         launcher.exact_rerun_options(
-            project, launcher.THEORETICAL_ANALYSIS_PHASE, "prior-audit"
+            project, launcher.IDEA_EVALUATION_PHASE, "prior-audit"
         )
 
 
@@ -1469,10 +1492,10 @@ def test_exact_rerun_options_recovers_review_only_target(
             "source_sha256": digest,
         },
     }
-    monkeypatch.setattr(launcher, "_read_manifest", lambda *_args: manifest)
     monkeypatch.setattr(
-        launcher,
-        "_resolve_paper_review_source",
+        launcher.launch_manifest,
+        "_read_manifest", lambda *_args: manifest)
+    monkeypatch.setattr(launcher.launch_plans, "_resolve_paper_review_source",
         lambda *_args: (source.resolve(), digest, {"run_id": "source-run"}),
     )
 
@@ -1492,7 +1515,7 @@ def test_exact_rerun_options_recovers_review_only_target(
 
 def test_phase_three_plan_variants_have_exact_user_selected_stages() -> None:
     phase = {
-        "slug": launcher.THEORETICAL_ANALYSIS_PHASE,
+        "slug": launcher.IDEA_EVALUATION_PHASE,
         "members": ["theorist", "research_lead"],
         "available_run_plans": [
             launcher.THEORY_PLAN_STANDARD,
@@ -1621,8 +1644,12 @@ def test_phase_six_initial_reviewer_brief_excludes_internal_context(
         ],
     }
     recorded: dict[str, object] = {}
-    monkeypatch.setattr(launcher, "_read_manifest", lambda *_args: manifest)
-    monkeypatch.setattr(launcher, "_verify_frozen_inputs", lambda *_args: None)
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "_read_manifest", lambda *_args: manifest)
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "_verify_frozen_inputs", lambda *_args: None)
     monkeypatch.setattr(launcher.project_state, "get_run", lambda *_args: run)
     monkeypatch.setattr(launcher.project_state, "seal_review_target", lambda *_args: {})
     monkeypatch.setattr(
@@ -1636,10 +1663,10 @@ def test_phase_six_initial_reviewer_brief_excludes_internal_context(
         commands.append(list(command))
         return _completed({"task": {"id": "review-task"}})
 
-    monkeypatch.setattr(launcher, "_run_command", create_review_task)
     monkeypatch.setattr(
-        launcher,
-        "_verified_preloaded_skill_names",
+        launcher.launch_process,
+        "_run_command", create_review_task)
+    monkeypatch.setattr(launcher.launch_manifest, "_verified_preloaded_skill_names",
         lambda _manifest, role: (
             [launcher.PAPER_REVIEWER_SKILL]
             if role == "paper_reviewer"
@@ -1812,7 +1839,7 @@ def test_review_source_must_belong_to_recorded_phase_six_output(
         lambda *_args: [recorded],
     )
     monkeypatch.setattr(
-        launcher,
+        launcher.launch_manifest,
         "_read_manifest",
         lambda *_args: {
             "phase_slug": launcher.PAPER_WRITING_PHASE,
@@ -1909,7 +1936,7 @@ def test_audit_only_source_is_resolved_from_sealed_run_identity(
         for path in (initial, lead, final)
     }
     manifest = {
-        "phase_slug": launcher.THEORETICAL_ANALYSIS_PHASE,
+        "phase_slug": launcher.IDEA_EVALUATION_PHASE,
         "run_id": "opaque-source-id",
         "output_root": str(output_root),
         "phase": {
@@ -1924,7 +1951,7 @@ def test_audit_only_source_is_resolved_from_sealed_run_identity(
     }
     submission, _summary, _decision = _source_submission(
         project,
-        launcher.THEORETICAL_ANALYSIS_PHASE,
+        launcher.IDEA_EVALUATION_PHASE,
         "opaque-source-id",
         status="revision_requested",
     )
@@ -1939,7 +1966,7 @@ def test_audit_only_source_is_resolved_from_sealed_run_identity(
     seen: list[str] = []
 
     def get_run(_project: Path, phase_slug: str, run_id: str) -> dict:
-        assert phase_slug == launcher.THEORETICAL_ANALYSIS_PHASE
+        assert phase_slug == launcher.IDEA_EVALUATION_PHASE
         seen.append(run_id)
         return source_run
 
@@ -1949,8 +1976,12 @@ def test_audit_only_source_is_resolved_from_sealed_run_identity(
         "run_integrity_report",
         lambda *_args: {"ok": True, "reason": ""},
     )
-    monkeypatch.setattr(launcher, "_read_manifest", lambda *_args: manifest)
-    monkeypatch.setattr(launcher, "_verify_frozen_inputs", lambda *_args: None)
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "_read_manifest", lambda *_args: manifest)
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "_verify_frozen_inputs", lambda *_args: None)
 
     source = launcher._resolve_theory_audit_source(
         project, "opaque-source-id"
@@ -1984,10 +2015,10 @@ def test_audit_only_bundle_uses_frozen_target_without_lead_preference(
     lead_preference.write_text("Preferred conclusion.", encoding="utf-8")
     run_id = "audit-only-run"
     launcher.run_context_dir(
-        project, launcher.THEORETICAL_ANALYSIS_PHASE, run_id
+        project, launcher.IDEA_EVALUATION_PHASE, run_id
     ).mkdir(parents=True)
     submission, source_summary, source_decision = _source_submission(
-        project, launcher.THEORETICAL_ANALYSIS_PHASE, "opaque-source-id"
+        project, launcher.IDEA_EVALUATION_PHASE, "opaque-source-id"
     )
     monkeypatch.setattr(
         launcher.project_state,
@@ -1995,7 +2026,7 @@ def test_audit_only_bundle_uses_frozen_target_without_lead_preference(
         lambda *_args: {"ok": True, "reason": ""},
     )
     source_baseline = launcher._source_baseline_from_run(
-        project, launcher.THEORETICAL_ANALYSIS_PHASE, submission
+        project, launcher.IDEA_EVALUATION_PHASE, submission
     )
     source = {
         "run_id": "opaque-source-id",
@@ -2026,7 +2057,7 @@ def test_audit_only_bundle_uses_frozen_target_without_lead_preference(
     ).read_bytes() == source_decision.read_bytes()
     manifest = {
         "run_id": run_id,
-        "phase_slug": launcher.THEORETICAL_ANALYSIS_PHASE,
+        "phase_slug": launcher.IDEA_EVALUATION_PHASE,
         "phase": {
             "audit_only": True,
             "proof_audit": True,
@@ -2037,7 +2068,7 @@ def test_audit_only_bundle_uses_frozen_target_without_lead_preference(
             "summaries": [{
                 "path": str(lead_preference),
                 "sha256": hashlib.sha256(lead_preference.read_bytes()).hexdigest(),
-                "phase": launcher.THEORETICAL_ANALYSIS_PHASE,
+                "phase": launcher.IDEA_EVALUATION_PHASE,
             }]
         },
     }
@@ -2183,9 +2214,14 @@ def test_proof_audit_block_seals_final_theory_and_evidence(tmp_path: Path) -> No
     summary_digest = "a" * 64
     phase = launcher._phase_with_proof_audit(
         {
-            "slug": launcher.THEORETICAL_ANALYSIS_PHASE,
+            "slug": launcher.IDEA_EVALUATION_PHASE,
             "folder": "draft/theory",
             "members": ["theorist", "research_lead"],
+            "available_run_plans": [
+                "standard",
+                "standard_with_audit",
+                "audit_only",
+            ],
             "stages": [
                 {"role": "theorist"},
                 {"role": "research_lead"},
@@ -2194,7 +2230,7 @@ def test_proof_audit_block_seals_final_theory_and_evidence(tmp_path: Path) -> No
         }
     )
     manifest = {
-        "phase_slug": launcher.THEORETICAL_ANALYSIS_PHASE,
+        "phase_slug": launcher.IDEA_EVALUATION_PHASE,
         "output_root": str(target.parents[1]),
         "phase": phase,
         "snapshots": {
@@ -2282,11 +2318,16 @@ def test_proof_audit_task_receives_sealed_scope_and_target(
     norms.write_text("Check each claim against sealed evidence.", encoding="utf-8")
     phase = launcher._phase_with_proof_audit(
         {
-            "slug": launcher.THEORETICAL_ANALYSIS_PHASE,
+            "slug": launcher.IDEA_EVALUATION_PHASE,
             "name": "Theoretical Analysis",
             "pattern": "sequential",
             "folder": "draft/theory",
             "members": ["theorist", "research_lead"],
+            "available_run_plans": [
+                "standard",
+                "standard_with_audit",
+                "audit_only",
+            ],
             "stages": [
                 {"role": "theorist"},
                 {"role": "research_lead"},
@@ -2296,7 +2337,7 @@ def test_proof_audit_task_receives_sealed_scope_and_target(
     )
     manifest = {
         "run_id": "theory-run",
-        "phase_slug": launcher.THEORETICAL_ANALYSIS_PHASE,
+        "phase_slug": launcher.IDEA_EVALUATION_PHASE,
         "run_number": 1,
         "rounds_requested": 4,
         "phase": phase,
@@ -2362,8 +2403,12 @@ def test_proof_audit_task_receives_sealed_scope_and_target(
         ],
     }
     recorded: dict[str, object] = {}
-    monkeypatch.setattr(launcher, "_read_manifest", lambda *_args: manifest)
-    monkeypatch.setattr(launcher, "_verify_frozen_inputs", lambda *_args: None)
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "_read_manifest", lambda *_args: manifest)
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "_verify_frozen_inputs", lambda *_args: None)
     monkeypatch.setattr(launcher.project_state, "get_run", lambda *_args: run)
     monkeypatch.setattr(
         launcher.project_state,
@@ -2371,14 +2416,14 @@ def test_proof_audit_task_receives_sealed_scope_and_target(
         lambda *args, **kwargs: recorded.update(args=args, kwargs=kwargs),
     )
     monkeypatch.setattr(
-        launcher,
+        launcher.launch_process,
         "_run_command",
         lambda *_args, **_kwargs: _completed({"task": {"id": "audit-task"}}),
     )
 
     launcher._dispatch_task(
         project,
-        launcher.THEORETICAL_ANALYSIS_PHASE,
+        launcher.IDEA_EVALUATION_PHASE,
         "theory-run",
         4,
         "paper_reviewer",
@@ -2617,8 +2662,12 @@ def test_dispatch_task_builds_full_context_and_records_exact_task_id(
     commands: list[list[str]] = []
     command_environments: list[dict[str, str]] = []
 
-    monkeypatch.setattr(launcher, "_read_manifest", lambda *_args: manifest)
-    monkeypatch.setattr(launcher, "_verify_frozen_inputs", lambda *_args: None)
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "_read_manifest", lambda *_args: manifest)
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "_verify_frozen_inputs", lambda *_args: None)
     monkeypatch.setattr(launcher.project_state, "get_run", lambda *_args: run)
 
     def record_task(*args, **kwargs) -> None:
@@ -2631,7 +2680,9 @@ def test_dispatch_task_builds_full_context_and_records_exact_task_id(
         return _completed({"task": {"id": "hermes-task-409"}})
 
     monkeypatch.setattr(launcher.project_state, "record_task", record_task)
-    monkeypatch.setattr(launcher, "_run_command", run_command)
+    monkeypatch.setattr(
+        launcher.launch_process,
+        "_run_command", run_command)
 
     task_id = launcher._dispatch_task(
         project,
@@ -2738,8 +2789,12 @@ def test_dispatch_archives_a_created_task_when_state_recording_loses_a_race(
     }
     archived: list[str] = []
 
-    monkeypatch.setattr(launcher, "_read_manifest", lambda *_args: manifest)
-    monkeypatch.setattr(launcher, "_verify_frozen_inputs", lambda *_args: None)
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "_read_manifest", lambda *_args: manifest)
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "_verify_frozen_inputs", lambda *_args: None)
     monkeypatch.setattr(launcher.project_state, "get_run", lambda *_args: run)
     monkeypatch.setattr(
         launcher.project_state,
@@ -2749,13 +2804,11 @@ def test_dispatch_archives_a_created_task_when_state_recording_loses_a_race(
         ),
     )
     monkeypatch.setattr(
-        launcher,
+        launcher.launch_process,
         "_run_command",
         lambda *_args, **_kwargs: _completed({"task": {"id": "orphan-task"}}),
     )
-    monkeypatch.setattr(
-        launcher,
-        "_archive_external_task",
+    monkeypatch.setattr(launcher.launch_process, "_archive_external_task",
         lambda _manifest, task_id: archived.append(task_id) or None,
     )
 
@@ -2826,12 +2879,14 @@ def test_complete_round_requires_done_tasks_and_exact_planned_outputs(
     completed: list[tuple] = []
     statuses = {"task-data": "done", "task-review": "running"}
 
-    monkeypatch.setattr(launcher, "_read_manifest", lambda *_args: manifest)
-    monkeypatch.setattr(launcher, "_verify_frozen_inputs", lambda *_args: None)
-    monkeypatch.setattr(launcher.project_state, "get_run", lambda *_args: run)
     monkeypatch.setattr(
-        launcher,
-        "_show_task",
+        launcher.launch_manifest,
+        "_read_manifest", lambda *_args: manifest)
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "_verify_frozen_inputs", lambda *_args: None)
+    monkeypatch.setattr(launcher.project_state, "get_run", lambda *_args: run)
+    monkeypatch.setattr(launcher.launch_dispatch, "_show_task",
         lambda _manifest, task_id: {"status": statuses[task_id]},
     )
     monkeypatch.setattr(
@@ -2886,11 +2941,13 @@ def test_reconciliation_preserves_a_racing_terminal_state_before_cleanup(
         },
     )
     monkeypatch.setattr(
-        launcher,
+        launcher.launch_plans,
         "_load_hub_config",
         lambda: {"hub": {"run_timeout_minutes": 120}},
     )
-    monkeypatch.setattr(launcher, "_pid_is_alive", lambda _pid, _identity=None: False)
+    monkeypatch.setattr(
+        launcher.launch_process,
+        "_pid_is_alive", lambda _pid, _identity=None: False)
 
     def begin_cleanup(*args, **kwargs) -> bool:
         begin_calls.append((args, kwargs))
@@ -2909,7 +2966,7 @@ def test_reconciliation_preserves_a_racing_terminal_state_before_cleanup(
         lambda *_args, **_kwargs: pytest.fail("cleanup must not finalize after losing the race"),
     )
     monkeypatch.setattr(
-        launcher,
+        launcher.launch_process,
         "_stop_external_tasks",
         lambda *args, **kwargs: cleanup_calls.append((args, kwargs)),
     )
@@ -2949,12 +3006,14 @@ def test_reconciliation_preserves_an_active_run_when_identity_is_unavailable(
         },
     )
     monkeypatch.setattr(
-        launcher,
+        launcher.launch_plans,
         "_load_hub_config",
         lambda: {"hub": {"run_timeout_minutes": 120}},
     )
     monkeypatch.setattr(launcher.os, "kill", lambda _pid, _signal: None)
-    monkeypatch.setattr(launcher, "_process_identity", lambda _pid: None)
+    monkeypatch.setattr(
+        launcher.launch_process,
+        "_process_identity", lambda _pid: None)
     monkeypatch.setattr(
         launcher.project_state,
         "begin_run_cleanup",
@@ -2963,7 +3022,7 @@ def test_reconciliation_preserves_an_active_run_when_identity_is_unavailable(
         ),
     )
     monkeypatch.setattr(
-        launcher,
+        launcher.launch_process,
         "_stop_external_tasks",
         lambda *_args, **_kwargs: pytest.fail(
             "identity uncertainty must not archive external tasks"
@@ -2991,13 +3050,15 @@ def test_cleanup_does_not_kill_an_unverified_legacy_pid_or_release_the_lease(
         "get_run",
         lambda *_args: {"process_pid": 9191, "process_identity": None},
     )
-    monkeypatch.setattr(
-        launcher,
-        "_terminate_pid_tree",
+    monkeypatch.setattr(launcher.launch_process, "_terminate_pid_tree",
         lambda *_args, **_kwargs: pytest.fail("an unverified PID must not be terminated"),
     )
-    monkeypatch.setattr(launcher, "_pid_is_alive", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(launcher, "_stop_external_tasks", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        launcher.launch_process,
+        "_pid_is_alive", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        launcher.launch_process,
+        "_stop_external_tasks", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(
         launcher.project_state,
         "finalize_run_cleanup",
@@ -3039,17 +3100,19 @@ def test_cleanup_does_not_archive_tasks_when_process_identity_is_unavailable(
             "process_identity": "recorded-worker-9194",
         },
     )
-    monkeypatch.setattr(launcher, "_pid_is_alive", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(launcher, "_process_identity", lambda _pid: None)
     monkeypatch.setattr(
-        launcher,
-        "_terminate_pid_tree",
+        launcher.launch_process,
+        "_pid_is_alive", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        launcher.launch_process,
+        "_process_identity", lambda _pid: None)
+    monkeypatch.setattr(launcher.launch_process, "_terminate_pid_tree",
         lambda *_args, **_kwargs: pytest.fail(
             "a PID with unverifiable identity must not be terminated"
         ),
     )
     monkeypatch.setattr(
-        launcher,
+        launcher.launch_process,
         "_stop_external_tasks",
         lambda *args, **kwargs: archived.append((args, kwargs)) or [],
     )
@@ -3093,13 +3156,15 @@ def test_cleanup_releases_legacy_pid_lease_when_the_process_is_gone(
         "get_run",
         lambda *_args: {"process_pid": 9192, "process_identity": None},
     )
-    monkeypatch.setattr(launcher, "_pid_is_alive", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(
-        launcher,
-        "_terminate_pid_tree",
+        launcher.launch_process,
+        "_pid_is_alive", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(launcher.launch_process, "_terminate_pid_tree",
         lambda *_args, **_kwargs: pytest.fail("a dead PID must not be terminated"),
     )
-    monkeypatch.setattr(launcher, "_stop_external_tasks", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        launcher.launch_process,
+        "_stop_external_tasks", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(
         launcher.project_state,
         "finalize_run_cleanup",
@@ -3150,8 +3215,12 @@ def test_retry_run_cleanup_finalizes_the_exact_stopping_run(
         "User requested cancellation.",
         expected_pid=9193,
     )
-    monkeypatch.setattr(launcher, "_pid_is_alive", lambda *_args, **_kwargs: False)
-    monkeypatch.setattr(launcher, "_stop_external_tasks", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        launcher.launch_process,
+        "_pid_is_alive", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        launcher.launch_process,
+        "_stop_external_tasks", lambda *_args, **_kwargs: [])
 
     result = launcher.retry_run_cleanup(project, "01-literature", run_id)
 
@@ -3168,7 +3237,7 @@ def test_phase_four_round_one_task_receives_exact_pre_result_checkpoint_command(
     protocol_root = checkpoint.parent / "protocol"
     manifest = {
         "schema_version": 6,
-        "phase_slug": launcher.NUMERICAL_VALIDATION_PHASE,
+        "phase_slug": launcher.DRAFT_ASSEMBLY_PHASE,
         "run_id": "phase-four-run",
         "protocol_checkpoint": {
             "schema_version": (
@@ -3209,7 +3278,7 @@ def test_later_phase_four_tasks_receive_the_verified_protocol_identity(
     protocol_path = protocol_root / "study-design.yaml"
     manifest = {
         "schema_version": 6,
-        "phase_slug": launcher.NUMERICAL_VALIDATION_PHASE,
+        "phase_slug": launcher.DRAFT_ASSEMBLY_PHASE,
         "run_id": "phase-four-run",
         "protocol_checkpoint": {
             "schema_version": (
@@ -3269,7 +3338,7 @@ def test_phase_four_dispatch_isolates_protocol_then_seals_before_results(
     manifest = {
         "schema_version": 8,
         "run_id": "phase-four-run",
-        "phase_slug": launcher.NUMERICAL_VALIDATION_PHASE,
+        "phase_slug": launcher.DRAFT_ASSEMBLY_PHASE,
         "run_number": 1,
         "rounds_requested": 1,
         "phase": {
@@ -3334,8 +3403,12 @@ def test_phase_four_dispatch_isolates_protocol_then_seals_before_results(
     created_commands: list[list[str]] = []
     seal_calls: list[tuple[Path, str, str, str, bool]] = []
 
-    monkeypatch.setattr(launcher, "_read_manifest", lambda *_args: manifest)
-    monkeypatch.setattr(launcher, "_verify_frozen_inputs", lambda *_args: None)
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "_read_manifest", lambda *_args: manifest)
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "_verify_frozen_inputs", lambda *_args: None)
     monkeypatch.setattr(launcher.project_state, "get_run", lambda *_args: run)
 
     def record_task(*_args, **kwargs) -> None:
@@ -3386,7 +3459,9 @@ def test_phase_four_dispatch_isolates_protocol_then_seals_before_results(
         return record
 
     monkeypatch.setattr(launcher.project_state, "record_task", record_task)
-    monkeypatch.setattr(launcher, "_run_command", run_command)
+    monkeypatch.setattr(
+        launcher.launch_process,
+        "_run_command", run_command)
     monkeypatch.setattr(
         launcher.project_state, "seal_protocol_checkpoint", seal_protocol
     )
@@ -3398,7 +3473,7 @@ def test_phase_four_dispatch_isolates_protocol_then_seals_before_results(
 
     protocol_task = launcher._dispatch_task(
         project,
-        launcher.NUMERICAL_VALIDATION_PHASE,
+        launcher.DRAFT_ASSEMBLY_PHASE,
         "phase-four-run",
         1,
         "data_scientist",
@@ -3407,7 +3482,7 @@ def test_phase_four_dispatch_isolates_protocol_then_seals_before_results(
     )
     result_task = launcher._dispatch_task(
         project,
-        launcher.NUMERICAL_VALIDATION_PHASE,
+        launcher.DRAFT_ASSEMBLY_PHASE,
         "phase-four-run",
         1,
         "data_scientist",
@@ -3426,7 +3501,7 @@ def test_phase_four_dispatch_isolates_protocol_then_seals_before_results(
     )
     assert seal_calls == [(
         project,
-        launcher.NUMERICAL_VALIDATION_PHASE,
+        launcher.DRAFT_ASSEMBLY_PHASE,
         "phase-four-run",
         str(checkpoint),
         True,
@@ -3448,7 +3523,7 @@ def test_protocol_seal_cli_verifies_manifest_and_delegates_exact_run(
 ) -> None:
     project = (tmp_path / "project").resolve()
     checkpoint = project / "numerical" / "run" / "01" / "protocol-checkpoint.json"
-    manifest = {"run_id": "run-04", "phase_slug": launcher.NUMERICAL_VALIDATION_PHASE}
+    manifest = {"run_id": "run-04", "phase_slug": launcher.DRAFT_ASSEMBLY_PHASE}
     verified: list[tuple[Path, str, str, object]] = []
     sealed: list[tuple[Path, str, str, str]] = []
     monkeypatch.setattr(
@@ -3456,9 +3531,11 @@ def test_protocol_seal_cli_verifies_manifest_and_delegates_exact_run(
         "get_run",
         lambda *_args: {"run_id": "run-04"},
     )
-    monkeypatch.setattr(launcher, "_read_manifest", lambda *_args: manifest)
     monkeypatch.setattr(
-        launcher,
+        launcher.launch_manifest,
+        "_read_manifest", lambda *_args: manifest)
+    monkeypatch.setattr(
+        launcher.launch_manifest,
         "_verify_frozen_inputs",
         lambda root, phase, run_id, frozen: verified.append(
             (root, phase, run_id, frozen)
@@ -3480,7 +3557,7 @@ def test_protocol_seal_cli_verifies_manifest_and_delegates_exact_run(
         "--project-dir",
         str(project),
         "--phase",
-        launcher.NUMERICAL_VALIDATION_PHASE,
+        launcher.DRAFT_ASSEMBLY_PHASE,
         "--run-id",
         "run-04",
         "--checkpoint",
@@ -3489,12 +3566,12 @@ def test_protocol_seal_cli_verifies_manifest_and_delegates_exact_run(
 
     assert result == 0
     assert verified == [
-        (project, launcher.NUMERICAL_VALIDATION_PHASE, "run-04", manifest)
+        (project, launcher.DRAFT_ASSEMBLY_PHASE, "run-04", manifest)
     ]
     assert sealed == [
         (
             project,
-            launcher.NUMERICAL_VALIDATION_PHASE,
+            launcher.DRAFT_ASSEMBLY_PHASE,
             "run-04",
             str(checkpoint),
         )
@@ -3511,7 +3588,9 @@ def test_public_cli_does_not_expose_unsealed_task_recording() -> None:
 def test_run_command_rejects_output_above_its_combined_byte_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(launcher, "MAX_COMMAND_OUTPUT_BYTES", 1_024)
+    monkeypatch.setattr(
+        launcher.launch_process,
+        "MAX_COMMAND_OUTPUT_BYTES", 1_024)
 
     with pytest.raises(
         launcher._ProcessOutputLimitExceeded,
@@ -3603,18 +3682,21 @@ def test_logged_command_stops_at_the_remaining_run_log_budget(
     log_path.parent.mkdir(parents=True)
     prefix = b"existing log\n"
     log_path.write_bytes(prefix)
-    monkeypatch.setattr(launcher, "MAX_RUN_LOG_BYTES", 2_048)
+    monkeypatch.setattr(
+        launcher.launch_process,
+        "MAX_RUN_LOG_BYTES", 2_048)
     with log_path.open("ab", buffering=0) as log_handle:
         descriptor = log_handle.fileno()
-        monkeypatch.setattr(
-            launcher, "_worker_log_descriptor", lambda: descriptor
+        monkeypatch.setattr(launcher.launch_process, "_worker_log_descriptor", lambda: descriptor
         )
 
         def write_output(payload: bytes, *, descriptor: int | None = None) -> None:
             assert descriptor == log_handle.fileno()
             log_handle.write(payload)
 
-        monkeypatch.setattr(launcher, "_write_worker_output", write_output)
+        monkeypatch.setattr(
+        launcher.launch_process,
+        "_write_worker_output", write_output)
         with pytest.raises(
             launcher._ProcessOutputLimitExceeded,
             match="run-log safety limit",
@@ -3632,8 +3714,8 @@ def test_logged_command_stops_at_the_remaining_run_log_budget(
             )
 
     payload = log_path.read_bytes()
-    assert payload.endswith(launcher.RUN_LOG_LIMIT_MARKER)
-    assert len(payload) == launcher.MAX_RUN_LOG_BYTES
+    assert payload.endswith(launcher.launch_process.RUN_LOG_LIMIT_MARKER)
+    assert len(payload) == launcher.launch_process.MAX_RUN_LOG_BYTES
 
 
 def test_run_log_is_truncated_to_its_persistent_cap(
@@ -3642,14 +3724,16 @@ def test_run_log_is_truncated_to_its_persistent_cap(
 ) -> None:
     log_path = tmp_path / "run.log"
     log_path.write_bytes(b"x" * 1_024)
-    monkeypatch.setattr(launcher, "MAX_RUN_LOG_BYTES", 256)
+    monkeypatch.setattr(
+        launcher.launch_process,
+        "MAX_RUN_LOG_BYTES", 256)
 
     with log_path.open("r+b", buffering=0) as log_handle:
         launcher._truncate_run_log(log_path, descriptor=log_handle.fileno())
 
     payload = log_path.read_bytes()
     assert len(payload) == 256
-    assert payload.endswith(launcher.RUN_LOG_LIMIT_MARKER)
+    assert payload.endswith(launcher.launch_process.RUN_LOG_LIMIT_MARKER)
 
 
 @pytest.mark.parametrize("path_state", ["missing", "replacement"])
@@ -3664,7 +3748,9 @@ def test_run_log_cap_uses_the_bound_descriptor_when_its_path_changes(
     replacement = b"replacement must remain unchanged\n"
     if path_state == "replacement":
         named_path.write_bytes(replacement)
-    monkeypatch.setattr(launcher, "MAX_RUN_LOG_BYTES", 256)
+    monkeypatch.setattr(
+        launcher.launch_process,
+        "MAX_RUN_LOG_BYTES", 256)
 
     with inherited_path.open("r+b", buffering=0) as log_handle:
         with pytest.raises(
@@ -3677,8 +3763,8 @@ def test_run_log_cap_uses_the_bound_descriptor_when_its_path_changes(
             )
 
     inherited = inherited_path.read_bytes()
-    assert len(inherited) == launcher.MAX_RUN_LOG_BYTES
-    assert inherited.endswith(launcher.RUN_LOG_LIMIT_MARKER)
+    assert len(inherited) == launcher.launch_process.MAX_RUN_LOG_BYTES
+    assert inherited.endswith(launcher.launch_process.RUN_LOG_LIMIT_MARKER)
     if path_state == "replacement":
         assert named_path.read_bytes() == replacement
     else:
@@ -3696,16 +3782,12 @@ def test_logged_command_rejects_a_path_replacement_before_execution(
     log_path.write_bytes(b"replacement\n")
     inherited_path = tmp_path / "original-run.log"
     inherited_path.write_bytes(b"original\n")
-    monkeypatch.setattr(
-        launcher,
-        "_run_process_with_bounded_output",
+    monkeypatch.setattr(launcher.launch_process, "_run_process_with_bounded_output",
         lambda *_args, **_kwargs: pytest.fail("a mismatched log must fail before execution"),
     )
 
     with inherited_path.open("ab", buffering=0) as log_handle:
-        monkeypatch.setattr(
-            launcher,
-            "_worker_log_descriptor",
+        monkeypatch.setattr(launcher.launch_process, "_worker_log_descriptor",
             lambda: log_handle.fileno(),
         )
         with pytest.raises(
@@ -3735,7 +3817,9 @@ def test_worker_cli_caps_the_log_after_recording_an_error(
     log_path = launcher.run_log_path(project, phase_slug, run_id)
     log_path.parent.mkdir(parents=True)
     log_path.write_bytes(b"x" * 1_024)
-    monkeypatch.setattr(launcher, "MAX_RUN_LOG_BYTES", 256)
+    monkeypatch.setattr(
+        launcher.launch_process,
+        "MAX_RUN_LOG_BYTES", 256)
     monkeypatch.setattr(
         launcher,
         "_worker",
@@ -3761,8 +3845,8 @@ def test_worker_cli_caps_the_log_after_recording_an_error(
 
     payload = log_path.read_bytes()
     assert result == 1
-    assert len(payload) == launcher.MAX_RUN_LOG_BYTES
-    assert payload.endswith(launcher.RUN_LOG_LIMIT_MARKER)
+    assert len(payload) == launcher.launch_process.MAX_RUN_LOG_BYTES
+    assert payload.endswith(launcher.launch_process.RUN_LOG_LIMIT_MARKER)
 
 
 def test_new_run_log_is_created_exclusively_and_never_reuses_a_path(
@@ -3804,14 +3888,18 @@ def test_worker_passes_a_short_bootstrap_instead_of_the_full_prompt(
     pid_calls: list[tuple] = []
     failure_calls: list[tuple] = []
 
-    monkeypatch.setattr(
-        launcher,
-        "run_manifest_path",
+    monkeypatch.setattr(launcher.launch_common, "run_manifest_path",
         lambda *_args: manifest_file,
     )
-    monkeypatch.setattr(launcher, "_read_manifest", lambda *_args: manifest)
-    monkeypatch.setattr(launcher, "_verify_frozen_inputs", lambda *_args: None)
-    monkeypatch.setattr(launcher, "_process_identity", lambda _pid: "test-process")
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "_read_manifest", lambda *_args: manifest)
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "_verify_frozen_inputs", lambda *_args: None)
+    monkeypatch.setattr(
+        launcher.launch_process,
+        "_process_identity", lambda _pid: "test-process")
     monkeypatch.setattr(
         launcher.project_state,
         "set_process_pid",
@@ -3823,7 +3911,9 @@ def test_worker_passes_a_short_bootstrap_instead_of_the_full_prompt(
         command_environments.append(dict(kwargs["environment"]))
         return subprocess.CompletedProcess(arguments, 0)
 
-    monkeypatch.setattr(launcher, "_run_logged_command", run_command)
+    monkeypatch.setattr(
+        launcher.launch_process,
+        "_run_logged_command", run_command)
     monkeypatch.setattr(
         launcher.project_state,
         "fail_run_if_active",
@@ -3835,13 +3925,11 @@ def test_worker_passes_a_short_bootstrap_instead_of_the_full_prompt(
         lambda *args, **kwargs: True,
     )
     monkeypatch.setattr(
-        launcher,
+        launcher.launch_process,
         "_stop_external_tasks",
         lambda *_args, **_kwargs: pytest.fail("terminal cleanup should not run"),
     )
-    monkeypatch.setattr(
-        launcher,
-        "_verified_preloaded_skill_names",
+    monkeypatch.setattr(launcher.launch_manifest, "_verified_preloaded_skill_names",
         lambda _manifest, role: (
             [launcher.PAPER_WRITING_SKILL]
             if role == "research_lead"

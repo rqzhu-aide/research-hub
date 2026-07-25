@@ -4,5 +4,7 @@ __pycache__/
 *.yaml.lock
 .pytest_cache/
 tests/.pytest-tmp-*/
+.venv/
 hub.db
 projects/
+.hermes/

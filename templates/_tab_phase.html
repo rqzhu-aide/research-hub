@@ -30,8 +30,8 @@
   {% set plan_pattern = plan_view.pattern | default(pc.pattern | default('phase'), true) %}
   {% set plan_folder = plan_view.folder | default(pc.folder | default('project workspace'), true) %}
   {% set plan_members = plan_view.members | default(pc.members | default([]), true) %}
-  {% set is_theory_phase = pc.slug == '03-theoretical-justification' %}
-  {% set method_bound_phase = pc.slug in ['03-theoretical-justification', '04-numerical-validation'] %}
+  {% set is_theory_phase = pc.proof_audit is defined or pc.available_run_plans is defined %}
+  {% set method_bound_phase = pc.method_binding | default(false) or (pc.slug in ['03-idea-evaluation', '04-draft-assembly'] and pc.pattern == 'sequential') %}
   {% set approved_method = pd.approved_method_selection | default(none) %}
   {% set proof_audit_config = pc.proof_audit | default({}) %}
   {% set proof_audit_stage = proof_audit_config.stage | default({}) %}
@@ -350,6 +350,18 @@
         </fieldset>
         {% endif %}
 
+        {% set downstream_ctx = pd.downstream_context | default(none) %}
+        {% if downstream_ctx and downstream_ctx.available %}
+        <fieldset class="form-row downstream-context-control">
+          <legend class="form-label">Downstream context</legend>
+          <p class="form-help">Later phases already have approved results. Include them as advisory context so the agents can see what has already been achieved downstream. These are <strong>not</strong> trusted prerequisites — the agents are told to use them for awareness, not as evidence to reproduce.</p>
+          <label class="check-row" for="include-downstream-{{ pc.slug }}">
+            <input type="checkbox" id="include-downstream-{{ pc.slug }}" name="include_downstream" value="1">
+            <span><strong>Include approved downstream results.</strong> {% for item in downstream_ctx.phases %}{{ item.name }} (run <code>{{ item.run_id }}</code>){% if not loop.last %}, {% endif %}{% endfor %}.</span>
+          </label>
+        </fieldset>
+        {% endif %}
+
         <div class="form-row">
           <label class="form-label" for="feedback-{{ pc.slug }}">Direction for this run <span>optional</span></label>
           <p class="form-help">State what changed, what to prioritize, and what evidence would affect your decision.</p>
@@ -414,7 +426,7 @@
       {% if latest_plan.available %}
       <div><dt>Frozen plan</dt><dd>{{ latest_plan.variant }}</dd></div>
       {% endif %}
-      {% if pc.slug == '04-numerical-validation' and latest.protocol_checkpoint_required %}
+      {% if pc.slug == '04-draft-assembly' and latest.protocol_checkpoint_required %}
       <div><dt>Protocol checkpoint</dt><dd>{% if latest.protocol_checkpoint %}Sealed at <time datetime="{{ latest.protocol_checkpoint.sealed_at }}">{{ latest.protocol_checkpoint.sealed_at }}</time>{% else %}Not sealed for this run{% endif %}</dd></div>
       {% endif %}
       {% if latest_plan.pattern == 'sequential' or (not latest_plan.available and pc.pattern == 'sequential') %}
@@ -423,7 +435,7 @@
       <div><dt>Completed</dt><dd>{{ latest.rounds_completed | default(latest.completed_rounds | default(0)) }}/{{ latest.rounds_requested | default(latest.requested_rounds | default(round_default)) }} rounds</dd></div>
       {% endif %}
     </dl>
-    {% if pc.slug == '04-numerical-validation' and latest.protocol_checkpoint %}
+    {% if pc.slug == '04-draft-assembly' and latest.protocol_checkpoint %}
       {% set protocol_checkpoint = latest.protocol_checkpoint %}
       {% include '_protocol_checkpoint.html' %}
     {% endif %}
@@ -529,7 +541,7 @@
       <summary>Frozen inputs used by this run</summary>
       <ul class="compact-list">
         {% for item in latest.context_inputs %}
-        <li><strong>{{ item.phase }}</strong>, run <code>{{ item.run_id }}</code></li>
+        <li><strong>{{ item.phase }}</strong>, run <code>{{ item.run_id }}</code>{% if item.kind == 'downstream_advisory' %} <em class="ctx-kind">(downstream advisory)</em>{% elif item.kind == 'prior_phase_baseline' %} <em class="ctx-kind">(prior baseline)</em>{% elif item.kind == 'optional_approved_context' %} <em class="ctx-kind">(optional context)</em>{% endif %}</li>
         {% endfor %}
       </ul>
     </details>
@@ -617,7 +629,7 @@
     {% endif %}
 
     {% if not recovery_only %}
-    {% set exact_rerun_phase = pc.slug in ['03-theoretical-justification', '06-paper-writing'] %}
+    {% set exact_rerun_phase = pc.slug in ['03-idea-evaluation', '06-paper-writing'] %}
     {% set quick_rerun_available = (not exact_rerun_phase) or latest.rerun_config %}
     {% if quick_rerun_available %}
     <details class="rerun-control">
@@ -711,7 +723,7 @@
     <p>This is the result downstream phases should treat as accepted. Newer runs do not replace it until you approve them.</p>
     {% endif %}
     {% if approved.approval_note | default(approved.decision_note | default(none)) %}<blockquote>{{ approved.approval_note | default(approved.decision_note) }}</blockquote>{% endif %}
-    {% if pc.slug == '04-numerical-validation' and approved.protocol_checkpoint %}
+    {% if pc.slug == '04-draft-assembly' and approved.protocol_checkpoint %}
       {% set protocol_checkpoint = approved.protocol_checkpoint %}
       {% include '_protocol_checkpoint.html' %}
     {% endif %}

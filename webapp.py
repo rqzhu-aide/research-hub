@@ -17,7 +17,6 @@ import subprocess
 import sys
 import tempfile
 import threading
-import traceback
 from contextlib import contextmanager
 from functools import wraps
 from html.parser import HTMLParser
@@ -41,12 +40,10 @@ from werkzeug.sansio.utils import host_is_trusted
 sys.path.insert(0, str(Path(__file__).parent.resolve()))
 
 import hub
-from scripts import profile_skills, project_state
-from scripts.launch_run import (
-    LaunchError,
-    NUMERICAL_VALIDATION_PHASE,
+from core import profile_skills, project_state
+from core.launch_run import (
     PAPER_WRITING_PHASE,
-    THEORETICAL_ANALYSIS_PHASE,
+    IDEA_EVALUATION_PHASE,
     THEORY_PLAN_AUDIT_ONLY,
     THEORY_PLAN_STANDARD,
     THEORY_PLAN_STANDARD_WITH_AUDIT,
@@ -55,12 +52,14 @@ from scripts.launch_run import (
     launch_plan_version,
     launch_run,
     paper_review_only_phase,
+    phase_requires_method_binding,
+    phase_supports_theory_plans,
     reconcile_active_run,
     retry_run_cleanup,
     run_log_path,
     theory_audit_source_options,
 )
-from scripts.web_phase_data import (
+from core.web_phase_data import (
     decision_report_version,
     prepare_overview_data,
     prepare_phase_data,
@@ -1078,7 +1077,12 @@ def project_view(project_id: int) -> Response | str:
         if phase_config
         else None
     )
-    if phase_data is not None and tab == THEORETICAL_ANALYSIS_PHASE:
+    if (
+        phase_data is not None
+        and tab == IDEA_EVALUATION_PHASE
+        and phase_config is not None
+        and phase_supports_theory_plans(phase_config)
+    ):
         phase_data["theory_audit_sources"] = theory_audit_source_options(
             project_dir
         )
@@ -1171,11 +1175,12 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
             elif exact_options["kind"] == "paper_review_only":
                 review_target = exact_options["review_target"]
                 review_target_sha256 = exact_options["review_target_sha256"]
-            elif exact_options["kind"] != "paper_full":
+            elif exact_options["kind"] not in {"paper_full", "standard"}:
                 raise ValueError("The prior run's recorded configuration is not supported")
         if len(proof_audit_source_run_id) > 256:
             raise ValueError("The selected proof-audit source run ID is too long")
-        if phase_slug == THEORETICAL_ANALYSIS_PHASE:
+        theory_plans_available = phase_supports_theory_plans(phase)
+        if theory_plans_available:
             theory_plan = theory_plan or THEORY_PLAN_STANDARD
             if theory_plan not in {
                 THEORY_PLAN_STANDARD,
@@ -1193,7 +1198,7 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
                     "A source run is only valid for the audit-only Phase 03 plan"
                 )
         elif theory_plan or proof_audit_source_run_id:
-            raise ValueError("Phase 03 run-plan options are not valid for this phase")
+            raise ValueError("This phase does not declare theory run plans")
 
         run_specific_method_id = _bounded_form_value(
             "run_specific_method_id", 200
@@ -1205,18 +1210,15 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
             raise ValueError(
                 "Enter both the stable method ID and method version, or leave both blank"
             )
-        method_bound_phase = phase_slug in {
-            THEORETICAL_ANALYSIS_PHASE,
-            NUMERICAL_VALIDATION_PHASE,
-        }
+        method_bound_phase = phase_requires_method_binding(phase)
         if not method_bound_phase and (
             run_specific_method_id or run_specific_method_version
         ):
             raise ValueError(
-                "A run-specific method identity is valid only for Phase 03 or Phase 04"
+                "A run-specific method identity is not valid for this phase"
             )
         if (
-            phase_slug == THEORETICAL_ANALYSIS_PHASE
+            theory_plans_available
             and theory_plan == THEORY_PLAN_AUDIT_ONLY
             and (run_specific_method_id or run_specific_method_version)
         ):
@@ -1231,7 +1233,7 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
             rounds = 2
         elif review_target_sha256:
             raise ValueError("A manuscript hash was supplied without a review target")
-        elif phase_slug == THEORETICAL_ANALYSIS_PHASE:
+        elif theory_plans_available:
             standard_stage_count = len(phase["stages"])
             rounds = {
                 THEORY_PLAN_STANDARD: standard_stage_count,
@@ -1291,6 +1293,9 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
                 "An awaiting-result replacement choice requires an exact source run"
             )
 
+        include_downstream = request.form.get("include_downstream", "").strip()
+        if include_downstream not in {"", "1"}:
+            raise ValueError("The downstream-context choice is invalid")
         launch_options: dict[str, Any] = {
             "prerequisite_override_reason": override_reason,
             "prerequisite_report_version": prerequisite_report_version,
@@ -1298,6 +1303,7 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
             "run_specific_method_id": run_specific_method_id,
             "run_specific_method_version": run_specific_method_version,
             "expected_phase_plan_version": submitted_phase_plan_version,
+            "include_downstream": include_downstream == "1",
         }
         if replace_note is not None:
             launch_options["replace_awaiting_review_run_id"] = rerun_from
@@ -1306,7 +1312,7 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
                 review_target=review_target,
                 review_target_sha256=review_target_sha256,
             )
-        if phase_slug == THEORETICAL_ANALYSIS_PHASE:
+        if theory_plans_available:
             launch_options["theory_plan"] = theory_plan
             if theory_plan == THEORY_PLAN_AUDIT_ONLY:
                 launch_options["proof_audit_source_run_id"] = (

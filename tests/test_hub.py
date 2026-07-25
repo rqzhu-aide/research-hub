@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 import hub
-from scripts import project_state
+from core import project_state
 
 
 def _create_windows_directory_junction(link: Path, target: Path) -> None:

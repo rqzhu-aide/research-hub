@@ -652,6 +652,23 @@ progress::-moz-progress-bar { background: var(--running); }
 .history-actions a + a { margin-left: 10px; }
 .history-disclosure { margin-top: 12px; }
 
+.downstream-context-control {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 13px 15px;
+  background: var(--surface-raised);
+}
+.downstream-context-control legend { padding-bottom: 4px; }
+.downstream-context-control .check-row span { color: var(--text); }
+em.ctx-kind {
+  color: var(--faint);
+  font-style: normal;
+  font-size: .7rem;
+  font-weight: 600;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
 .new-project-layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 20px; align-items: start; max-width: 1160px; }
 .np-aside { position: sticky; top: 20px; display: grid; gap: 14px; }
 .np-card { padding: 18px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); }

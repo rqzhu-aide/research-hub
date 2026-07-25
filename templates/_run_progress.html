@@ -7,7 +7,7 @@
 {% set progress_requested = current.rounds_requested | default(current.requested_rounds | default(1)) if current else 1 %}
 {% set checkpoint_state = 'not-applicable' %}
 {% set checkpoint_digest = '' %}
-{% if pc.slug == '04-numerical-validation' and current and current.protocol_checkpoint_required %}
+{% if pc.slug == '04-draft-assembly' and current and current.protocol_checkpoint_required %}
   {% if current.protocol_checkpoint %}
     {% set checkpoint_state = 'sealed' %}
     {% set checkpoint_digest = current.protocol_checkpoint.sha256 | default('not-recorded') %}
@@ -57,7 +57,7 @@
       <span class="run-mode-badge">{{ 'cleanup' if cleanup_pending else current.mode | default(pc.pattern | default('run')) }}</span>
     </div>
 
-    {% if pc.slug == '04-numerical-validation' and current.protocol_checkpoint_required %}
+    {% if pc.slug == '04-draft-assembly' and current.protocol_checkpoint_required %}
       {% if current.protocol_checkpoint %}
       {% set protocol_data = current.protocol_checkpoint.data | default({}) %}
       {% set protocol_files = protocol_data.protocol_files | default([]) %}

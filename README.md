@@ -4,6 +4,175 @@ Research Hub is a local Web UI for running structured, multi-agent research work
 
 The central rule is simple: **nothing advances automatically**. The user explicitly starts every phase run, reviews its evidence, and decides whether to approve it, request a revision, rerun it, or leave it unapproved. Any phase can be rerun when the user wants a different question, scope, or approach.
 
+## Quick start
+
+### Prerequisites
+
+| Requirement | Version | Notes |
+|---|---|---|
+| Python | 3.10+ | 3.11+ recommended |
+| Hermes Agent | latest | The `hermes` command must be on `PATH`; agents use it to execute phase tasks |
+
+You also need a Hermes profile for each research role (research lead, theorist, data scientist, paper reviewer). Profiles are configured in `config.yaml` and created via Hermes.
+
+### Setup (first time)
+
+```bash
+git clone <repo-url> research-hub
+cd research-hub
+./setup.sh
+```
+
+`setup.sh` creates the virtual environment, installs dependencies, initializes the database, and validates the config. It also checks whether `hermes` is on `PATH` and warns you if not.
+
+<details>
+<summary>Manual setup (if you prefer)</summary>
+
+```bash
+python -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python hub.py init
+```
+
+</details>
+
+### Configure
+
+Edit `config.yaml`. Set:
+
+1. **`hub.workspace_dir`** — where project files are stored (defaults to `~/research`).
+2. **`agents`** — map each research role (`research_lead`, `theorist`, `data_scientist`, `paper_reviewer`) to a Hermes profile name you have created.
+3. **`hub.name`** — your hub's display name.
+
+### Run
+
+```bash
+.venv/bin/python webapp.py
+```
+
+Open [http://127.0.0.1:5055](http://127.0.0.1:5055), then:
+
+1. Create a project and write a focused research brief.
+2. Open a phase and read its purpose, prerequisites, participants, and round plan.
+3. Choose the allowed round count for a parallel or debate phase. Sequential phases use their configured stage plans.
+4. Add optional direction for the agents.
+5. If prerequisites are missing or stale, review the warning and explicitly confirm the override if you still want to proceed.
+6. Start the run, monitor its progress and log, or cancel it while it is active.
+7. When the run reaches `awaiting_review`, read the summary and choose approve, request revision, or rerun.
+8. Start another phase only when you decide it is useful.
+
+### Commands
+
+| Command | What it does |
+|---|---|
+| `./setup.sh` | First-time setup: venv, install, init, sanity check |
+| `make install` | Create venv + install runtime dependencies |
+| `make install-dev` | Create venv + install runtime + test dependencies |
+| `make init` | Initialize or migrate the hub database |
+| `make run` | Start the web UI |
+| `make test` | Run the full test suite |
+| `make check` | Validate `config.yaml` |
+| `make clean` | Remove caches |
+
+## Repository structure
+
+The repository separates **runtime files** (what you need to run Research Hub) from **development files** (tests and tooling). Runtime files are further split into the web entry point, the application package, configuration, and browser assets.
+
+```text
+research-hub/
+│
+├── webapp.py                     ← Flask entry point — start here
+├── hub.py                        ← Project registry, config loader
+├── schema.sql                    ← Hub database schema
+├── config.yaml                   ← Main configuration (phases, agents, hub)
+├── requirements.txt              ← Runtime dependencies
+├── requirements-dev.txt          ← Test dependencies
+├── setup.sh                      ← First-time setup script
+├── Makefile                      ← Convenience commands
+├── pyproject.toml                ← pytest config
+│
+├── core/                         ← Application package
+│   ├── __init__.py
+│   ├── README.md                    module overview
+│   ├── launch_run.py                orchestration facade + re-exports
+│   ├── launch_common.py             constants, paths, exceptions, helpers
+│   ├── launch_process.py            process execution, run logs, PID supervision
+│   ├── launch_manifest.py           manifest structure and frozen-input validation
+│   ├── launch_plans.py              plan selection, method binding, baselines
+│   ├── launch_prompts.py            sealed prompts, task briefs, review bundles
+│   ├── launch_dispatch.py           round tracking and task dispatch
+│   ├── launch_supervision.py        reconciliation, cancellation, cleanup
+│   ├── project_state.py             state machine: runs, approvals, staleness
+│   ├── profile_skills.py            recommended-skill installation
+│   └── web_phase_data.py            read-only view models for the web UI
+│
+├── config/                       ← Phase playbooks and team definition
+│   ├── phases/                      one directory per phase (slug-named)
+│   │   └── <slug>/
+│   │       ├── _phase.md               phase purpose, outputs, criteria
+│   │       ├── _lead.md                lead coordination protocol
+│   │       └── <role>.md               per-role instructions
+│   ├── souls/                       agent personality files
+│   │   └── <role>.md
+│   ├── team/                        charter and norms
+│   └── archive/                     superseded playbook designs (reference only)
+│
+├── bundled_skills/               ← Pinned Hermes skills shipped with the repo
+│   ├── manifest.json
+│   ├── stat-paper-reviewer/
+│   └── stat-paper-writing/
+│
+├── static/                       ← Browser assets
+│   ├── app.js
+│   └── style.css
+│
+├── templates/                    ← Jinja2 HTML templates
+│   ├── base.html
+│   ├── project.html
+│   ├── _tab_phase.html
+│   └── …
+│
+└── tests/                        ← Test suite (not needed at runtime)
+    ├── test_hub.py
+    ├── test_launch_run.py
+    ├── test_project_state.py
+    ├── test_webapp.py
+    ├── test_profile_skills.py
+    ├── test_shipped_config_contract.py
+    └── test_local_runtime_contract.py
+```
+
+**To deploy Research Hub on another machine**, you need everything except `tests/`, `Makefile`, and `requirements-dev.txt`. The `config/`, `bundled_skills/`, `templates/`, and `static/` directories are required at runtime — the application loads playbooks, skills, templates, and assets from them by path.
+
+## Runtime data layout
+
+Runtime data lives under `hub.workspace_dir`, which defaults to `~/research`. This is separate from the repository and is created when you start using Research Hub:
+
+```text
+~/research/
+├── hub.db                           ← project registry (small SQLite database)
+└── projects/
+    ├── .research-hub-control/       ← internal control directory
+    │   └── <project-slug>/
+    │       ├── project.yaml             run state (atomic, locked)
+    │       ├── project.lock
+    │       └── runs/<phase-slug>/       sealed run artifacts
+    │           ├── <run-id>.prompt.md
+    │           ├── <run-id>.manifest.json
+    │           ├── <run-id>.context/
+    │           └── <run-id>.log
+    └── <project-slug>/              ← agent-writable project workspace
+        ├── setting.md                    research brief
+        ├── phase-summaries/<slug>/       HTML run summaries
+        ├── references/                   Phase 01 output
+        ├── ideas/                        Phase 02 output
+        ├── evaluations/                  Phase 03 output
+        ├── draft/sections/               Phase 04 output
+        └── draft/revised/                Phase 05 output
+```
+
+Phase artifacts are stored below the phase's configured `folder` in run-specific and round-specific directories. Summary paths include the immutable run ID, so reruns preserve all earlier evidence and decisions.
+
 ## Control model
 
 A phase run follows this lifecycle:
@@ -17,13 +186,9 @@ starting -> running -> submitting -> awaiting review
                                       |       +-> request revision -> rerun when ready
                                       |
                                       +-> approve -> current approved result
-
-An active run can also be cancelled by the user. Cancellation and worker failure
-first enter `stopping` while Research Hub verifies that the local worker and Hermes
-tasks have stopped. The project launch lock remains held until cleanup succeeds.
-If automatic cleanup cannot be confirmed, the Web UI lets the user retry it or
-explicitly release the lock after manually verifying shutdown and recording a note.
 ```
+
+An active run can also be cancelled by the user. Cancellation and worker failure first enter `stopping` while Research Hub verifies that the local worker and Hermes tasks have stopped. The project launch lock remains held until cleanup succeeds. If automatic cleanup cannot be confirmed, the Web UI lets the user retry it or explicitly release the lock after manually verifying shutdown and recording a note.
 
 Important behavior:
 
@@ -38,237 +203,33 @@ Important behavior:
 - Completing or approving a phase never starts the next phase.
 - Each launch is bound to the phase configuration, role instructions, and exact prerequisite state that the UI presented. If any of them changes, the user must reload and review the run again.
 
-## Quick start
-
-Requirements:
-
-- Python 3.10 or newer
-- Hermes Agent installed and available as `hermes` on `PATH`
-- A Hermes profile for each configured research role
-- A running Hermes gateway for each participating profile
-
-From the repository root:
-
-```bash
-python -m venv .venv
-python -m pip install -r requirements.txt
-```
-
-Activate the virtual environment using the command for your shell, then edit `config.yaml`. Set the workspace directory, map every role to an existing Hermes profile, and review the phase definitions.
-
-Research Hub currently runs directly from this source tree. It is not distributed
-as a Python package or wheel, because its runtime also depends on the repository's
-configuration, playbooks, templates, static files, scripts, and database schema.
-
-Initialize or migrate the workspace database:
-
-```bash
-python hub.py init
-```
-
-Start the local Web UI:
-
-```bash
-python webapp.py
-```
-
-Open [http://127.0.0.1:5055](http://127.0.0.1:5055), then:
-
-1. Create a project and write a focused research brief.
-2. Open a phase and read its purpose, prerequisites, participants, and round plan.
-3. Choose the allowed round count for a parallel or debate phase. Sequential
-   phases use their configured stage plans. For Phase 03, choose standard theory,
-   standard theory plus an independent audit, or an audit-only run of a sealed
-   existing theory artifact. Standard Phase 03 and Phase 04 runs use the exact
-   approved Phase 02 method ID and version, or both fields of a run-specific
-   method identity entered by the user.
-4. Add optional direction for the agents.
-5. If prerequisites are missing or stale, review the warning and explicitly confirm the override if you still want to proceed.
-6. Start the run, monitor its progress and log, or cancel it while it is active. If cleanup remains pending, inspect the recorded reason, retry cleanup, or release the lock only after manually verifying that external work has stopped.
-7. When the run reaches `awaiting_review`, read the summary and choose approve, request revision, or rerun.
-8. Start another phase only when you decide it is useful.
-
-After a full Phase 06 run produces a post-review manuscript, its history row
-offers a separate control to review that exact version. The new review-only run
-shows the selected path and SHA-256 and performs no author revision.
-
-`python hub.py init` is idempotent. Normal Web UI access also initializes and additively migrates the small project registry when needed.
-
 ## Default research workflow
 
-The default configuration has six phases. The dependency column describes recommended trusted context. It does not remove the user's ability to override a warning and run a phase.
+The default configuration has five phases. The dependency column describes recommended trusted context. It does not remove the user's ability to override a warning and run a phase.
 
 | Phase | Pattern | User-selectable work | Recommended approved prerequisites |
 |---|---|---|---|
 | Literature Review | Parallel | 1 to 5 rounds, default 2 | None |
-| Method Development | Debate | 2 to 3 rounds, default 2 | Literature Review |
-| Theoretical Analysis | Sequential | Standard 3 stages, standard plus audit 4 stages, or audit-only 1 stage | Method Development |
-| Numerical Validation | Sequential | 4 fixed stages | Method Development |
-| Scientific Interpretation | Debate | 2 to 3 rounds, default 2 | Numerical Validation |
-| Paper Writing | Sequential | 5 fixed stages, or a 2-stage review-only rerun of a selected manuscript | Theoretical Analysis and Scientific Interpretation |
+| Method Development | Parallel | 2 to 3 rounds, default 2 | Literature Review |
+| Idea Evaluation | Debate | 2 to 3 rounds, default 2 | Method Development |
+| Draft Assembly | Parallel | 2 to 2 rounds, default 2 | Idea Evaluation |
+| Review & Revision | Sequential | 2 stages (fixed) | Draft Assembly |
 
-The fixed sequential stages are:
+- **Literature Review:** the team surveys relevant work in parallel, producing structured notes and identifying gaps.
+- **Method Development:** brainstorm genuinely new ideas — new mechanisms, frameworks, or insights.
+- **Idea Evaluation:** a proposal is challenged and revised across multiple critique rounds, evaluating correctness, novelty, rigor, and cost.
+- **Draft Assembly:** parallel drafting — intro and method (lead), theory and proofs (theorist), implementation and experiments (data analyst) — then the lead combines them into a formal draft.
+- **Review & Revision:** the paper reviewer audits the complete draft — soundness, clarity, significance, originality — and produces ranked revision recommendations; the research lead then addresses each point and produces the final manuscript with a revision log.
 
-- **Theoretical Analysis:** standard theory has the theorist draft the analysis,
-  the research lead assess how the results support the contribution, and the
-  theorist revise it. The user can add a fourth-stage independent audit of the
-  final theorist artifact, or run a one-stage audit of an eligible sealed artifact
-  from an earlier run without repeating or revising the theory.
-- **Numerical Validation:** the data analyst implements and tests, the theorist
-  checks the mathematics against the code, the data analyst corrects and
-  completes the study, and the research lead assesses the evidence. Before any
-  main result is generated, a protocol-only task must finish and seal a
-  machine-verified checkpoint containing the study design and exact
-  protocol-file hashes. Only then can the separate result task be dispatched.
-- **Paper Writing:** the research lead frames the paper, the theorist writes the
-  theory, and the data analyst writes experiments and results. A paper reviewer
-  then performs a context-restricted first reading of the exact review manuscript before
-  a second, context-aware assessment against the scientific record.
+Phase output folders follow the `folder` field in `config.yaml`. Folder names are descriptive of the phase purpose.
 
-For parallel and debate phases, the user chooses a round count within the
-configured range before launch. The launcher then executes that exact count. For
-sequential phases, stage order and ownership are fixed by the selected configured
-plan and shown in the UI before launch. Phase 03's two audit plans and Phase 06's
-review-only rerun are explicit user-selected variants; none is added automatically.
+For parallel and debate phases, the user chooses a round count within the configured range before launch. The launcher then executes that exact count. For sequential phases, stage order and ownership are fixed by the selected configured plan and shown in the UI before launch. Optional variants — Phase 03 theory plans, opt-in protocol checkpoints, method binding, and Phase 06-style review runs — appear only when the phase configuration declares them.
 
-## Orchestration patterns
+### Optional phase features
 
-| Pattern | Execution contract |
-|---|---|
-| `parallel` | Every configured member investigates independently in each round. Later rounds target gaps found in earlier outputs. |
-| `debate` | Members produce proposals in the first round, then cross-critique and revise in later rounds. |
-| `sequential` | Exactly one configured role owns each stage. Stages run in order and each stage receives the prior output. |
-
-The research lead coordinates only the run the user authorized. It creates run-scoped Hermes kanban tasks, waits for the required artifacts, and writes a decision-oriented HTML summary. Its final command submits the run for review and stops.
-
-## Scientific handoff contract
-
-Every role returns a nonempty report labeled **Complete**, **Partial**, or
-**Failed**. Partial and Failed reports preserve usable evidence and identify the
-missing work and its scientific consequence. A missing artifact is a technical
-run failure rather than a scientific outcome.
-
-Material hypotheses, theoretical statements, empirical findings, and
-conclusions are tracked in one accepted scientific record with stable statement
-IDs. Roles propose compact scientific record changes. Every final summary begins
-with a User Decision Brief and a Comparison with the approved run, then gives
-the consolidated changes and the Proposed scientific baseline. Approval accepts
-that baseline as a whole; the user requests revision before approval when only
-part is acceptable.
-
-Each new run also writes a validated decision record beside its HTML summary.
-The Web UI shows the scientific outcome, requested decision, team recommendation,
-main evidence, principal risk, smallest result that would change the recommendation,
-option consequences, rerun question, and exact proposed baseline separately from
-the technical run status. Complete, Partial, and Failed never approve, reject,
-or launch work. Approval requires the user to accept the exact sealed proposed
-baseline explicitly.
-
-## Architecture
-
-The application deliberately separates project registration, run control, orchestration, and presentation:
-
-| Component | Responsibility |
-|---|---|
-| `webapp.py` | Flask Web UI, user decisions, launch controls, progress, review, settings, and profile mapping |
-| `hub.py` | Validated configuration, SQLite project registry, safe project paths, database initialization and migration |
-| `scripts/project_state.py` | Locked and atomic project state, run transitions, approvals, staleness, prerequisite reports, and immutable context records |
-| `scripts/launch_run.py` | Preflight checks, prompt construction, Hermes worker launch, progress commands, cancellation, and worker reconciliation |
-| `scripts/profile_skills.py` | Read-only skill status checks and explicit, transactional profile installation or replacement |
-| `scripts/web_phase_data.py` | Read-only view models for phase and overview pages |
-| `bundled_skills/` | Pinned recommended skill resources, source revision, licenses, and integrity manifest |
-| `config/phases/<slug>/` | Phase protocol, research-lead instructions, and role-specific playbooks |
-| `config/souls/` | Stable identity, reasoning standards, and boundaries for each role |
-| `config/team/` | Shared team charter and operating norms |
-
-SQLite stores only the project registry. Each project's run-control history lives in a matching directory under `projects/.research-hub-control/`, outside the Hermes project workspace. Recognized regular files from an existing `.log/` state directory are copied there once within file-count and byte limits; links and special files are refused, and the original directory remains a recoverable legacy backup. Safe legacy approved summaries receive a one-time integrity hash when they can be verified inside the project. State changes use a per-project cross-process lock and atomic file replacement, which also enforces the one-active-run rule. Project creation, run reservation, and workspace replacement additionally share a hub-wide operation lock.
-
-At launch, the system freezes the project brief, role souls, playbooks, team
-rules, current approved prerequisite summaries and structured decision records,
-optional approved context, and the phase's prior approved result. Standard Phase
-03 and Phase 04 runs also freeze the exact selected method ID, version, and its
-approved or run-specific provenance. It records run IDs and content hashes,
-validates the frozen-input schema, and embeds each role's exact soul text and hash
-in its sealed prompt or task brief. A selected Phase 03 proof audit seals the
-exact final theory artifact and its evidence inventory, including an eligible
-artifact from an earlier run for audit-only. Audit-only Phase 03 runs and
-review-only Phase 06 runs also freeze the source run's complete summary and
-structured scientific record. The new run labels that source as accepted,
-proposed, or historical from its status at selection, preserves unaffected
-statement IDs, and applies only findings produced by the new audit or review.
-Reviewer tasks run from
-sealed workspaces containing only their authorized copied inputs and one report
-path. Phase 06 preserves the context-restricted first reading before the
-context-aware assessment. This controls the context supplied by Research Hub;
-it is not an operating-system sandbox. The evidence lineage remains inspectable
-even if project files or upstream work change later.
-
-For Phase 04, the frozen manifest names one run-specific protocol directory and
-checkpoint. Round 1 first dispatches a protocol-only data-analyst task with the
-protocol-stage report and checkpoint inventory. After that isolated task ends,
-Research Hub requires every listed regular file to be inside the protocol
-directory, verifies its byte size and SHA-256 hash, seals the report and complete
-inventory, and only then dispatches the separate result task. Every result-stage
-task receives a different write-limited round directory. Later stages and run
-submission also require the unchanged sealed checkpoint. The Web UI shows whether
-this checkpoint is pending or sealed. Corrections use new versioned
-files and retain the sealed originals.
-
-## Project layout
-
-Application files live in this repository:
-
-```text
-research-hub/
-|-- webapp.py
-|-- hub.py
-|-- config.yaml
-|-- schema.sql
-|-- scripts/
-|   |-- launch_run.py
-|   |-- profile_skills.py
-|   |-- project_state.py
-|   `-- web_phase_data.py
-|-- bundled_skills/
-|   |-- manifest.json
-|   |-- stat-paper-writing/
-|   `-- stat-paper-reviewer/
-|-- config/
-|   |-- phases/<phase-slug>/
-|   |   |-- _phase.md
-|   |   |-- _lead.md
-|   |   `-- <role>.md
-|   |-- souls/<role>.md
-|   `-- team/
-|-- templates/
-|-- static/
-`-- tests/
-```
-
-Runtime data lives under `hub.workspace_dir`, which defaults to `~/research`:
-
-```text
-~/research/
-|-- hub.db
-`-- projects/
-    |-- .research-hub-control/
-    |   `-- project-003-example/
-    |       |-- project.yaml
-    |       `-- runs/<phase-slug>/
-    |           |-- <run-id>.prompt.md
-    |           |-- <run-id>.manifest.json
-    |           |-- <run-id>.context/
-    |           `-- <run-id>.log
-    `-- project-003-example/
-        |-- setting.md
-        |-- phase-summaries/<phase-slug>/<run-id>.html
-        |-- references/
-        |-- ideas/
-        |-- numerical/
-        `-- draft/
-```
-
-Phase artifacts are stored below the phase's configured folder in run-specific and round-specific directories. Summary paths include the immutable run ID, so reruns preserve all earlier evidence and decisions.
+- **Theory plans** (a Phase 03 slug with a `proof_audit` declaration): three user-selectable run plans — standard (configured stages only), standard with an independent audit stage, or audit-only (review the sealed artifact without revising it).
+- **Protocol checkpoint** (a sequential phase with `protocol_checkpoint: true`): before any result-stage work, the lead writes a protocol document to a write-limited directory. The launcher then reads and hashes the entire protocol directory, verifies its byte size and SHA-256 hash, seals the report and complete inventory, and only then dispatches the separate result task. Every result-stage task receives a different write-limited round directory. Later stages and run submission also require the unchanged sealed checkpoint. The Web UI shows whether this checkpoint is pending or sealed. Corrections use new versioned files and retain the sealed originals.
+- **Paper-writing review variants** (a phase with the `06-paper-writing` slug): a full run ends with a context-restricted first reading of the exact review manuscript before a context-aware assessment, and its history row offers a separate control to review that exact post-review manuscript in a new review-only run that performs no author revision. The default configuration does not include this phase; the Review & Revision phase covers draft review instead.
 
 ## Configuration
 
@@ -323,10 +284,9 @@ When `allow_unattended_tools` is `true`, the explicitly launched background Herm
 ```yaml
 - slug: "02-method-development"
   name: "Method Development"
-  description: "Design and specify the proposed method"
-  pattern: debate
+  description: "Brainstorm genuinely new ideas — new mechanisms, frameworks, or insights"
+  pattern: parallel
   gated_by: ["01-literature-review"]
-  context_from: []
   folder: "ideas/"
   members: [theorist, research_lead, data_scientist]
   rounds: {min: 2, default: 2, max: 3}
@@ -335,39 +295,54 @@ When `allow_unattended_tools` is `true`, the explicitly launched background Herm
 ### Sequential phase
 
 ```yaml
-- slug: "03-theoretical-justification"
-  name: "Theoretical Analysis"
-  description: "Develop proofs, bounds, and guarantees"
+- slug: "05-review-revision"
+  name: "Review & Revision"
+  description: "Paper reviewer audits the draft; lead revises into the final manuscript"
   pattern: sequential
-  gated_by: ["02-method-development"]
-  folder: "draft/theory/"
-  members: [theorist, research_lead, paper_reviewer]
-  proof_audit:
+  gated_by: ["04-draft-assembly"]
+  folder: "draft/revised/"
+  members: [paper_reviewer, research_lead]
+  rounds: {min: 2, default: 2, max: 2}
+  stages:
+  - role: paper_reviewer
+    name: "Review"
+    description: "Audit the complete draft and produce ranked revision recommendations."
+  - role: research_lead
+    name: "Revise"
+    description: "Address each review point and produce the final manuscript with a revision log."
+```
+
+For a standard sequential phase, `rounds.min`, `rounds.default`, and `rounds.max` must all equal the number of configured stages. The standard `rounds` mapping may be omitted and is then inferred from the stage count.
+
+### Optional feature declarations
+
+Special run machinery activates only when the phase declares it (see *Optional phase features*):
+
+```yaml
+- slug: "03-idea-evaluation"
+  name: "Idea Evaluation"
+  pattern: debate
+  # ...
+  proof_audit:                      # user-selectable theory run plans
     plans: [standard, standard_with_audit, audit_only]
     stage:
       role: paper_reviewer
       name: "Audit the final theoretical analysis independently"
       description: "Check the exact sealed theory artifact without revising it."
-  rounds: {min: 3, default: 3, max: 3}
-  stages:
-  - role: theorist
-    name: "Develop the theory"
-    description: "Develop the necessary results, their dependencies, assumptions, scope, and proofs."
-  - role: research_lead
-    name: "Assess theoretical support"
-    description: "Assess how the results support the contribution, including scope and unresolved gaps."
-  - role: theorist
-    name: "Revise the analysis"
-    description: "Revise the analysis where needed and state any unresolved mathematical questions explicitly."
+  method_binding: true              # freeze an exact method identity per run
 ```
 
-For a standard sequential phase, `rounds.min`, `rounds.default`, and `rounds.max`
-must all equal the number of configured stages. Phase 03 additionally declares
-its audit plans and reviewer stage; the selected plan fixes its run to 3, 4, or
-1 stage. The standard `rounds` mapping may be omitted and is then inferred from
-the stage count.
+```yaml
+- slug: "04-draft-assembly"
+  name: "Draft Assembly"
+  pattern: parallel
+  # ...
+  protocol_checkpoint: true         # seal the protocol before any main result
+```
 
-Configuration is validated before use. Validation checks role and profile identifiers, Hermes-reserved profile names, the required `research_lead`, a profile independent from contributing roles for `paper_reviewer`, bounded nonblank UTF-8 role souls, safe project-relative output folders, round bounds, sequential stage owners, debate minimum rounds, prerequisite graph cycles, and required playbook files. Invalid configuration fails with a focused error instead of launching partial work.
+A `proof_audit` declaration is valid only on a Phase 03 slug. With it, the selected plan fixes the run to the configured stage count, the stage count plus one audit stage, or a single audit-only stage. `protocol_checkpoint` requires a sequential stage plan. `method_binding` is a boolean any phase may declare; Phase 03 and 04 slugs whose configured pattern is not parallel or debate keep the historical binding automatically so runs sealed under earlier configurations remain reproducible.
+
+Configuration is validated before use. Validation checks role and profile identifiers, Hermes-reserved profile names, the required `research_lead`, a profile independent from contributing roles for `paper_reviewer`, bounded nonblank UTF-8 role souls, safe project-relative output folders, round bounds, sequential stage owners, debate minimum rounds, prerequisite graph cycles, optional feature declarations, and required playbook files. Invalid configuration fails with a focused error instead of launching partial work.
 
 `gated_by` defines the recommended approved prerequisites and downstream staleness graph. `context_from` names additional approved, current phase summaries that are useful when available but are not prerequisites. The current phase's prior approved result is included automatically on reruns for comparison.
 
@@ -393,23 +368,14 @@ Do not put API keys or other secrets in project briefs, playbooks, feedback, log
 
 ## Tests
 
-Install the development requirements and run the suite from the repository root:
-
 ```bash
-python -m pip install -r requirements-dev.txt
-python -m pytest
+make install-dev   # or: .venv/bin/pip install -r requirements-dev.txt
+make test          # or: .venv/bin/python -m pytest
 ```
 
-The current tests cover configuration validation, clean initialization and
-additive database migration, safe project directory handling, atomic run
-reservation, prerequisite overrides, context and summary integrity, manifest
-sealing, round and artifact validation, optional proof-audit plans, exact
-manuscript re-review targets, separated reviewer substages, review transitions,
-immutable derivative-run source baselines, pre-result Phase 04 protocol
-checkpoints and workspaces, structured method selection, launch-plan and
-prerequisite version binding, explicit baseline acceptance, approval-time context
-drift, recursive staleness, verified cleanup and explicit recovery,
-cancellation through submission, failure fallback, and legacy state migration.
+The current tests cover configuration validation, clean initialization and additive database migration, safe project directory handling, atomic run reservation, prerequisite overrides, context and summary integrity, manifest sealing, round and artifact validation, optional proof-audit plans, exact manuscript re-review targets, separated reviewer substages, review transitions, immutable derivative-run source baselines, opt-in protocol checkpoints and workspaces, structured method selection, launch-plan and prerequisite version binding, explicit baseline acceptance, approval-time context drift, recursive staleness, verified cleanup and explicit recovery, cancellation through submission, failure fallback, and legacy state migration.
+
+A contract suite (`tests/test_shipped_config_contract.py`) loads the shipped `config.yaml` and verifies that every configured phase builds a round plan, validates a launch manifest, and inherits only the special behavior it explicitly declares.
 
 ## License
 

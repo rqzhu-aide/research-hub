@@ -85,13 +85,13 @@ phases:
   folder: "ideas/"
   members: [theorist, research_lead, data_scientist]
   rounds: {min: 2, default: 2, max: 3}
-- slug: "03-theoretical-justification"
+- slug: "03-idea-evaluation"
   name: "Idea Evaluation"
   description: "Evaluate all Phase 2 ideas across correctness, methodological novelty,
     theoretical rigor, and computational cost, then rank them"
   pattern: debate
   gated_by: ["02-method-development"]
-  folder: "draft/theory/"
+  folder: "evaluations/"
   members:
   - theorist
   - research_lead
@@ -100,14 +100,14 @@ phases:
     min: 2
     default: 2
     max: 3
-- slug: "04-numerical-validation"
+- slug: "04-draft-assembly"
   name: "Draft Assembly"
   description: "Parallel drafting: intro+method (lead), theory+proofs (theorist),
     implementation+experiments (data analyst), then lead combines into a formal draft"
   pattern: parallel
   gated_by:
-  - 03-theoretical-justification
-  folder: "numerical/"
+  - 03-idea-evaluation
+  folder: "draft/sections/"
   members:
   - research_lead
   - theorist
@@ -116,13 +116,13 @@ phases:
     min: 2
     default: 2
     max: 2
-- slug: "05-data-analysis"
+- slug: "05-review-revision"
   name: "Review & Revision"
   description: "Paper reviewer audits the Phase 4 draft using stat-paper-reviewer;
     lead revises into final manuscript"
   pattern: sequential
-  gated_by: ["04-numerical-validation"]
-  folder: "draft/analysis/"
+  gated_by: ["04-draft-assembly"]
+  folder: "draft/revised/"
   members:
   - paper_reviewer
   - research_lead

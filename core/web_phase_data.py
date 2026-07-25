@@ -296,7 +296,7 @@ def _source_descriptor(
     raw_path = ""
     digest = ""
     source_round: int | None = None
-    if phase_slug == "03-theoretical-justification":
+    if phase_slug == "03-idea-evaluation":
         candidate = manifest.get("proof_audit_source")
         if not isinstance(candidate, Mapping):
             return None
@@ -518,8 +518,7 @@ def _run_view(
         else None
     )
     protocol_checkpoint_required = bool(
-        phase_slug == "04-numerical-validation"
-        and manifest
+        manifest
         and isinstance(manifest.get("protocol_checkpoint"), Mapping)
     )
     frozen_phase = manifest.get("phase", {}) if manifest else {}
@@ -541,12 +540,12 @@ def _run_view(
     plan_pattern = str(frozen_phase.get("pattern", "")) if has_frozen_plan else ""
     plan_folder = str(frozen_phase.get("folder", "")) if has_frozen_plan else ""
     run_plan = str(frozen_phase.get("run_plan", ""))
-    if phase_slug == "03-theoretical-justification" and not run_plan:
+    if phase_slug == "03-idea-evaluation" and not run_plan:
         if frozen_phase.get("audit_only"):
             run_plan = "audit_only"
         elif frozen_phase.get("proof_audit"):
             run_plan = "standard_with_audit"
-        elif has_frozen_plan:
+        elif has_frozen_plan and plan_pattern == "sequential":
             run_plan = "standard"
 
     if frozen_phase.get("review_only"):
@@ -555,7 +554,11 @@ def _run_view(
         plan_variant = "Independent audit of an existing sealed theory artifact"
     elif frozen_phase.get("proof_audit"):
         plan_variant = "Standard theory plus independent proof audit"
-    elif phase_slug == "03-theoretical-justification" and has_frozen_plan:
+    elif (
+        phase_slug == "03-idea-evaluation"
+        and has_frozen_plan
+        and plan_pattern == "sequential"
+    ):
         plan_variant = "Standard theory"
     elif phase_slug == "06-paper-writing" and plan_stages:
         plan_variant = "Full manuscript writing and independent review"
@@ -810,6 +813,54 @@ def _decision_state(
     return str(phase_state.get("status", "pending"))
 
 
+def _downstream_context_options(
+    project_dir: Path,
+    phase_slug: str,
+    phases_cfg: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Identify downstream (future) phases that have approved results.
+
+    Returns a dict with ``available`` (bool), ``phases`` (list of display
+    dicts with slug/name/run_id), so the launch form can show the downstream
+    context toggle only when it would actually add context.
+    """
+
+    dependencies = _dependencies(phases_cfg)
+    # Reverse BFS: find phases that transitively gate on phase_slug.
+    reverse: dict[str, set[str]] = {}
+    for gated_phase, prerequisites in dependencies.items():
+        for prerequisite in prerequisites:
+            reverse.setdefault(prerequisite, set()).add(gated_phase)
+    descendants: set[str] = set()
+    queue = list(reverse.get(phase_slug, set()))
+    while queue:
+        item = queue.pop(0)
+        if item in descendants:
+            continue
+        descendants.add(item)
+        queue.extend(reverse.get(item, set()))
+    if not descendants:
+        return {"available": False, "phases": []}
+    state = project_state.load(project_dir)
+    phases_state = state.get("phases", {})
+    name_by_slug = {
+        str(phase["slug"]): str(phase.get("name", phase["slug"]))
+        for phase in phases_cfg
+    }
+    options: list[dict[str, str]] = []
+    for slug in sorted(descendants):
+        phase_state = phases_state.get(slug, {})
+        approved_id = str(phase_state.get("approved_run") or "").strip()
+        if not approved_id:
+            continue
+        options.append({
+            "slug": slug,
+            "name": name_by_slug.get(slug, slug),
+            "run_id": approved_id,
+        })
+    return {"available": bool(options), "phases": options}
+
+
 def prepare_phase_data(
     project_dir: Path,
     project_id: int,
@@ -920,7 +971,7 @@ def prepare_phase_data(
         displayed_latest
         and not active_here
         and phase_slug in {
-            "03-theoretical-justification",
+            "03-idea-evaluation",
             "06-paper-writing",
         }
         and displayed_latest.get("frozen_plan", {}).get("available")
@@ -997,7 +1048,11 @@ def prepare_phase_data(
         "frozen": False,
         "variant": (
             "Standard theory"
-            if phase_slug == "03-theoretical-justification"
+            if phase_slug == "03-idea-evaluation"
+            and (
+                phase_cfg.get("proof_audit") is not None
+                or phase_cfg.get("available_run_plans") is not None
+            )
             else "Full manuscript writing and independent review"
             if phase_slug == "06-paper-writing"
             else "Standard phase plan"
@@ -1016,6 +1071,9 @@ def prepare_phase_data(
             "members": list(frozen_plan.get("members", [])),
         }
 
+    downstream_context = _downstream_context_options(
+        project_dir, phase_slug, phases_cfg
+    )
     return {
         "project_id": project_id,
         "phase_cfg": dict(phase_cfg),
@@ -1067,6 +1125,7 @@ def prepare_phase_data(
         "summary_path": (
             displayed_latest.get("summary_path") if displayed_latest else None
         ),
+        "downstream_context": downstream_context,
     }
 
 

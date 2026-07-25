@@ -14,7 +14,7 @@ import pytest
 import yaml
 
 import webapp
-from scripts import web_phase_data
+from core import web_phase_data
 
 
 PROJECT_ID = 1
@@ -781,6 +781,7 @@ def test_csrf_rejects_missing_token_and_accepts_valid_start(
         expected_workspace_path=str(web_env["project_dir"].parents[1].resolve()),
         expected_project_directory_name=web_env["project_dir"].name,
         expected_project_path=str(web_env["project_dir"].resolve()),
+        include_downstream=False,
     )
     run_scan.assert_not_called()
 
@@ -909,7 +910,7 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
     client = web_env["client"]
     project_dir = web_env["project_dir"].resolve()
     phase_three = {
-        "slug": "03-theoretical-justification",
+        "slug": "03-idea-evaluation",
         "name": "Theoretical Analysis",
         "description": "Develop the theory.",
         "pattern": "sequential",
@@ -969,7 +970,7 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
     identity = _project_identity(web_env)
 
     proof_page = client.get(
-        f"/project/{PROJECT_ID}?tab=03-theoretical-justification"
+        f"/project/{PROJECT_ID}?tab=03-idea-evaluation"
     )
     assert proof_page.status_code == 200
     proof_html = proof_page.get_data(as_text=True)
@@ -988,14 +989,14 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
     assert "Independent proof audit" in proof_html
     assert 'data-base-stage-count="3"' in proof_html
     assert 'aria-live="polite"' in proof_html
-    assert 'aria-describedby="stage-count-03-theoretical-justification"' in proof_html
+    assert 'aria-describedby="stage-count-03-idea-evaluation"' in proof_html
 
     proof_response = client.post(
-        f"/project/{PROJECT_ID}/phase/03-theoretical-justification/start",
+        f"/project/{PROJECT_ID}/phase/03-idea-evaluation/start",
         data={
             "csrf_token": token,
             "project_identity": identity,
-            **_launch_tokens(web_env, "03-theoretical-justification"),
+            **_launch_tokens(web_env, "03-idea-evaluation"),
             "theory_plan": "standard_with_audit",
         },
     )
@@ -1004,7 +1005,7 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
     assert proof_call.args[:5] == (
         project_dir,
         PROJECT_ID,
-        "03-theoretical-justification",
+        "03-idea-evaluation",
         "",
         4,
     )
@@ -1013,11 +1014,11 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
     launched.reset_mock(return_value=True)
     launched.return_value = {"run_number": 2, "rounds_requested": 1}
     audit_only_response = client.post(
-        f"/project/{PROJECT_ID}/phase/03-theoretical-justification/start",
+        f"/project/{PROJECT_ID}/phase/03-idea-evaluation/start",
         data={
             "csrf_token": token,
             "project_identity": identity,
-            **_launch_tokens(web_env, "03-theoretical-justification"),
+            **_launch_tokens(web_env, "03-idea-evaluation"),
             "theory_plan": "audit_only",
             "proof_audit_source_run_id": "opaque-source-run-id",
         },
@@ -1027,7 +1028,7 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
     assert audit_only_call.args[:5] == (
         project_dir,
         PROJECT_ID,
-        "03-theoretical-justification",
+        "03-idea-evaluation",
         "",
         1,
     )
@@ -1039,11 +1040,11 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
 
     launched.reset_mock(return_value=True)
     missing_source = client.post(
-        f"/project/{PROJECT_ID}/phase/03-theoretical-justification/start",
+        f"/project/{PROJECT_ID}/phase/03-idea-evaluation/start",
         data={
             "csrf_token": token,
             "project_identity": identity,
-            **_launch_tokens(web_env, "03-theoretical-justification"),
+            **_launch_tokens(web_env, "03-idea-evaluation"),
             "theory_plan": "audit_only",
         },
     )
@@ -1051,11 +1052,11 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
     assert launched.call_count == 0
 
     source_on_standard = client.post(
-        f"/project/{PROJECT_ID}/phase/03-theoretical-justification/start",
+        f"/project/{PROJECT_ID}/phase/03-idea-evaluation/start",
         data={
             "csrf_token": token,
             "project_identity": identity,
-            **_launch_tokens(web_env, "03-theoretical-justification"),
+            **_launch_tokens(web_env, "03-idea-evaluation"),
             "theory_plan": "standard",
             "proof_audit_source_run_id": "opaque-source-run-id",
         },
@@ -1095,8 +1096,8 @@ def test_phase_three_and_four_show_the_approved_method_and_optional_override_fie
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     method_slug = webapp.project_state.METHOD_DEVELOPMENT_PHASE
-    theory_slug = "03-theoretical-justification"
-    numerical_slug = "04-numerical-validation"
+    theory_slug = "03-idea-evaluation"
+    numerical_slug = "04-draft-assembly"
     web_env["config"]["phases"].extend([
         {
             "slug": method_slug,
@@ -1228,7 +1229,7 @@ def test_quick_rerun_recovers_special_plan_only_from_prior_run(
 ) -> None:
     client = web_env["client"]
     project_dir = web_env["project_dir"].resolve()
-    theory_slug = "03-theoretical-justification"
+    theory_slug = "03-idea-evaluation"
     paper_slug = "06-paper-writing"
     web_env["config"]["phases"].extend(
         [
@@ -1241,6 +1242,11 @@ def test_quick_rerun_recovers_special_plan_only_from_prior_run(
                 "gated_by": [],
                 "folder": "draft/theory/",
                 "members": ["theorist", "research_lead"],
+                "available_run_plans": [
+                    "standard",
+                    "standard_with_audit",
+                    "audit_only",
+                ],
                 "stages": [
                     {"role": "theorist"},
                     {"role": "research_lead"},
@@ -1483,7 +1489,7 @@ def test_derivative_runs_expose_the_complete_sealed_source_identity(
         }
     }
     theory = web_phase_data._source_descriptor(
-        project, "03-theoretical-justification", theory_manifest
+        project, "03-idea-evaluation", theory_manifest
     )
     assert theory is not None
     assert theory["source_round"] == 3
@@ -1527,7 +1533,7 @@ def test_legacy_derivative_runs_keep_their_sealed_source_identity(
 
     theory = web_phase_data._source_descriptor(
         project,
-        "03-theoretical-justification",
+        "03-idea-evaluation",
         {
             "proof_audit_source": {
                 "schema_version": 1,
@@ -1586,9 +1592,9 @@ def test_phase_four_run_view_distinguishes_pending_and_sealed_protocols(
         "rounds": [],
     }
     manifest = {
-        "phase_slug": "04-numerical-validation",
+        "phase_slug": "04-draft-assembly",
         "phase": {
-            "slug": "04-numerical-validation",
+            "slug": "04-draft-assembly",
             "pattern": "sequential",
             "members": ["data_scientist"],
             "stages": [],
@@ -1606,7 +1612,7 @@ def test_phase_four_run_view_distinguishes_pending_and_sealed_protocols(
     )
 
     pending = web_phase_data._run_view(
-        project, "04-numerical-validation", run, 1
+        project, "04-draft-assembly", run, 1
     )
     assert pending["protocol_checkpoint_required"] is True
     assert pending["protocol_checkpoint"] is None
@@ -1616,7 +1622,7 @@ def test_phase_four_run_view_distinguishes_pending_and_sealed_protocols(
         "data": {"protocol_files": [{"path": "protocol.yaml"}]},
     }
     sealed = web_phase_data._run_view(
-        project, "04-numerical-validation", run, 1
+        project, "04-draft-assembly", run, 1
     )
     assert sealed["protocol_checkpoint_required"] is True
     assert sealed["protocol_checkpoint"]["data"]["protocol_files"] == [
@@ -1700,7 +1706,7 @@ def test_run_progress_renders_checkpoint_accessible_state_and_focus_key(
     phase_data = {
         "latest_run": current,
         "phase_cfg": {
-            "slug": "04-numerical-validation",
+            "slug": "04-draft-assembly",
             "pattern": "parallel",
         },
         "run_active": True,

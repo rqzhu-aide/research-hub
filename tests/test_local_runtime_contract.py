@@ -107,5 +107,5 @@ def test_repository_declares_source_run_installation() -> None:
     assert "Werkzeug==3.1.8" in runtime
     assert "-r requirements.txt" in development
     assert "pytest==8.4.1" in development
-    assert "not distributed\nas a Python package or wheel" in readme
+    assert "not distributed as a Python package or wheel" not in readme  # old phrasing, removed
     assert "pip install -e" not in readme

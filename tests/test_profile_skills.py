@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import shutil
 from pathlib import Path
 
 import pytest
 
-from scripts import profile_skills as skills
+from core import profile_skills as skills
 
 
 REVISION = "1a32b75dc671266b515816b32fca7244c9fc42be"
