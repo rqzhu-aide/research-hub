@@ -336,7 +336,32 @@ summary::-webkit-details-marker { display: none; }
 .control-note h2 { margin: 0 0 3px; }
 .control-note p { margin: 0; color: var(--text-soft); }
 
-.overview-layout { display: grid; grid-template-columns: minmax(310px, .8fr) minmax(620px, 1.65fr); gap: 18px; align-items: start; }
+.overview-layout { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: start; }
+
+/* ── Overview phase cards ── */
+.overview-phase-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px; padding: 14px;
+}
+.overview-phase-card {
+  display: grid; gap: 6px; padding: 12px 14px;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); text-decoration: none; cursor: pointer;
+  transition: border-color var(--fast), background var(--fast);
+}
+.overview-phase-card:hover { border-color: var(--accent); background: var(--accent-soft); }
+.overview-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.overview-card-name { font-weight: 600; font-size: .88rem; color: var(--text); }
+.overview-card-status { display: flex; align-items: center; gap: 6px; font-size: .78rem; color: var(--text-soft); }
+.overview-card-status .muted { color: var(--muted); }
+.overview-card-detail { font-size: .74rem; color: var(--muted); line-height: 1.4; }
+.overview-conclusion { color: var(--text-soft); }
+.overview-outcome { color: var(--accent-bright); }
+
+/* ── Project brief collapsed ── */
+.desc-view > summary { cursor: pointer; color: var(--muted); font-size: .82rem; padding: 4px 0; }
+.desc-view[open] > summary { margin-bottom: 8px; }
+.desc-view-inner { max-height: 400px; overflow-y: auto; }
 .goal-panel { display: flex; flex-direction: column; }
 .desc-view { flex: 1 1 auto; min-height: 0; overflow-y: scroll; padding-right: 10px; color: var(--text-soft); scrollbar-width: thin; scrollbar-color: var(--accent, #8589ff) transparent; }
 .desc-view h1 { font-size: 1.45rem; }

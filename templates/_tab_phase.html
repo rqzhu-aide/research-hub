@@ -235,7 +235,7 @@
     <div class="method-detail-head">
       <span class="method-detail-label">{{ m.label }}</span>
       <span class="method-status-tag method-status-{{ m.status }}">{{ m.status }}</span>
-      {% if m.version %}<span class="method-version">v{{ m.version }}</span>{% endif %}
+      {% if m.version %}<span class="method-version">{{ m.version }}</span>{% endif %}
     </div>
     <div class="method-detail-body markdown-body">{{ m.body_html | safe }}</div>
   </div>
@@ -366,13 +366,6 @@
   </div>
 
   {# ── Conditional overrides ── #}
-  {% if latest and latest.status == 'awaiting_review' %}
-  <label class="check-row-compact" for="replace-awaiting-{{ pc.slug }}">
-    <input type="checkbox" id="replace-awaiting-{{ pc.slug }}" name="replace_awaiting_review" value="1" required>
-    <span>Replace the result currently awaiting review</span>
-  </label>
-  {% endif %}
-
   {% if not prereqs_ok %}
   <label class="check-row-compact" for="override-prerequisites-{{ pc.slug }}">
     <input type="checkbox" id="override-prerequisites-{{ pc.slug }}" name="override_prerequisites" value="1" required>

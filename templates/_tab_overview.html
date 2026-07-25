@@ -1,26 +1,20 @@
-<section class="control-note" aria-labelledby="control-note-title">
-  <span class="control-note-mark" aria-hidden="true">USER</span>
-  <div>
-    <h2 id="control-note-title">You decide when every phase runs.</h2>
-    <p>Results never launch the next phase automatically. Review the evidence, approve a baseline when it is useful, and rerun any phase whenever your research direction changes.</p>
-  </div>
-</section>
-
-<div class="overview-layout">
-  <section class="panel goal-panel" id="desc-panel" aria-labelledby="project-brief-heading">
-    <div class="panel-head">
-      <div>
-        <p class="section-kicker">Shared context</p>
-        <h2 id="project-brief-heading">Project brief <small>setting.md</small></h2>
-      </div>
-      <div class="panel-actions">
-        <button type="button" class="btn btn-sm" data-description-edit>Edit brief</button>
-        <button type="submit" form="desc-form" class="btn btn-primary btn-sm" data-description-save hidden>Save brief</button>
-        <button type="button" class="btn btn-sm" data-description-cancel hidden>Cancel</button>
-      </div>
+{# ── Project brief (collapsed by default) ── #}
+<section class="panel goal-panel" id="desc-panel" aria-labelledby="project-brief-heading">
+  <div class="panel-head">
+    <div>
+      <p class="section-kicker">Shared context</p>
+      <h2 id="project-brief-heading">Project brief <small>setting.md</small></h2>
     </div>
+    <div class="panel-actions">
+      <button type="button" class="btn btn-sm" data-description-edit>Edit brief</button>
+      <button type="submit" form="desc-form" class="btn btn-primary btn-sm" data-description-save hidden>Save brief</button>
+      <button type="button" class="btn btn-sm" data-description-cancel hidden>Cancel</button>
+    </div>
+  </div>
 
-    <div id="desc-view" class="desc-view" data-description-view>
+  <details id="desc-view" class="desc-view" data-description-view>
+    <summary>Show brief</summary>
+    <div class="desc-view-inner">
       {% if settings_html %}
         {{ settings_html | safe }}
       {% elif settings_content %}
@@ -32,176 +26,72 @@
         </div>
       {% endif %}
     </div>
+  </details>
 
-    <form id="desc-form" action="{{ url_for('save_settings', project_id=project.id) }}" method="post"
-          data-description-form data-unsaved-guard data-draft-key="project-{{ project.id }}-description" hidden>
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="project_identity" value="{{ project_identity }}">
-      <label class="sr-only" for="desc-editor">Project brief in Markdown</label>
-      <textarea name="settings_content" class="settings-editor" id="desc-editor"
-                autocomplete="off" spellcheck="true">{{ settings_content }}</textarea>
-      <p class="form-help">This brief is included in future runs. Existing run records remain unchanged.</p>
-    </form>
-  </section>
+  <form id="desc-form" action="{{ url_for('save_settings', project_id=project.id) }}" method="post"
+        data-description-form data-unsaved-guard data-draft-key="project-{{ project.id }}-description" hidden>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="project_identity" value="{{ project_identity }}">
+    <label class="sr-only" for="desc-editor">Project brief in Markdown</label>
+    <textarea name="settings_content" class="settings-editor" id="desc-editor"
+              autocomplete="off" spellcheck="true">{{ settings_content }}</textarea>
+    <p class="form-help">This brief is included in future runs. Existing run records remain unchanged.</p>
+  </form>
+</section>
 
-  <section class="panel ledger-panel" aria-labelledby="decision-ledger-heading">
-    <div class="panel-head ledger-heading">
-      <div>
-        <p class="section-kicker">Phase decisions</p>
-        <h2 id="decision-ledger-heading">Current research choices</h2>
-      </div>
-      <span class="panel-count">{{ phase_summaries | default([]) | length }} phases</span>
-    </div>
-
-    <div class="ledger-key" aria-label="Status key">
-      <span><i class="status-marker status-approved" aria-hidden="true"></i> approved</span>
-      <span><i class="status-marker status-awaiting_review" aria-hidden="true"></i> review</span>
-      <span><i class="status-marker status-running" aria-hidden="true"></i> running</span>
-      <span><i class="status-marker status-stale" aria-hidden="true"></i> stale</span>
-    </div>
-
-    {% if phase_summaries %}
-    <div class="decision-ledger">
-      <div class="ledger-columns" aria-hidden="true">
-        <span>Phase</span><span>Approved baseline</span><span>Your next choice</span>
-      </div>
-      {% for s in phase_summaries %}
-        {% set approved = s.approved_run | default(none) %}
-        {% set latest = s.latest_run | default(none) %}
-        {% set row_status = s.decision_state | default(s.status | default('pending')) %}
-        <a class="ledger-row"
-           href="{{ url_for('project_view', project_id=project.id, tab=s.slug) }}"
-           hx-get="{{ url_for('project_view', project_id=project.id, tab=s.slug) }}"
-           hx-target="#project-tabs" hx-swap="outerHTML" hx-push-url="true">
-          <span class="ledger-phase">
-            <i class="status-marker status-{{ row_status }}" aria-hidden="true"></i>
-            <span><strong>{{ s.name }}</strong><small>{{ s.pattern | default('phase') | replace('_', ' ') }}</small></span>
-          </span>
-
-          <span class="ledger-cell">
-            {% if approved %}
-              <strong>Run {{ approved.number | default(approved.run_number | default(approved.id | default(''))) }}{% if s.baseline_integrity_error | default(false) %} needs attention{% endif %}</strong>
-              {% set approved_time = approved.approved_at | default(approved.decision_at | default(approved.completed_at | default(approved.completed | default('')))) %}
-              {% if s.baseline_integrity_error | default(false) %}
-                <small>Summary missing or changed. Do not treat this baseline as current.</small>
-              {% else %}
-                <small>approved {% if approved_time %}<time datetime="{{ approved_time }}">{{ approved_time }}</time>{% else %}date not recorded{% endif %}</small>
-              {% endif %}
-              {% if approved.scientific_outcome %}<small>Scientific outcome: {{ approved.scientific_outcome }}</small>{% endif %}
-              {% if approved.conclusion %}<small class="ledger-conclusion">{{ approved.conclusion }}</small>{% endif %}
-            {% elif row_status == 'approved' and s.run_count | default(0) %}
-              <strong>Approved result</strong><small>{{ s.run_count }} recorded run{{ '' if s.run_count == 1 else 's' }}</small>
-            {% else %}
-              <strong>None selected</strong><small>No baseline is being treated as accepted.</small>
-            {% endif %}
-          </span>
-
-          <span class="ledger-decision">
-            {% if row_status == 'stopping' %}
-              <strong>Resolve cleanup</strong><small>Retry cleanup or release the lock after manual verification.</small>
-            {% elif s.recovery_only | default(false) %}
-              {% if s.is_active | default(false) or row_status in ['starting', 'running', 'submitting', 'stopping'] %}
-              <strong>Monitor or cancel</strong><small>This phase was removed from the current configuration.</small>
-              {% else %}
-              <strong>Inspect recovery record</strong><small>History remains available, but new runs are disabled.</small>
-              {% endif %}
-            {% elif s.is_active | default(false) or row_status == 'running' %}
-              <strong>Monitor or cancel</strong><small>Inspect the live log.</small>
-            {% elif row_status in ['awaiting_review', 'completed'] %}
-              <strong>Review result</strong><small>Approve, request revision, or run again.</small>
-            {% elif s.baseline_integrity_error | default(false) %}
-              <strong>Repair or rerun</strong><small>Restore the recorded summary or approve a replacement run.</small>
-            {% elif row_status in ['revision_requested', 'needs_revision'] %}
-              <strong>Plan a revision</strong><small>Launch a focused rerun when you are ready.</small>
-            {% elif row_status in ['failed', 'cancelled'] %}
-              <strong>Inspect or rerun</strong><small>The approved baseline, if any, was preserved.</small>
-            {% elif s.stale_reason | default(none) %}
-              <strong>Reassess baseline</strong><small>{{ s.stale_reason }}</small>
-            {% elif not s.can_run | default(true) %}
-              <strong>Inspect prerequisites</strong><small>You may still choose an explicit override.</small>
-            {% elif approved %}
-              <strong>Keep or rerun</strong><small>The approved baseline remains available.</small>
-            {% else %}
-              <strong>Configure a run</strong><small>Review the plan before launching.</small>
-            {% endif %}
-            <span class="ledger-arrow" aria-hidden="true">→</span>
-          </span>
-        </a>
-      {% endfor %}
-    </div>
-    {% else %}
-      <div class="inline-empty">
-        <strong>No phases are configured.</strong>
-        <span>Add phase definitions before attempting to launch research work.</span>
-      </div>
-    {% endif %}
-  </section>
-
-<section class="panel timeline-panel" aria-labelledby="timeline-heading">
-  <div class="panel-head">
+{# ── Phase status cards ── #}
+<section class="panel ledger-panel" aria-labelledby="decision-ledger-heading">
+  <div class="panel-head ledger-heading">
     <div>
-      <p class="section-kicker">History</p>
-      <h2 id="timeline-heading">Project timeline</h2>
+      <p class="section-kicker">Phases</p>
+      <h2 id="decision-ledger-heading">Research progress</h2>
     </div>
-    <span class="panel-count">{{ phase_summaries | map(attribute='timeline_runs') | map('length') | sum }} runs</span>
+    <span class="panel-count">{{ phase_summaries | default([]) | length }} phases</span>
   </div>
 
-  {% set all_runs = [] %}
-  {% for s in phase_summaries %}
-    {% for r in s.timeline_runs %}
-      {% set _ = all_runs.append({"phase": s.name, "phase_slug": s.slug, "status": r.status, "summary_available": r.summary_available | default(false), "started": r.started, "completed": r.completed, "stale": s.stale}) %}
+  {% if phase_summaries %}
+  <div class="overview-phase-grid">
+    {% for s in phase_summaries %}
+      {% set approved = s.approved_run | default(none) %}
+      {% set latest = s.latest_run | default(none) %}
+      {% set row_status = s.decision_state | default(s.status | default('pending')) %}
+      <a class="overview-phase-card"
+         href="{{ url_for('project_view', project_id=project.id, tab=s.slug) }}"
+         hx-get="{{ url_for('project_view', project_id=project.id, tab=s.slug) }}"
+         hx-target="#project-tabs" hx-swap="outerHTML" hx-push-url="true">
+        <div class="overview-card-head">
+          <span class="overview-card-name">{{ s.name }}</span>
+          <i class="status-marker status-{{ row_status }}" aria-hidden="true"></i>
+        </div>
+        <div class="overview-card-status">
+          {% if row_status in ['starting', 'running', 'submitting', 'stopping'] %}
+            <span class="run-status-badge">{{ row_status | replace('_', ' ') }}</span>
+          {% elif latest %}
+            {% set run_num = latest.number | default(latest.run_number | default('')) %}
+            <span>Run {{ run_num }}</span>
+            {% if row_status == 'approved' %}<span class="run-complete-badge">✓</span>{% endif %}
+          {% else %}
+            <span class="muted">Not started</span>
+          {% endif %}
+        </div>
+        <div class="overview-card-detail">
+          {% if latest and latest.conclusion %}
+            <span class="overview-conclusion">{{ latest.conclusion[:100] }}{% if latest.conclusion | length > 100 %}…{% endif %}</span>
+          {% elif latest and latest.scientific_outcome %}
+            <span class="overview-outcome">Outcome: {{ latest.scientific_outcome }}</span>
+          {% elif s.run_count | default(0) == 0 %}
+            <span class="muted">No runs yet</span>
+          {% else %}
+            <span class="muted">{{ s.run_count | default(0) }} run{{ '' if s.run_count | default(1) == 1 else 's' }}</span>
+          {% endif %}
+        </div>
+      </a>
     {% endfor %}
-  {% endfor %}
-
-  {% if all_runs %}
-    <div class="timeline-legend">
-      <span><i class="tl-dot tl-completed"></i> Completed</span>
-      <span><i class="tl-dot tl-partial"></i> Completed (partial)</span>
-      <span><i class="tl-dot tl-running"></i> Running</span>
-      <span><i class="tl-dot tl-failed"></i> Failed</span>
-      <span class="tl-stale-badge">⚠ stale</span>
-    </div>
-
-    <div class="timeline-chart">
-      {% for s in phase_summaries %}
-        <div class="tl-row">
-          <div class="tl-label">
-            {% if s.stale %}<span class="tl-stale-badge" title="{{ s.stale_reason | default('Upstream phase changed') }}">⚠</span>{% endif %}
-            <a href="{{ url_for('project_view', project_id=project.id, tab=s.slug) }}"
-               hx-get="{{ url_for('project_view', project_id=project.id, tab=s.slug) }}"
-               hx-target="#project-tabs" hx-swap="outerHTML" hx-push-url="true">{{ s.name }}</a>
-          </div>
-          <div class="tl-track">
-            {% for r in s.timeline_runs %}
-              <a class="tl-dot tl-{{ r.display_status | default(r.status) }}"
-                 href="{{ url_for('project_view', project_id=project.id, tab=s.slug) }}"
-                 hx-get="{{ url_for('project_view', project_id=project.id, tab=s.slug) }}"
-                 hx-target="#project-tabs" hx-swap="outerHTML" hx-push-url="true"
-                 data-left="{{ r.left_pct }}"
-                 title="{{ loop.index }} · {{ r.display_status | default(r.status) | replace('_', ' ') }} · {{ r.started[:10] if r.started else '' }}{% if r.completed %} → {{ r.completed[:10] }}{% endif %}">
-              </a>
-            {% endfor %}
-          </div>
-        </div>
-      {% endfor %}
-    </div>
-
-    <div class="timeline-events">
-      <p class="section-kicker">Recent events</p>
-      {% set recent = all_runs | sort(attribute='started') | list | reverse | list %}
-      {% for r in recent[:5] %}
-        {% set simple_status = 'Completed' if r.status in ['approved', 'awaiting_review', 'superseded', 'completed'] else ('Running' if r.status == 'running' else ('Completed (partial)' if r.status == 'failed' and r.summary_available else ('Failed' if r.status in ['failed', 'cancelled'] else r.status | replace('_', ' ')))) %}
-        <div class="tl-event">
-          <time class="tl-event-time">{{ r.started[:16] | replace('T', ' ') if r.started else '' }}</time>
-          <span class="tl-event-text"><strong>{{ r.phase }}</strong> — {{ simple_status }}{% if r.stale %} <small>(stale)</small>{% endif %}</span>
-        </div>
-      {% endfor %}
-    </div>
+  </div>
   {% else %}
     <div class="inline-empty">
-      <strong>No runs yet.</strong>
-      <span>Launch a phase to see the timeline populate.</span>
+      <strong>No phases are configured.</strong>
+      <span>Add phase definitions in the hub configuration.</span>
     </div>
   {% endif %}
 </section>
-</div>
