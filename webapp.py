@@ -38,7 +38,7 @@ from flask import (
 from werkzeug.sansio.utils import host_is_trusted
 
 import hub
-from core import profile_skills, project_state
+from core import method_menu, profile_skills, project_state
 from core.launch_run import (
     PAPER_WRITING_PHASE,
     IDEA_EVALUATION_PHASE,
@@ -1215,6 +1215,27 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
             raise ValueError(
                 "A run-specific method identity is not valid for this phase"
             )
+        method_branch = _bounded_form_value("method_branch", 200)
+        if method_branch:
+            if not method_bound_phase:
+                raise ValueError(
+                    "A method branch selection is not valid for this phase"
+                )
+            if run_specific_method_id or run_specific_method_version:
+                raise ValueError(
+                    "Choose either a method menu branch or a custom method "
+                    "identity, not both"
+                )
+            branch_entry, branch_error = method_menu.find_selectable_entry(
+                project_dir, method_branch
+            )
+            if branch_entry is None:
+                raise ValueError(
+                    f"The method branch '{method_branch}' cannot be launched: "
+                    f"{branch_error}"
+                )
+            run_specific_method_id = branch_entry["stable_id"]
+            run_specific_method_version = branch_entry["version"]
         if (
             theory_plans_available
             and theory_plan == THEORY_PLAN_AUDIT_ONLY

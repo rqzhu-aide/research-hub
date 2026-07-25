@@ -7,7 +7,8 @@ import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from . import project_state
+from . import method_menu, project_state
+from .launch_manifest import phase_requires_method_binding
 from .launch_run import LaunchError, exact_rerun_options
 
 
@@ -1110,6 +1111,11 @@ def prepare_phase_data(
             "prerequisite", raw_report
         ),
         "approved_method_selection": approved_method_selection,
+        "method_menu": (
+            method_menu.load_method_menu(project_dir)
+            if phase_requires_method_binding(phase_cfg)
+            else None
+        ),
         "approval_context_report": approval_report,
         "approval_context_report_version": (
             decision_report_version("approval_context", approval_report)

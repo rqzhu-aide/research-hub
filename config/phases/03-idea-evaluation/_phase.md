@@ -73,8 +73,12 @@ The data analyst **must** produce, at minimum:
 ## Prior information
 Requires a current Phase 02 summary approved by the user (contains the method
 definition and the idea set). Phase 01 (literature review) is also provided for
-positioning. The user may specify which idea to focus on in the run-start form;
-if not, the lead selects based on Phase 2 outcomes.
+positioning. Each run is bound to **exactly one method branch** from the
+project's method menu (`ideas/methods/`, published by the Phase 02 lead): the
+user picks the branch at launch and its stable ID and version are frozen in
+the run manifest. Develop the theory for **that branch and no other** — other
+menu entries are separate branches with their own runs. If no branch was
+picked at launch, the run uses the approved Phase 02 selection.
 
 **On rerun:** the prior Phase 03 run is provided as **comparison evidence** —
 "here is what was proved before, and what remains open." The new run must

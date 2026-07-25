@@ -259,12 +259,29 @@
         {% endif %}
 
         {% if method_bound_phase %}
+        {% set method_menu = pd.method_menu | default(none) %}
+        {% set menu_branches = (method_menu.entries | selectattr('status', 'ne', 'retired') | rejectattr('errors') | list) if method_menu else [] %}
         <fieldset class="form-row method-selection-control" data-method-selection-control>
           <legend class="form-label">Exact method for this run</legend>
           {% if approved_method %}
-          <p class="form-help">Leave both fields blank to use the approved Phase 02 selection shown above. Enter both fields to study a different, explicitly identified method in this run.</p>
+          <p class="form-help">Leave the branch choice blank to use the approved Phase 02 selection shown above, or pick a different branch from the project method menu.</p>
           {% else %}
-          <p class="form-help">Enter both fields for a standard theoretical-analysis or numerical-validation run. An audit-only Phase 03 run uses its sealed source artifact and does not require a new method selection.</p>
+          <p class="form-help">Pick a branch from the project method menu, or enter an exact method identity below. An audit-only Phase 03 run uses its sealed source artifact and does not require a new method selection.</p>
+          {% endif %}
+          {% if menu_branches %}
+          <div class="form-row">
+            <label for="method-branch-{{ pc.slug }}">Method branch <span class="form-help-inline">(from <code>ideas/methods/</code>)</span>
+              <select class="form-input" id="method-branch-{{ pc.slug }}" name="method_branch">
+                <option value="">{% if approved_method %}Use the approved Phase 02 selection{% else %}No menu branch{% endif %}</option>
+                {% for entry in menu_branches %}
+                <option value="{{ entry.stable_id }}">{{ entry.label }} — {{ entry.stable_id }}, {{ entry.version }}{% if entry.status != 'recommended' %} ({{ entry.status }}){% else %} (recommended){% endif %}</option>
+                {% endfor %}
+              </select>
+            </label>
+            {% if method_menu.warnings %}
+            <p class="form-help"><strong>Menu warning:</strong> {{ method_menu.warnings | join(' ') }}</p>
+            {% endif %}
+          </div>
           {% endif %}
           <div class="form-row two-column-fields">
             <label for="method-id-{{ pc.slug }}">Stable method ID
@@ -274,6 +291,9 @@
               <input class="form-input" id="method-version-{{ pc.slug }}" name="run_specific_method_version" type="text" maxlength="200" autocomplete="off" spellcheck="false" placeholder="v1.0">
             </label>
           </div>
+          {% if menu_branches %}
+          <p class="form-help">The two fields above are only for a custom method that is not on the menu. Do not fill both a menu branch and custom fields.</p>
+          {% endif %}
         </fieldset>
         {% endif %}
 

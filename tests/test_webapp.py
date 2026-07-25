@@ -1224,6 +1224,108 @@ def test_phase_three_and_four_show_the_approved_method_and_optional_override_fie
     assert "No current approved Phase 02 method identity is available" in stale_body
 
 
+def _theory_phase_config() -> dict:
+    return {
+        "slug": "03-idea-evaluation",
+        "name": "Theoretical Analysis",
+        "description": "Develop the theory.",
+        "pattern": "sequential",
+        "rounds": {"min": 1, "default": 1, "max": 1},
+        "gated_by": [],
+        "folder": "draft/theory/",
+        "members": ["theorist"],
+        "stages": [
+            {"role": "theorist", "name": "Establish", "description": "State it."}
+        ],
+    }
+
+
+def _write_menu_file(project_dir: Path, stable_id: str, status: str) -> None:
+    menu_dir = project_dir / "ideas" / "methods"
+    menu_dir.mkdir(parents=True, exist_ok=True)
+    (menu_dir / f"{stable_id}.md").write_text(
+        "---\n"
+        f"stable_id: {stable_id}\n"
+        "version: v1\n"
+        f"label: {stable_id.replace('-', ' ').title()}\n"
+        f"status: {status}\n"
+        "---\n\n"
+        f"# {stable_id}\n",
+        encoding="utf-8",
+    )
+
+
+def test_method_menu_branch_selection_drives_run_specific_identity(
+    web_env: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    theory_slug = "03-idea-evaluation"
+    web_env["config"]["phases"].append(_theory_phase_config())
+    _write_menu_file(web_env["project_dir"], "spectral-graph-coupling", "recommended")
+    _write_menu_file(web_env["project_dir"], "old-idea", "retired")
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+    monkeypatch.setattr(webapp, "theory_audit_source_options", lambda _project: [])
+
+    client = web_env["client"]
+    response = client.get(f"/project/{PROJECT_ID}?tab={theory_slug}")
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert 'name="method_branch"' in body
+    assert "Spectral Graph Coupling" in body
+    assert "old-idea" not in body  # retired branches are not offered
+
+    launched = Mock(return_value={"run_number": 1, "rounds_requested": 1})
+    monkeypatch.setattr(webapp, "launch_run", launched)
+    token = _csrf(client)
+    identity = _project_identity(web_env)
+
+    accepted = client.post(
+        f"/project/{PROJECT_ID}/phase/{theory_slug}/start",
+        data={
+            "csrf_token": token,
+            "project_identity": identity,
+            **_launch_tokens(web_env, theory_slug),
+            "method_branch": "spectral-graph-coupling",
+            "feedback": "Evaluate this branch.",
+        },
+    )
+    assert accepted.status_code == 302
+    launched.assert_called_once()
+    assert (
+        launched.call_args.kwargs["run_specific_method_id"]
+        == "spectral-graph-coupling"
+    )
+    assert launched.call_args.kwargs["run_specific_method_version"] == "v1"
+
+    for payload, fragment in [
+        ({"method_branch": "old-idea"}, "retired"),
+        ({"method_branch": "ghost-branch"}, "no method menu file"),
+        (
+            {
+                "method_branch": "spectral-graph-coupling",
+                "run_specific_method_id": "custom-x",
+                "run_specific_method_version": "v9",
+            },
+            "not both",
+        ),
+    ]:
+        launched.reset_mock()
+        rejected = client.post(
+            f"/project/{PROJECT_ID}/phase/{theory_slug}/start",
+            data={
+                "csrf_token": token,
+                "project_identity": identity,
+                **_launch_tokens(web_env, theory_slug),
+                **payload,
+            },
+            follow_redirects=True,
+        )
+        assert rejected.status_code == 200
+        assert fragment in rejected.get_data(as_text=True)
+        launched.assert_not_called()
+
+
 def test_quick_rerun_recovers_special_plan_only_from_prior_run(
     web_env: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
