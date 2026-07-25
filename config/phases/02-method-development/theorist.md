@@ -55,7 +55,12 @@ For each idea:
 2. **Target and obstacle**.
 3. **Unique position** — what it enables mathematically that nothing else can.
 4. **Minimal formalization** — enough notation to make the idea precise, key
-   assumptions stated, central argument outlined.
+   assumptions stated, central argument outlined. **You must write the core
+   mathematical definition using LaTeX notation** (e.g., $D_N = L_G \otimes K$,
+   generator-level stationarity conditions, rate bounds). The mathematical
+   innovation must be stated as a precise formula or theorem statement, not
+   just described in words. This is what downstream phases and the user will
+   read to understand what is actually being proposed.
 5. **Mathematical interest** — why this matters theoretically.
 
 Then:

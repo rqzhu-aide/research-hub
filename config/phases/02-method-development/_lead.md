@@ -101,7 +101,10 @@ State this recommendation clearly. The user alone decides the next step.
 **Publish the method menu.** Before submitting the summary, write one markdown
 file per retained idea to `ideas/methods/<stable_id>.md` (create the folder if
 needed). These files are the menu the Phase 03 interface lists for branch
-selection — one file per method the user can choose to evaluate. Format:
+selection — one file per method the user can choose to evaluate. **Each file
+must contain a rigorous mathematical definition of the proposed method, not
+just a prose summary.** The user reads these to understand what is being
+proposed and to compare methods. Format:
 
     ---
     stable_id: spectral-graph-coupling
@@ -112,13 +115,27 @@ selection — one file per method the user can choose to evaluate. Format:
 
     # <label>
 
-    <2–4 sentences: the mechanism and what makes it new.>
+    ## Mathematical definition
+
+    State the precise mathematical formulation using LaTeX notation. This must
+    include:
+
+    - The **core definition**: the proposed mechanism written as an explicit
+      equation or system of equations (e.g., $D_N(X) = L_G \otimes K$ with
+      the generator $L_N = \sum_i [\nabla_i \cdot D_N \nabla_i + \nabla_i U]$).
+    - The **key mathematical property** that makes it innovative: the
+      invariant measure condition, the rate bound conjecture, the stationarity
+      condition, or whatever mathematical claim is the heart of the innovation.
+      Write it as a display equation with stated assumptions.
+    - The **relationship to prior work**: how existing methods (e.g., ALDI,
+      independent Langevin) appear as special cases or limits.
 
     ## Unique position
-    <what it enables that no existing method can.>
+    <what it enables that no existing method can — stated in mathematical terms.>
 
     ## Phase 03 focus
-    <the specific questions a Phase 03 evaluation of this method should answer.>
+    <the specific mathematical questions a Phase 03 evaluation of this method
+    should answer — stated as conjectures or open problems.>
 
 Rules:
 
@@ -129,6 +146,10 @@ Rules:
 - On reruns: add files for new ideas, update `version`/`status` in place for
   retained ideas, and never delete a file — mark it `status: retired` with the
   reason in the body instead.
+- **Mathematical rigor is required.** A method file that only describes the
+  idea in prose without precise mathematical notation is incomplete. The
+  mathematical definition section must be substantial enough for a theorist
+  to begin formal proofs from it.
 
 Include:
 - a **Scientific record changes** section with proposed additions;
