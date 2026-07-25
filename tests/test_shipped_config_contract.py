@@ -64,6 +64,18 @@ def _manifest_for_phase(phase: dict, tmp_path: Path) -> dict:
         "hermes_root": "/tmp/hermes",
         "method_selection": None,
     }
+    if launch_run.phase_requires_method_binding(phase) and not phase.get(
+        "audit_only"
+    ):
+        manifest["method_selection"] = {
+            "kind": "method",
+            "stable_id": "contract-method",
+            "version": "v1",
+            "source": "run_specific_user_selection",
+            "source_phase": None,
+            "source_run_id": None,
+            "decision_record": None,
+        }
     if phase.get("protocol_checkpoint"):
         output_root = tmp_path / "project" / "run" / "01"
         manifest["output_root"] = str(output_root)
@@ -133,7 +145,12 @@ def test_repurposed_phases_do_not_inherit_legacy_slug_behavior(
         if phase.get("pattern") not in {"parallel", "debate"}:
             continue
         assert not launch_run.phase_supports_theory_plans(phase), phase["slug"]
-        assert not launch_run.phase_requires_method_binding(phase), phase["slug"]
+        # Slug inference must not leak into repurposed phases; a parallel/debate
+        # phase may bind only via the explicit `method_binding: true` opt-in.
+        if phase.get("method_binding") is not True:
+            assert not launch_run.phase_requires_method_binding(phase), phase[
+                "slug"
+            ]
         assert not phase.get("protocol_checkpoint"), phase["slug"]
 
 

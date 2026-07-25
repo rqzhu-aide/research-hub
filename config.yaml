@@ -90,6 +90,7 @@ phases:
   description: "Derive and prove the main theorems and rate bounds for the selected
     method, with computational cost assessment and cross-audit"
   pattern: debate
+  method_binding: true
   gated_by: ["02-method-development"]
   folder: "evaluations/"
   members:
