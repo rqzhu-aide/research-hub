@@ -213,6 +213,117 @@ def _truncate_conclusion(text: str, max_chars: int = 140) -> str:
     return cut + "…"
 
 
+_SUMMARY_HIGHLIGHT_MAX = 200
+
+
+def _summary_highlight(
+    project_dir: Path,
+    run: Mapping[str, Any],
+    phase_slug: str,
+) -> str:
+    """Extract a short text highlight from a run's HTML summary.
+
+    Strips CSS/style blocks, then takes the first <p> after the first <h1>.
+    Falls back to the first 200 chars of body text if no <p> is found.
+    Returns an empty string if no summary exists or can't be read.
+    """
+    import re
+
+    path = _discover_summary_path(project_dir, run, phase_slug)
+    if not path:
+        return ""
+    full_path = project_dir.resolve() / path
+    try:
+        html = full_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    if not html.strip():
+        return ""
+    # Remove style/script blocks
+    html = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    # Try first <p> after first <h1>, skipping meta paragraphs
+    h1_match = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.DOTALL | re.IGNORECASE)
+    search_from = h1_match.end() if h1_match else 0
+    # Find all <p> tags, skip those with class="meta" or that are just metadata
+    text = ""
+    for p_match in re.finditer(r"<p([^>]*)>(.*?)</p>", html[search_from:], re.DOTALL | re.IGNORECASE):
+        attrs = p_match.group(1)
+        raw = p_match.group(2)
+        # Skip meta/info paragraphs
+        if "meta" in attrs.lower() or "info" in attrs.lower():
+            continue
+        text = re.sub(r"<[^>]+>", "", raw).strip()
+        if text and len(text) > 20:
+            return _truncate_conclusion(text, _SUMMARY_HIGHLIGHT_MAX)
+    # Fallback: first 200 chars of body text after h1
+    if not text:
+        body = re.sub(r"<[^>]+>", " ", html[search_from:])
+        text = re.sub(r"\s+", " ", body).strip()
+    if not text:
+        return ""
+    return _truncate_conclusion(text, _SUMMARY_HIGHLIGHT_MAX)
+
+
+def _cross_phase_context(
+    project_dir: Path,
+    phase_slug: str,
+    phases_cfg: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Build context chips showing what other phases can feed into this run.
+
+    Each entry: {slug, name, status, run_number, has_result}
+    Phases with no result are shown grayed out.
+    For phases that create branches (method development), includes branch info.
+    """
+    state = project_state.load(project_dir)
+    phases_state = state.get("phases", {})
+    result: list[dict[str, Any]] = []
+    for phase in phases_cfg:
+        slug = str(phase.get("slug", ""))
+        if slug == phase_slug:
+            continue
+        phase_state = phases_state.get(slug, {})
+        approved_id = str(phase_state.get("approved_run") or "").strip()
+        latest_id = str(phase_state.get("latest_run") or "").strip()
+        has_result = bool(approved_id or latest_id)
+        runs = phase_state.get("runs", [])
+        run_number = ""
+        if approved_id:
+            for r in runs:
+                if str(r.get("run_id", "")) == approved_id:
+                    run_number = str(r.get("run_number", ""))
+                    break
+        elif latest_id:
+            for r in runs:
+                if str(r.get("run_id", "")) == latest_id:
+                    run_number = str(r.get("run_number", ""))
+                    break
+        entry: dict[str, Any] = {
+            "slug": slug,
+            "name": str(phase.get("name", slug)),
+            "has_result": has_result,
+            "run_number": run_number,
+        }
+        # For method development phases, include branch/method info
+        if slug == project_state.METHOD_DEVELOPMENT_PHASE:
+            # Include the full method menu so downstream phases can pick which to include
+            entry["method_menu"] = method_menu.load_method_menu(project_dir)
+            if approved_id:
+                for r in runs:
+                    if str(r.get("run_id", "")) == approved_id:
+                        decision = r.get("decision_record")
+                        if isinstance(decision, Mapping):
+                            data = decision.get("data", {})
+                            selected = data.get("selected_scientific_object") if isinstance(data, Mapping) else None
+                            if isinstance(selected, Mapping) and selected.get("stable_id"):
+                                entry["method_id"] = str(selected.get("stable_id", ""))
+                                entry["method_version"] = str(selected.get("version", ""))
+                        break
+        result.append(entry)
+    return result
+
+
 def _summary_available(
     project_dir: Path,
     run: Mapping[str, Any],
@@ -693,6 +804,7 @@ def _run_view(
         "needs_review": status == "awaiting_review",
         "stages_requested": requested,
         "stages_completed": completed,
+        "summary_highlight": _summary_highlight(project_dir, run, phase_slug),
     }
 
 
@@ -1132,6 +1244,9 @@ def prepare_phase_data(
             displayed_latest.get("summary_path") if displayed_latest else None
         ),
         "downstream_context": downstream_context,
+        "cross_phase_context": _cross_phase_context(
+            project_dir, phase_slug, phases_cfg
+        ),
     }
 
 
