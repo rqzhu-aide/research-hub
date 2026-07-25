@@ -112,7 +112,49 @@
       {% endif %}
     </div>
 
-    {# ── Summary highlight (short text) ── #}
+    {# ── Summary / method browser ── #}
+    {% if pc.slug == '02-method-development' and pd.method_details | default([]) %}
+    {# Method Development: show method browser instead of run summary #}
+    <div class="method-browser">
+      <div class="method-browser-controls">
+        <label for="method-view-{{ pc.slug }}" class="run-switcher-label">View method:</label>
+        <select id="method-view-{{ pc.slug }}" class="run-selector-dropdown" data-method-view="{{ pc.slug }}"
+                onchange="
+                  var val = this.value;
+                  this.closest('.method-browser').querySelectorAll('[data-method-panel]').forEach(function(p) {
+                    p.hidden = p.getAttribute('data-method-panel') !== val;
+                  });
+                ">
+          <option value="overall">Overall comparison</option>
+          {% for m in pd.method_details %}
+          <option value="{{ m.stable_id }}">{{ m.label }} ({{ m.status }}){% if m.created_display %} — {{ m.created_display }}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      {# Overall comparison view #}
+      <div class="method-view-panel" data-method-panel="overall">
+        {% if pd.method_comparison %}
+        <div class="method-comparison-text">{{ pd.method_comparison }}</div>
+        {% else %}
+        <p class="muted">No comparison available yet. Run the phase to generate an evaluation.</p>
+        {% endif %}
+      </div>
+
+      {# Individual method views #}
+      {% for m in pd.method_details %}
+      <div class="method-view-panel" data-method-panel="{{ m.stable_id }}" hidden>
+        <div class="method-detail-head">
+          <span class="method-detail-label">{{ m.label }}</span>
+          <span class="method-status-tag method-status-{{ m.status }}">{{ m.status }}</span>
+          {% if m.version %}<span class="method-version">v{{ m.version }}</span>{% endif %}
+        </div>
+        <div class="method-detail-body">{{ m.body }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    {# Other phases: regular summary highlight #}
     <div class="run-summary-highlight" data-run-highlight="{{ pc.slug }}">
       {% if latest.summary_integrity_error %}
         <strong class="inline-error-text">Evidence integrity check failed.</strong> Recorded evidence is missing or changed. Restore sealed files or rerun.
@@ -122,9 +164,9 @@
         <span class="muted">No summary available for this run.</span>
       {% endif %}
     </div>
+    {% endif %}
 
     {# ── Action row ── #}
-    <div class="run-actions">
       {% if latest.summary_available %}
       <a href="{{ url_for('phase_summary', project_id=project.id, phase_slug=pc.slug, run_id=latest_id) }}"
          class="btn btn-sm" target="_blank" rel="noopener">View full summary →</a>

@@ -338,6 +338,97 @@ def _cross_phase_context(
     return result
 
 
+def _method_details(project_dir: Path) -> list[dict[str, Any]]:
+    """Load all method files with full markdown content and metadata."""
+    import re
+
+    method_dir = project_dir.resolve() / "ideas" / "methods"
+    if not method_dir.is_dir():
+        return []
+    entries: list[dict[str, Any]] = []
+    for path in sorted(method_dir.glob("*.md")):
+        try:
+            raw = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        fm_match = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)$", raw, re.DOTALL)
+        if not fm_match:
+            continue
+        fm_text = fm_match.group(1)
+        body = fm_match.group(2).strip()
+
+        def _yaml_val(key: str) -> str:
+            m = re.search(rf'^{key}:\s*"?([^"\n]+?)"?\s*$', fm_text, re.MULTILINE)
+            return m.group(1).strip() if m else ""
+
+        created_ts = ""
+        try:
+            created_ts = str(path.stat().st_mtime)
+        except OSError:
+            pass
+
+        entries.append({
+            "stable_id": _yaml_val("stable_id") or path.stem,
+            "version": _yaml_val("version"),
+            "label": _yaml_val("label") or path.stem,
+            "status": _yaml_val("status") or "viable",
+            "body": body,
+            "created_ts": created_ts,
+            "created_display": _format_method_ts(created_ts),
+        })
+    rank = {"recommended": 0, "viable": 1, "frontier": 2, "retired": 3}
+    entries.sort(key=lambda e: (rank.get(e["status"], 9), e["stable_id"]))
+    return entries
+
+
+def _format_method_ts(ts: str) -> str:
+    if not ts:
+        return ""
+    try:
+        from datetime import datetime, timezone
+        dt = datetime.fromtimestamp(float(ts), tz=timezone.utc)
+        return dt.strftime("%Y-%m-%d %H:%M")
+    except (ValueError, OSError):
+        return ""
+
+
+def _method_comparison(project_dir: Path) -> str:
+    """Extract method comparison/ranking from the latest method run summary."""
+    import re
+
+    summary_dir = project_dir.resolve() / "phase-summaries" / "02-method-development"
+    if not summary_dir.is_dir():
+        return ""
+    summaries = sorted(
+        summary_dir.glob("*.html"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not summaries:
+        return ""
+    try:
+        html = summaries[0].read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    html = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    idx = html.find("Full Idea Set")
+    if idx < 0:
+        idx = html.find("Comparison")
+    if idx < 0:
+        return ""
+    next_h2 = html.find("<h2", idx + 10)
+    end = next_h2 if next_h2 > 0 else len(html)
+    section = html[idx:end]
+    text = re.sub(r"<br\s*/?>", "\n", section)
+    text = re.sub(r"</?(?:tr|div|p)>", "\n", text)
+    text = re.sub(r"</?(?:td|th)>", " | ", text)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    return text.strip()[:3000]
+
+
 def _summary_available(
     project_dir: Path,
     run: Mapping[str, Any],
@@ -1261,6 +1352,16 @@ def prepare_phase_data(
         "downstream_context": downstream_context,
         "cross_phase_context": _cross_phase_context(
             project_dir, phase_slug, phases_cfg
+        ),
+        "method_details": (
+            _method_details(project_dir)
+            if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE
+            else []
+        ),
+        "method_comparison": (
+            _method_comparison(project_dir)
+            if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE
+            else ""
         ),
     }
 

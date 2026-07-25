@@ -431,6 +431,28 @@ summary::-webkit-details-marker { display: none; }
 .run-summary-highlight .muted { color: var(--muted); font-style: italic; }
 .run-actions { display: flex; gap: 8px; align-items: center; }
 
+/* ── Method browser (Phase 02) ── */
+.method-browser { display: grid; gap: 10px; }
+.method-browser-controls { display: flex; align-items: center; gap: 8px; }
+.method-view-panel {
+  padding: 12px 16px; border-left: 3px solid var(--accent);
+  background: var(--surface); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  max-height: 350px; overflow-y: auto;
+}
+.method-comparison-text {
+  font-size: .82rem; color: var(--text-soft); line-height: 1.6;
+  white-space: pre-wrap; font-family: "IBM Plex Mono", monospace; font-size: .78rem;
+}
+.method-detail-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.method-detail-label { font-weight: 700; font-size: .95rem; color: var(--text); }
+.method-status-tag { padding: 2px 8px; border-radius: var(--radius-sm); font-size: .68rem; font-weight: 600; text-transform: capitalize; }
+.method-status-recommended { background: var(--approved-soft); color: var(--approved); }
+.method-status-viable { background: var(--accent-soft); color: var(--accent-bright); }
+.method-status-frontier { background: var(--review-soft, rgba(244,196,109,.15)); color: var(--review, #f4c46d); }
+.method-status-retired { background: var(--danger-soft); color: var(--danger); }
+.method-version { color: var(--muted); font-size: .72rem; font-family: "IBM Plex Mono", monospace; }
+.method-detail-body { font-size: .84rem; color: var(--text-soft); line-height: 1.6; white-space: pre-wrap; }
+
 /* ═══ LOWER PANEL ═══ */
 .launch-form-lower {
   background: var(--surface);
