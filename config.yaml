@@ -86,9 +86,9 @@ phases:
   members: [theorist, research_lead, data_scientist]
   rounds: {min: 2, default: 2, max: 3}
 - slug: "03-idea-evaluation"
-  name: "Idea Evaluation"
-  description: "Evaluate all Phase 2 ideas across correctness, methodological novelty,
-    theoretical rigor, and computational cost, then rank them"
+  name: "Theoretical Development"
+  description: "Derive and prove the main theorems and rate bounds for the selected
+    method, with computational cost assessment and cross-audit"
   pattern: debate
   gated_by: ["02-method-development"]
   folder: "evaluations/"
@@ -101,9 +101,9 @@ phases:
     default: 2
     max: 3
 - slug: "04-draft-assembly"
-  name: "Draft Assembly"
-  description: "Parallel drafting: intro+method (lead), theory+proofs (theorist),
-    implementation+experiments (data analyst), then lead combines into a formal draft"
+  name: "Implementation & Experiments"
+  description: "Implement the method in code, run pre-specified experiments with
+    diagnostics, and validate theoretical predictions against measured results"
   pattern: parallel
   gated_by:
   - 03-idea-evaluation
@@ -117,9 +117,9 @@ phases:
     default: 2
     max: 2
 - slug: "05-review-revision"
-  name: "Review & Revision"
-  description: "Paper reviewer audits the Phase 4 draft using stat-paper-reviewer;
-    lead revises into final manuscript"
+  name: "Paper Assembly & Review"
+  description: "Assemble the paper from theory and experiments, then independent
+    paper review and revision into final manuscript"
   pattern: sequential
   gated_by: ["04-draft-assembly"]
   folder: "draft/revised/"
@@ -127,16 +127,20 @@ phases:
   - paper_reviewer
   - research_lead
   rounds:
-    min: 2
-    default: 2
-    max: 2
+    min: 3
+    default: 3
+    max: 3
   stages:
+  - name: Assemble
+    role: research_lead
+    description: Combine theory, experiments, and literature into a coherent
+      manuscript with unified notation and consistent claims.
   - name: Review
     role: paper_reviewer
-    description: Audit the complete draft — soundness, clarity, significance, 
+    description: Audit the assembled paper — soundness, clarity, significance,
       originality. Produce ranked revision recommendations.
   - name: Revise
     role: research_lead
-    description: Address each review point, revise the draft, produce the final 
+    description: Address each review point, revise the draft, produce the final
       manuscript with a revision log.
 

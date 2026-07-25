@@ -1,87 +1,101 @@
-# Phase: Theoretical Analysis
+# Phase: Theoretical Development
 
 ## Goal
-Evaluate all ideas proposed in Phase 2 across four dimensions and produce
-rankings that help the user decide which idea(s) to pursue. This is an
-**assessment phase**, not a proof-development phase — the team is judging
-ideas, not proving theorems about them.
+Develop the **actual theoretical results** for the method selected in Phase 2 —
+not just evaluate or rank ideas, but **carry out the proofs**. The theorist
+derives the main theorems, lemmas, and rate bounds. The data analyst audits
+computability: what is feasible to implement and what the computational cost
+looks like. The lead synthesizes the mathematical results into a coherent
+theoretical framework.
 
-The four evaluation dimensions:
+This phase produces **concrete mathematical deliverables**: proved theorems with
+full proofs, stated assumptions, and clear scope. A proof sketch or a rating of
+"the path is clear" is **not** a deliverable.
 
-1. **Correctness** — Is the core logic sound? Are there internal contradictions,
-   invalid assumptions, or obvious errors? Does the central argument hold up
-   under scrutiny?
-2. **Methodological novelty** — How genuinely new is the mechanism, framework,
-   or insight? Is it distinct from existing work, or is it a recombination?
-   Does it occupy a position no existing method occupies?
-3. **Theoretical rigor** — Can the idea be formalized precisely? How deep is the
-   theoretical foundation? Is there a clear path to formal results, or is it
-   speculative? What assumptions would need to hold?
-4. **Computational cost** — Is the idea tractable? What is the computational
-   profile (time, memory, scaling)? Are there numerical stability concerns? Is
-   it practically implementable?
+## Role division — who does the heavy lifting
 
-## Prior information
-Requires a current Phase 02 summary approved by the user. The Phase 02 summary
-contains the full idea set to be evaluated. Phase 01 (literature review) is also
-provided automatically — use it to judge methodological novelty against existing
-work. If either summary is unavailable, the web UI identifies the missing prior
-evidence, but the user may choose to proceed. The lead must then state what prior
-evidence is unavailable.
+| Role | Primary responsibility | Audit responsibility |
+|------|----------------------|---------------------|
+| **Theorist** | **Derive and prove** all main results: rate bounds, invariance, convergence | Audit the data analyst's computability claims |
+| **Data Analyst** | **Assess** computational cost, implementation feasibility, numerical stability | Audit the theorist's proofs for gaps and unstated assumptions |
+| **Research Lead** | **Synthesize** the theoretical framework, position the contribution, write the narrative | Ensure completeness — every claim has support |
 
-**On rerun:** the prior Phase 03 evaluation is provided as **comparison
-evidence** — "here is how the team rated these ideas before." The new run should
-re-evaluate independently, informed by but not constrained to the prior ratings.
-If the Phase 02 idea set changed (new ideas added), the new evaluation must cover
-all current ideas, not just the ones evaluated before.
+Everyone evaluates from their own perspective, but the **theorist writes the proofs**
+and the **data analyst writes the cost analysis**. The debate rounds are for
+cross-checking, not for dividing proof work.
 
 ## Study structure
-**Debate pattern.** All three roles evaluate all ideas independently in round 1.
-In later rounds, they read one another's evaluations, debate disagreements from their own perspectives, and revise their own ratings based on the arguments heard. The lead then synthesizes the (possibly still disagreeing) evaluations into rankings.
+**Debate pattern.** All three roles work independently in round 1.
 
-Each role evaluates every idea on all four dimensions, but brings their deepest
-expertise to specific ones:
+- **Round 1**: Theorist derives the main results independently. Data analyst
+  assesses computability independently. Lead identifies the contribution
+  structure independently.
+- **Round 2+**: Cross-check round. The data analyst audits the theorist's proofs
+  for missing assumptions or gaps. The theorist audits the analyst's cost claims
+  for accuracy. The lead reconciles and identifies what remains unresolved.
 
-- **Theorist** leads on *correctness* and *theoretical rigor*.
-- **Data Analyst** leads on *computational cost*.
-- **Research Lead** leads on *methodological novelty* and overall scientific value.
+## Required mathematical deliverables
 
-## Evaluation scale
-Each idea receives a rating on each dimension. Use a clear scale:
+The theorist **must** produce, at minimum:
 
-- **Strong** — excellent on this dimension; a genuine strength.
-- **Adequate** — acceptable; no major concerns.
-- **Weak** — significant concerns; would need work.
-- **Insufficient information** — cannot assess from current evidence.
+1. **Main theorem(s)** — the central result(s) of the method. Full statement
+   with all assumptions. Full proof — every step justified, no "the proof is
+   standard."
+2. **Supporting lemmas** — any intermediate results needed for the main theorem.
+3. **Rate bound** (if applicable) — an explicit, quantitative bound on the key
+   quantity (spectral gap, contraction rate, mixing time, asymptotic variance).
+   The bound must be stated as a theorem with a proof, not as a conjecture.
+4. **Invariance proof** (if applicable) — verification that the method preserves
+   the target distribution, with all divergence corrections computed.
+5. **Discretization analysis** (if applicable) — what happens when the
+   continuous-time dynamics are discretized. Step-size conditions, error bounds.
+6. **Scope and limitations** — explicit statement of where the results hold and
+   where they break. Counterexamples where possible.
 
-State the reasoning behind each rating. A rating without justification is not
-useful.
+If a result cannot be proved, it must be stated as a **conjecture** with the
+specific gap identified. "Near-certain" or "the path is clear" are not acceptable
+— either prove it or conjecture it with the gap stated.
+
+## Required computational assessment
+
+The data analyst **must** produce, at minimum:
+
+1. **Computational cost analysis** — per-step cost (time and memory) as a
+   function of N (particles) and d (dimension). Compare to baselines.
+2. **Implementation feasibility** — what is needed to implement this? What
+   libraries, what data structures, what preprocessing?
+3. **Numerical stability** — what can go wrong numerically? Conditioning,
+   overflow, step-size restrictions.
+4. **Audit of theorist's proofs** — read the proofs and identify any missing
+   assumptions, unjustified steps, or gaps. This is a mathematical audit, not a
+   re-derivation.
+
+## Prior information
+Requires a current Phase 02 summary approved by the user (contains the method
+definition and the idea set). Phase 01 (literature review) is also provided for
+positioning. The user may specify which idea to focus on in the run-start form;
+if not, the lead selects based on Phase 2 outcomes.
 
 ## Files and outputs
-Write all outputs under `draft/theory/run/NN/`:
+Write all outputs under `evaluations/run/NN/`:
 
-- `round-01/<role>.md`, `round-02/<role>.md`, ...: per-round evaluations
-- Write the HTML summary to the exact path provided for this run and do not
-  overwrite earlier summaries.
+- `round-01/<role>.md`, `round-02/<role>.md`, ...: per-round reports
+- Write the HTML summary to the exact path provided for this run.
 
 Each role report begins with Complete, Partial, or Failed as defined in the team
-norms. Nonempty Partial and Failed reports preserve usable evaluations and do not
-prevent the lead from completing the configured run.
+norms.
 
 ## What the user decides
-The user starts every run. After the evaluation, the lead presents rankings and a
-recommendation. The user then decides:
+The user starts every run. After the theoretical development, the lead presents
+the proved results, the assessment, and a recommendation. The user decides:
 
-- which idea(s) to pursue in Phase 04 (numerical validation);
-- to return to Phase 02 for more ideas;
-- to request a revision of the evaluation;
-- or to rerun the evaluation.
-
-Completing this phase does not select a method or start numerical validation.
-The user alone decides which idea(s) to carry forward.
+- to proceed to Phase 04 (Implementation & Experiments) with the proved method;
+- to return to Phase 02 for additional method development;
+- to request a revision (e.g., prove a specific result more rigorously);
+- or to rerun with a different focus.
 
 ## Files in this folder
-- `_lead.md`: instructions for the research lead. Read this file first if you are
-  the lead.
-- `theorist.md`, `research_lead.md`, `data_scientist.md`: role-specific
-  instructions.
+- `_lead.md`: instructions for the research lead.
+- `theorist.md`: proof-development instructions.
+- `data_scientist.md`: computational assessment instructions.
+- `research_lead.md`: contribution positioning instructions.

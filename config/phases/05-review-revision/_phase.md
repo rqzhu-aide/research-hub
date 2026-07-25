@@ -1,68 +1,77 @@
-# Phase: Review & Revision
+# Phase: Paper Assembly & Review
 
 ## Goal
-Review the draft produced in Phase 4 and revise it into a final, publication-ready
-manuscript. The **paper reviewer** audits the draft using the `stat-paper-reviewer`
-skill and provides structured review comments and revision recommendations. The
-**research lead** then revises the draft accordingly to produce the final version.
+Assemble the research paper from the Phase 3 theoretical results and Phase 4
+experimental results, then have it reviewed by an independent paper reviewer.
+The research lead assembles the manuscript. The paper reviewer audits it.
 
-This is a **sequential** two-stage process: review first, then revise.
+## Role division
 
-## Skill requirement
-- **Paper reviewer** uses the `stat-paper-reviewer` skill (provisioned to the
-  profile) to produce a structured, rigorous review.
-- **Research lead** uses the `stat-paper-writing` skill (provisioned to the
-  profile) when revising, to maintain paper conventions.
+| Role | Primary responsibility | Audit responsibility |
+|------|----------------------|---------------------|
+| **Research Lead** | **Assemble** the paper: intro, method, theory (from Phase 3), experiments (from Phase 4), discussion | Respond to reviewer comments and revise |
+| **Paper Reviewer** | **Review** the assembled paper independently | Identify weaknesses, gaps, missing elements |
 
-## Method-specific folders
-Phase 5 operates on the same method-specific folder created in Phase 4. The
-reviewer reads the draft from the method's folder and writes review comments
-there. The lead writes the revised final draft to the same folder. This keeps
-each method's paper — draft, review, and final — self-contained.
-
-## Prior information
-Requires a current Phase 04 summary approved by the user (the combined draft).
-Phases 01–03 are also provided automatically. The reviewer reads the draft, not
-just the summary — the full manuscript is the object of review. The reviewer
-also reads the Phase 01–03 context for positioning and theory grounding.
-
-**On rerun for the same draft:** the prior Phase 05 review+revision is provided
-as **comparison evidence**. The new review should be independent — re-read the
-draft fresh, not just repeat the prior review. The revision should address the
-new review's points.
-
-**On rerun after a Phase 4 rerun (different/new draft):** if Phase 4 produced a
-new or revised draft for the same method, Phase 5 automatically becomes stale.
-The new Phase 5 run reviews the current draft, not the old one. The prior Phase
-5 review is comparison evidence only.
-
-Phase 5 operates on the **same method-specific folder** as Phase 4 — the draft,
-review, and final manuscript all live together.
+This is a **sequential** two-stage process: assemble first, then review and revise.
 
 ## Study structure
 **Sequential, 2 stages:**
 
-1. **Review** (paper_reviewer): read the complete draft, produce a structured
-   review covering soundness, clarity, significance, and originality. Identify
-   weaknesses, missing elements, and specific revision recommendations ranked by
-   priority.
-2. **Revise** (research_lead): address each review point, revise the draft, and
-   produce the final manuscript. State what was changed, what was not changed
-   (and why), and what remains open.
+1. **Assemble** (research_lead): combine the Phase 3 proofs, Phase 4 experiments,
+   and Phase 1 literature context into a coherent manuscript. Reconcile notation,
+   framing, and claims across all sections.
+2. **Review** (paper_reviewer): read the assembled paper independently. Produce a
+   structured review: soundness, clarity, significance, originality, missing
+   elements, specific revision recommendations ranked by priority.
+3. **Revise** (research_lead): address each review point. State what was changed,
+   what was not changed (and why), and what remains open.
+
+## What the lead assembles
+
+The lead combines:
+
+- **Introduction** (written fresh): motivate the problem, state the contribution,
+  position against prior work.
+- **Method** (from Phase 2 definition + Phase 3 development): precise definition
+  of the method, its interaction structure, and its mechanism.
+- **Theory** (from Phase 3): the proved theorems with full proofs. Use the
+  theorist's actual output, not a re-derivation.
+- **Experiments** (from Phase 4): the data analyst's measured results with
+  tables and figures. Use the analyst's actual output.
+- **Discussion**: what the results mean, limitations, open questions from Phase 3
+  and Phase 4, connections to broader literature.
+
+### Assembly requirements
+
+- **Notation reconciliation**: ensure the same symbols mean the same thing in
+  the method, theory, and experiments sections.
+- **Claim consistency**: the intro's claims must match what the theory proves
+  and what the experiments show. If the intro overclaims, narrow it.
+- **Honest reporting**: do not soften the theorist's proofs or the analyst's
+  negative results. Include limitations and counterexamples.
+- **References**: assemble from all sections into one bibliography.
+
+## Skill requirement
+- **Paper reviewer** uses the `stat-paper-reviewer` skill.
+- **Research lead** uses the `stat-paper-writing` skill when assembling and revising.
+
+## Prior information
+Requires a current Phase 04 summary approved by the user (experiment results).
+Phases 01–03 are also provided.
 
 ## Files and outputs
-Write all outputs in the **same method-specific folder** as the Phase 4 draft:
+Write all outputs under `draft/revised/run/NN/`:
 
-- `round-01/paper_reviewer.md`: structured review with revision recommendations
-- `round-02/research_lead.md`: final revised manuscript + revision log
+- `round-01/research_lead.md`: assembled manuscript
+- `round-02/paper_reviewer.md`: structured review
+- `round-03/research_lead.md`: revised manuscript + revision log
 - Write the HTML summary to the exact path provided for this run.
 
 ## Files in this folder
-- `_lead.md`: instructions for the research lead (revision stage).
-- `paper_reviewer.md`: instructions for the paper reviewer (review stage).
-- `archive-v1-debate/`: the prior debate-pattern design, archived for reference.
+- `_lead.md`: instructions for the research lead.
+- `paper_reviewer.md`: instructions for the paper reviewer.
 
 ## What the user decides
-The user starts every run. After the final draft is produced, the user decides
-whether to approve it, request further revision, or rerun. The final draft is
-the deliverable — it can be packaged and sent as a complete paper.
+The user starts every run. After the revised manuscript is produced, the user
+decides whether to approve it, request further revision, or rerun. The final
+manuscript is the deliverable — it can be packaged and sent as a complete paper.

@@ -1,117 +1,64 @@
-# Lead Instructions: Theoretical Analysis
+# Lead Instructions: Theoretical Development
 
-Coordinate a multi-dimensional evaluation of all Phase 02 ideas. Your job is to
-ensure every idea is assessed on all four dimensions, surface disagreements, and
-synthesize the evaluations into clear rankings the user can act on.
-
-## Responsibilities
-1. Import the accepted scientific record from a trusted current approved Phase 02
-   run (which contains the full idea set). Treat a stale Phase 02 result only as
-   comparison evidence. If unavailable, initialize a proposed scientific record
-   and state this explicitly.
-2. Ensure every idea from Phase 02 is evaluated — no idea is skipped.
-3. Assign each role their evaluation focus while requiring all roles to assess
-   all ideas on all four dimensions.
-4. In the debate round, ensure each role reads the others' evaluations and revises their own ratings from their own perspective — defending positions where they disagree, conceding where arguments persuade them.
-5. Synthesize the final rankings and present them to the user with a
-   recommendation.
-
-## Roles
-| Role | Evaluation lead | Instructions file |
-|------|----------------|-------------------|
-| theorist | correctness, theoretical rigor | `theorist.md` |
-| data_scientist | computational cost | `data_scientist.md` |
-| research_lead (you) | methodological novelty, overall value | `research_lead.md` |
-
-Every role evaluates every idea on every dimension. The "lead" column indicates
-where each role brings the deepest expertise — not a limitation of scope.
+Coordinate the theoretical development phase. Your job is to ensure the theorist
+produces actual proved results (not ratings or sketches), the data analyst
+provides a rigorous computability assessment, and the mathematical output is
+synthesized into a coherent framework.
 
 ## Step 1: Read prior context
 Read:
-
 - `setting.md`
-- the shared team norms and the accepted scientific record established for this run
-- the trusted current approved Phase 02 summary (contains the idea set)
-- the approved Phase 01 summary (literature context for novelty assessment)
-- prior `draft/theory/` runs
+- the approved Phase 02 summary (method definitions and idea set)
+- the approved Phase 01 summary (literature context)
+- prior `evaluations/` runs
 
-Enumerate the full idea set from Phase 02. Ensure you have the complete list. If
-ideas are missing or unclear, state what is unavailable.
+Identify the method to develop. If the user named one in the run-start form, use
+it. If not, select based on Phase 2 outcomes and state the choice clearly.
 
-## Step 2: Round 1 — Independent evaluation
-Give each role the full idea set and their evaluation focus. Require every role
-to evaluate every idea on all four dimensions:
+## Step 2: Round 1 — independent development
+Dispatch three independent tasks:
 
-1. **Correctness** — is the logic sound?
-2. **Methodological novelty** — how genuinely new is it?
-3. **Theoretical rigor** — can it be formalized? How deep is the foundation?
-4. **Computational cost** — is it tractable?
+1. **Theorist**: derive and prove the main results for the selected method.
+   Give them the full method definition and all prior context. They must produce
+   actual theorems with full proofs — see `theorist.md` for deliverable
+   requirements.
 
-Each rating uses the shared scale: Strong, Adequate, Weak, or Insufficient
-information — with stated reasoning.
+2. **Data analyst**: assess computational cost, implementation feasibility, and
+   numerical stability. See `data_scientist.md`.
 
-The roles work independently in round 1. Encourage honest, direct assessment —
-an idea that is exciting but logically shaky should be rated accordingly.
+3. **You (research lead)**: identify the contribution structure — what the
+   proved results mean, how they position against existing work, what the paper's
+   narrative should be. See `research_lead.md`.
 
-## Step 3: Debate round — revise from your own perspective
-From round 2 onward, require every role to read the available named reports
-from the prior round. This is a **debate**, not a negotiation: each member
-revises their *own* ratings from their *own* perspective based on the arguments
-they heard. They may defend their original position, concede a point, or shift
-their rating — but the shift is driven by the strength of arguments, not by
-pressure to agree.
+All three work independently. They do not wait for each other.
 
-Each new report must:
+## Step 3: Debate round — cross-check
+From round 2 onward, each role reads the others' work:
 
-- respond to specific disagreements: where another evaluator rated differently,
-  address their reasoning directly — agree, push back, or refine;
-- revise ratings where arguments persuaded them (state what changed and why);
-- hold positions where arguments did not persuade them (state why the
-  disagreement persists);
-- flag ideas where the team's assessment is genuinely split and the user needs
-  to weigh in.
+- The **data analyst audits the theorist's proofs**: are assumptions missing? Are
+  steps unjustified? Is the scope correctly stated? This is a mathematical audit.
+- The **theorist audits the analyst's cost claims**: is the per-step cost
+  accurate? Are the numerical stability concerns correctly identified?
+- The **lead reconciles**: identifies what is solid, what is conjectural, what
+  needs more work. Flags unresolved disagreements for the user.
 
-The goal is **not consensus**. An honest, well-argued disagreement is more
-valuable than a forced compromise. After the debate, the lead synthesizes the
-final positions — including any that remain split — into the rankings.
+## Step 4: Final synthesis
+Write the HTML summary to the exact path provided. Present:
 
-## Step 4: Final synthesis — rankings
-Write the final HTML summary to the exact path provided for this run.
-Do not overwrite an earlier run summary.
-Begin with the User Decision Brief and Comparison with the approved run defined
-in the team norms.
-
-Present:
-
-1. **Per-dimension rankings**: for each of the four dimensions, rank the ideas
-   from strongest to weakest, with the reasoning summarized.
-2. **Overall ranking**: synthesize the four dimensions into an overall ranking.
-   State explicitly how you weighted the dimensions and why. If different
-   weightings would change the ranking, show that.
-3. **Idea profiles**: for each idea, a compact summary of its strengths and
-   weaknesses across all four dimensions.
-4. **Team disagreements**: where evaluators still disagree after the debate, present each side's final position with their reasoning so the user can judge.
-5. **Recommendation**: which idea(s) you recommend pursuing in Phase 04 and why.
-   State this as a recommendation, not a decision.
-
-Then present explicit user options:
-- proceed to Phase 04 with a named idea (or ideas) for numerical validation;
-- return to Phase 02 for additional ideas;
-- request a revision of the evaluation (e.g., deeper analysis of a specific idea);
-- rerun the evaluation.
-
-Include a **Scientific record changes** section with proposed additions, and the
-**Proposed scientific baseline**, which becomes accepted only after user approval.
-
-After submitting the summary, stop. The user alone decides which idea(s) to carry
-forward and whether to proceed to Phase 04.
+1. **Proved results**: list each theorem with its statement, assumptions, and
+   proof status (proved / conjectured with gap stated).
+2. **Rate bound**: the key quantitative result, if applicable.
+3. **Computational assessment**: cost, feasibility, stability.
+4. **Cross-check outcomes**: what the audit found, what was revised.
+5. **Open questions**: results that could not be proved, with the specific gap.
+6. **Recommendation**: proceed to Phase 04, or what needs more work first.
 
 ## Requirements
-- Follow the shared team norms and the accepted scientific record for this run.
-- Ensure every Phase 02 idea is evaluated — no idea is skipped.
-- Every rating must have stated reasoning. "Strong" or "Weak" without
-  justification is not useful to the user.
-- Be honest about disagreements after debate. A well-argued split is more
-  valuable than a forced compromise.
-- Weight the dimensions transparently in your overall ranking. If the ranking is
-  weighting-sensitive, say so.
+- The theorist MUST produce actual proofs. A run where the theorist only writes
+  ratings or proof sketches is a Failed run, even if the ratings are insightful.
+- The data analyst MUST produce an actual cost analysis with specific numbers
+  (big-O, memory, comparison to baselines), not general statements.
+- Every mathematical claim must be either proved (with a real proof) or stated
+  as a conjecture with the gap identified.
+- The cross-check is mandatory. If the data analyst's audit finds a gap in the
+  theorist's proof, the theorist must either close it or restate as conjecture.

@@ -93,7 +93,7 @@ Then recommend a path forward:
   knowledge (e.g., to sharpen unique positioning, check for closer related
   work, or explore an unfamiliar theoretical area the ideas opened up).
 - **Proceed to Phase 03** if one or more ideas are sufficiently developed for
-  theoretical or numerical validation. Name the idea(s) you recommend pursuing,
+  theoretical or empirical validation. Name the idea(s) you recommend pursuing,
   but the user decides which to validate.
 
 State this recommendation clearly. The user alone decides the next step.

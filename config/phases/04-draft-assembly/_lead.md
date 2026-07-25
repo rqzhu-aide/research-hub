@@ -1,95 +1,60 @@
-# Lead Instructions: Draft Assembly
+# Lead Instructions: Implementation & Experiments
 
-Coordinate parallel section drafting, then combine the three sections into one
-formal manuscript.
-
-## Step 0: Select the method (if user did not specify)
-Read the Phase 3 summary. If the user named a specific idea in the run-start
-form, use that one. If not, **you decide** which idea to pursue based on the
-Phase 3 rankings. State your choice, the method ID, and your reasoning clearly
-at the top of your report. The user can override by rerunning with a different
-choice.
+Coordinate the implementation and experimental validation phase. Your job is to
+ensure experiments are pre-specified, honestly run, and that the results are
+synthesized with integrity.
 
 ## Step 1: Read prior context
 Read:
 - `setting.md`
-- the approved Phase 02 summary (the full idea set and method definitions)
-- the approved Phase 03 summary (the evaluation rankings)
-- the approved Phase 01 summary (literature context)
-- prior `numerical/` runs
+- the approved Phase 03 summary (proved theorems and rate bounds)
+- the approved Phase 02 summary (method definition)
+- the approved Phase 01 summary (literature, for baselines)
+- prior `draft/sections/` runs
 
-Identify the selected method: its Phase 2 definition, its Phase 3 evaluation
-across all four dimensions, and any open questions flagged during evaluation.
+## Step 2: Round 1 — pre-specify and implement
+Dispatch tasks:
 
-## Step 2: Round 1 — parallel drafting
-**All three members use the `stat-paper-writing` skill** (provisioned to their
-profiles) for their sections. This ensures consistent paper conventions across
-all three.
+1. **You (lead)**: write the experiment protocol. State:
+   - What metrics will be computed (ESS/s, IAT, KL divergence to target, etc.)
+   - What comparisons (which baselines, which parameter settings)
+   - What result would **support** the theoretical predictions
+   - What result would **contradict** them
+   - What targets will be tested (Gaussian, mixture, banana, etc.)
 
-Create a **method-specific subdirectory** under the output root named after the
-method's stable ID (or a readable slug). All three members write into this same
-subdirectory. This way, reruns for different ideas produce parallel independent
-papers, not overwrites.
+2. **Data analyst**: implement the method in code. Run diagnostic checks first
+   (known-answer cases, invariants). Then run initial experiments.
 
-Dispatch three independent tasks:
+3. **Theorist**: independently check the implementation against the Phase 3
+   mathematical definition. Does the code compute what the theory describes?
 
-1. **You (research lead)**: write the introduction and method section.
-   - Introduction: motivate the problem, state the contribution, position
-     against prior work (using Phase 1 literature).
-   - Method: define the method precisely — the target, the mechanism, the
-     algorithm. Enough detail for someone to implement it.
+## Step 3: Round 2 — full benchmark + audit
+1. **Data analyst**: run the full benchmark study based on the lead's protocol.
+   Produce tables and figures with real measured data.
 
-2. **Theorist**: write the full theory section with detailed proofs.
-   - All theoretical results the method rests on: theorems, lemmas,
-     propositions.
-   - Full proofs, not sketches. State every assumption and its role.
-   - Scope and limitations: where the theory holds and where it breaks.
+2. **Theorist**: audit the results against the proved rate bounds from Phase 3.
+   Does the measured spectral gap satisfy the proved lower bound? If not, why?
 
-3. **Data analyst**: implement the method, run experiments, write the empirical
-   report.
-   - Implement the method in code (faithful to the theorist's formalization).
-   - Run simulations on synthetic data and real data where available.
-   - Produce tables and figures showing the method's performance.
-   - Follow the scientific-integrity protocol (pre-specify, diagnose, quantify
-     uncertainty, record reproducibility info).
-
-All three work independently. They do not need to wait for each other in round 1.
-
-## Step 3: Round 2 — combine into formal draft
-Read all three sections. Then:
-
-1. **Reconcile notation**: ensure the same symbols mean the same thing across
-   the intro/method, theory, and experiments. Create a unified notation table
-   if needed.
-2. **Reconcile framing**: ensure the introduction's claims match what the
-   theory proves and what the experiments show. If the intro overclaims, narrow
-   it. If the theory proves something the intro doesn't mention, add it.
-3. **Combine** into a single coherent manuscript with a logical flow:
-   introduction → related work (from Phase 1) → method → theory → experiments →
-   discussion → conclusion.
-4. **Write the discussion**: what the results mean, limitations, and open
-   questions flagged during Phase 3 evaluation.
-5. **Assemble references** from all three sections into one bibliography.
+3. **You (lead)**: synthesize. What was validated? What was challenged? What
+   remains open?
 
 ## Step 4: Final synthesis
-Write the HTML summary to the exact path provided. Report:
-- which method was selected and why (especially if the lead decided);
-- the structure of the combined draft and where each section's content came from;
-- any notation or framing reconciliations that were needed;
-- limitations and open questions carried from Phase 3;
-- the draft's readiness for review.
+Write the HTML summary. Present:
 
-Present explicit user options: approve the draft, request revision (specific
-sections), rerun with a different method, or proceed to Phase 5 (data analysis
-deepening) or Phase 6 (paper writing / finalization).
+1. **Experiment protocol** — what was tested and why.
+2. **Diagnostic results** — did the sanity checks pass?
+3. **Benchmark results** — the key numbers, with uncertainty.
+4. **Theory-experiment agreement** — do the measured rates match the proved
+   bounds?
+5. **What worked and what didn't** — honest assessment.
+6. **Recommendation** — proceed to paper assembly, or what needs more work.
 
 ## Requirements
-- If the user did not specify a method, you decide. State the choice and
-  reasoning clearly. Do not ask the user to decide mid-run.
-- All three sections must be present in the combined draft. If a member's report
-  is Partial or Failed, use what they produced and note the gaps.
-- The combined draft should read as one coherent paper, not three glued-together
-  sections. Transitions and cross-references matter.
-- Preserve the scientific integrity of each member's work — do not soften the
-  theorist's proofs or the data analyst's negative results to make the paper
-  "look better." Honest reporting is non-negotiable.
+- The data analyst MUST produce working code. A report without actual code files
+  is a Failed run.
+- The data analyst MUST produce diagnostic results with real numbers. A stub
+  JSON with zero values is a Failed run.
+- Experiments MUST be pre-specified by the lead before the results are known.
+- Negative results MUST be reported honestly with specific numbers.
+- The theorist's audit is mandatory. If they find a discrepancy between code and
+  math, it must be resolved.

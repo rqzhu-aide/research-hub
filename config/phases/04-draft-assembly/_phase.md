@@ -1,99 +1,107 @@
-# Phase: Draft Assembly
+# Phase: Implementation & Experiments
 
 ## Goal
-Produce a formal draft of the research paper for the selected method. Three
-members work **in parallel**, each writing their section independently. The
-research lead then combines the three sections into one coherent manuscript.
+**Implement the method in code, run experiments, and produce empirical results**
+that validate or challenge the theoretical predictions from Phase 3. The data
+analyst builds the implementation and runs the experiments. The theorist audits
+the numerical results against the proved rate bounds. The lead synthesizes.
 
-**One method per run.** If the user specifies which idea to pursue, the team
-works on that one. If the user does not specify, the **research lead decides**
-which idea from the Phase 3 rankings to pursue, and states the choice and
-reasoning clearly.
+This phase produces **concrete code and data**: working implementations,
+diagnostic check results, experiment outputs with measured numbers. A report
+that *describes* what experiments would show is **not** a deliverable.
 
-## Parallel structure
-All three members work independently in round 1:
+## Role division — who does the heavy lifting
 
-| Member | Deliverable |
-|--------|-------------|
-| **Research Lead** | Introduction + method section draft |
-| **Theorist** | All theory-related results, detailed proofs |
-| **Data Analyst** | Implement the method, run simulations + real data analysis, produce an empirical report with tables and figures |
+| Role | Primary responsibility | Audit responsibility |
+|------|----------------------|---------------------|
+| **Data Analyst** | **Implement** the method in code, **run** experiments, **produce** tables and figures with real data | Audit the theorist's predictions: do the numbers match? |
+| **Theorist** | **Audit** the experimental results against the proved rate bounds | Check implementation correctness against the mathematical definition |
+| **Research Lead** | **Synthesize** the empirical findings, assess what was validated and what wasn't | Ensure experiments are pre-specified and honestly reported |
 
-In round 2, the lead reads all three sections, reconciles notation and framing,
-and combines them into a single formal draft.
+The data analyst does the implementation and experiments. The theorist cross-checks
+that the code matches the math and the results match the theory. The lead ensures
+scientific integrity.
 
-## Relevant protocol elements (carried from the prior design)
-The data analyst's empirical work retains these scientific-integrity practices:
-- **Pre-specify** what experiments will test before running them (what metrics,
-  what comparisons, what would support or contradict the method's claims).
-- **Diagnostic checks first**: simple invariants, known-answer cases, and
-  sanity checks before the main benchmark study.
-- **Quantify numerical uncertainty**: report MCSE, confidence intervals, or
-  bootstrap estimates for every empirical claim.
-- **Computational reproducibility**: record seeds, software versions, hardware,
-  and the exact commands needed to reproduce each result.
+## Study structure
+**Parallel pattern.** All three roles work independently in round 1.
 
-## Skill requirement
-All three members **must use the `stat-paper-writing` skill** (provisioned to
-your profile) for your section. Load it at the start of your work and follow its
-guidance on structure, notation, figure quality, citation format, and academic
-writing standards. The skill ensures all three sections use consistent paper
-conventions so the lead can combine them cleanly.
+- **Round 1**: Data analyst implements and runs initial experiments. Theorist
+  independently checks the implementation against the Phase 3 mathematical
+  definition. Lead pre-specifies the experiment protocol.
+- **Round 2**: Data analyst runs the full benchmark study. Theorist audits
+  whether the measured rates match the proved bounds. Lead synthesizes findings.
 
-## Method-specific folders
-Each run targets one method. The output path includes the method so that
-reruns for different ideas produce **parallel independent papers**, not
-overwrites. The lead creates a subdirectory under the output root named after
-the method's stable ID (or a readable slug derived from it). All three members
-write into that same method subdirectory.
+## Required deliverables
 
-The heavy sealed-protocol-checkpoint machinery (hash-locked study designs,
-cross-stage audits, protocol-only first rounds) has been **archived** — it
-belonged to the old sequential structure and is not needed for parallel
-drafting.
+### Data analyst MUST produce:
+
+1. **Working implementation** — actual Python code that implements the method.
+   Not pseudocode, not a description. Code that can be run to produce results.
+2. **Diagnostic checks** — sanity checks with real measured values:
+   - Known-answer tests (e.g., does the invariant measure match for a Gaussian?)
+   - Conservation invariants
+   - Reproducibility checks (same seed → same result)
+   - Results recorded in a JSON file with actual numbers, not stubs
+3. **Benchmark experiments** — actual experimental results:
+   - Convergence curves (measured, not theoretical)
+   - ESS/s comparison against baselines
+   - Rate estimation (does the measured spectral gap match the proved bound?)
+   - Tables and figures with real data
+4. **Reproducibility record** — seeds, code paths, commands, hardware.
+
+### Theorist MUST produce:
+
+1. **Implementation audit** — does the code correctly implement the mathematical
+   definition from Phase 3? Identify any discrepancies.
+2. **Rate validation** — do the measured convergence rates match the proved
+   bounds from Phase 3? If the theory predicts λ ≥ f(params), does the measured
+   λ satisfy this?
+3. **Discrepancy analysis** — if theory and experiment disagree, identify why:
+   finite-N effects? step-size effects? implementation bug?
+
+### Lead MUST produce:
+
+1. **Experiment protocol** — what experiments will test, specified before the
+   results are known.
+2. **Synthesis** — what was validated, what was challenged, what remains open.
+3. **Recommendation** — is the method empirically supported?
+
+## Scientific integrity requirements
+
+1. **Pre-specify before running**: the lead states what experiments will test
+   and what results would support or contradict the claims, BEFORE the analyst
+   runs them.
+2. **Diagnostic checks first**: simple known-answer cases before complex
+   benchmarks.
+3. **Quantify uncertainty**: MCSE, confidence intervals, number of replications
+   for every empirical claim.
+4. **Report negative results honestly**: if the method underperforms, say so
+   with specific numbers.
+5. **Record reproducibility info**: seeds, versions, commands.
 
 ## Prior information
-Requires a current Phase 03 summary approved by the user (contains the idea
-rankings). Phases 01 (literature) and 02 (ideas) are also provided automatically.
-If the user specifies an idea in the run-start form, the team works on that idea.
-If not, the lead selects one from the Phase 3 rankings and states the choice. The
-lead must identify the idea by its Phase 2 method ID and the Phase 3 evaluation
-outcome.
-
-**On rerun for the same method:** the prior Phase 04 draft is provided as
-**comparison evidence**. The new run should improve on it — address weaknesses,
-deepen sections, fix issues. The method-specific folder preserves the prior
-draft, so the new run can reference and build on it.
-
-**On rerun for a different method:** the prior Phase 04 run was for a different
-method. It is provided as comparison evidence only ("here's another paper we
-drafted"). The new run starts fresh in a new method-specific folder. Each
-method's draft is an independent paper.
-
-Either way, the output goes into a **method-specific subdirectory** so papers
-for different ideas do not overwrite each other.
+Requires a current Phase 03 summary approved by the user (contains the proved
+theorems and rate bounds). Phases 01 (literature) and 02 (methods) are also
+provided.
 
 ## Files and outputs
-Write all outputs under `numerical/run/NN/`:
+Write all outputs under `draft/sections/run/NN/`:
 
-- `round-01/research_lead.md`: introduction + method section
-- `round-01/theorist.md`: theory section with proofs
-- `round-01/data_scientist.md`: empirical report with tables, figures, and data
-- `round-02/research_lead.md`: combined formal draft
+- `round-01/<role>.md`, `round-02/<role>.md`, ...: per-round reports
+- The data analyst's code files live alongside the report
 - Write the HTML summary to the exact path provided for this run.
 
-Each role report begins with Complete, Partial, or Failed as defined in the team
-norms.
+## What the user decides
+The user starts every run. After the experiments, the lead presents the findings
+and a recommendation. The user decides:
+
+- to proceed to Phase 05 (Paper Assembly & Review);
+- to request a revision (e.g., run additional experiments);
+- to return to Phase 03 (if the experiments revealed a theory gap);
+- or to rerun with different experimental settings.
 
 ## Files in this folder
 - `_lead.md`: instructions for the research lead.
-- `research_lead.md`: intro + method section instructions.
-- `theorist.md`: theory section instructions.
-- `data_scientist.md`: implementation + empirical report instructions.
-- `archive-v1-sequential-protocol/`: the prior sequential-protocol design,
-  archived for reference. Not used by the current phase.
-
-## What the user decides
-The user starts every run and may specify which idea to pursue. After the
-combined draft is produced, the user decides whether to approve it, request
-revision, or rerun with a different idea.
+- `data_scientist.md`: implementation and experiment instructions.
+- `theorist.md`: implementation and result audit instructions.
+- `research_lead.md`: protocol and synthesis instructions.

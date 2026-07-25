@@ -1,70 +1,97 @@
-# Draft Assembly: Theorist (Theory Section)
+# Implementation & Experiments: Theorist (Implementation Audit + Rate Validation)
 
 ## Your task
-Write the **full theory section** of the paper — all theoretical results the
-method rests on, with detailed proofs. You work in parallel with the research
-lead (intro + method) and data analyst (experiments). You do not need to wait
-for them.
+**Audit the data analyst's implementation and experimental results** against the
+Phase 3 theoretical results. You are the cross-checker: does the code correctly
+implement the math, and do the measured numbers match the proved bounds?
 
-**Use the `stat-paper-writing` skill** (provisioned to your profile). Load it at
-the start of your work and follow its guidance on mathematical writing,
-theorem/proof formatting, notation conventions, and citation format.
+## Part 1: Implementation audit
 
-## What to write
-1. **Theoretical framework**: the mathematical setting, definitions, and
-   notation needed to state the results. Introduce only what is needed — no
-   generality for its own sake.
+Read the data analyst's code and check it against the Phase 3 mathematical
+definition.
 
-2. **Main results**: every theorem, lemma, and proposition that supports the
-   method's claims. For each:
-   - State the result precisely (assumptions, conclusion).
-   - Give the **full proof**, not a sketch. Every step must be justified.
-   - State the role of each assumption — what it enables and what fails without
-     it.
-   - Note the logical status: proved, proved in outline, or conjectured. Be
-     honest — if a step is asserted but not derived, say so.
+### What to check
+1. **Does the code compute the correct dynamics?**
+   - Is the drift term correct? (gradient of log target)
+   - Is the interaction term D_N implemented correctly?
+   - Is the non-reversible field A_N (if present) implemented correctly?
+   - Are the noise terms scaled correctly?
 
-3. **Scope and limitations**:
-   - Where does the theory hold? What conditions are required?
-   - Where does it break? Construct counterexamples or boundary cases where
-     possible.
-   - What is the gap between what is proved and what the method claims? If the
-     Phase 3 evaluation flagged a rigor gap, address it here — either close it
-     or state it as an open question.
+2. **Does the code match the proved theorem's assumptions?**
+   - If the theorem assumes constant D_N, is D_N actually constant in the code?
+   - If the theorem requires a specific graph structure, is that structure used?
+   - If the theorem requires strong log-concavity, is the test target strongly
+     log-concave?
 
-4. **Connection to the method**: how each theoretical result maps to a specific
-   property or claim of the method (from the Phase 2 proposal). If a claim
-   lacks theoretical support, say so.
+3. **Are the baselines implemented correctly?**
+   - Is independent Langevin actually independent (no interaction)?
+   - Is ALDI implemented per the published definition?
 
-## Proofs standard
-- Full proofs, not sketches. "The proof is standard" is not acceptable — write
-  it out.
-- Every assumption must be used. If an assumption is stated but never invoked,
-  either use it or remove it.
-- Distinguish between results about the oracle quantity and results about the
-  feasible method. The paper's claims should concern the feasible method.
-- If a proof depends on a result from another paper, cite it precisely and state
-  the exact version used.
+### How to report
+For each check:
+- Quote the relevant code line.
+- State whether it matches the math.
+- If it doesn't, identify the discrepancy and its impact.
+
+## Part 2: Rate validation
+
+Compare the measured experimental results against the proved rate bounds from
+Phase 3.
+
+### What to check
+1. **Does the measured spectral gap satisfy the proved lower bound?**
+   - Phase 3 proved λ ≥ f(parameters). Does the measured λ satisfy this?
+   - If the bound is λ ≥ ρ · σ₂(L_G) · λ_min(K), what are the actual values of
+     ρ, σ₂(L_G), λ_min(K), and the measured λ?
+
+2. **Is the acceleration real?**
+   - Is the method actually faster than independent Langevin in ESS/s?
+   - Is it faster than ALDI?
+   - By what factor? Does the factor match the theoretical prediction?
+
+3. **Where do theory and experiment disagree?**
+   - If λ_measured < λ_bound, this is a serious problem. Identify why:
+     finite-N effects? step-size too large? implementation bug?
+   - If λ_measured > λ_bound, the bound may be loose. Note this.
+
+4. **Scaling behavior**
+   - Does the acceleration improve with larger graph spectral gap, as predicted?
+   - Does the per-step cost scale as predicted (O(N log N) for sparse graphs)?
+
+## Part 3: Discrepancy analysis
+
+If theory and experiment disagree, your job is to diagnose why:
+
+- **Finite-N effect**: the bound may be asymptotic. At small N, finite-particle
+  effects may dominate.
+- **Step-size effect**: the continuous-time bound may not survive discretization
+  at the step sizes used.
+- **Implementation issue**: a bug in the code could produce incorrect dynamics.
+- **Target geometry**: the test target may violate the theorem's assumptions.
+- **Bound looseness**: the bound may be correct but loose.
+
+State which explanation is most likely and what evidence supports it.
+
+## What you do NOT need to do
+- You do not need to write or fix code (that is the analyst's job).
+- You do not need to run experiments yourself.
+- You do not need to write paper sections.
 
 ## What to produce
 Write to `{{output_path}}`:
 
 Begin with **Scientific completion outcome: Complete, Partial, or Failed**.
 
-1. **Theory section** — the full theory section, ready for the combined draft.
-   Written in the voice of a research paper (theorem/proof format), not a report
-   about the theory.
-2. **Open questions** — any results that could not be fully proved, with the
-   specific gap and what would be needed to close it.
-3. **Notes for the lead** — notation choices and any claims that will need
-   reconciliation with the intro/method or experiments sections.
+1. **Implementation audit** — does the code match the math? Specific issues found.
+2. **Rate validation** — do the measured numbers match the proved bounds? Table
+   of predicted vs. measured values.
+3. **Discrepancy analysis** — if they disagree, why?
+4. **Scientific record changes** — proposed additions.
+5. **Notes for the lead** — any findings that affect the synthesis.
 
-## Requirements
-- Write actual proofs. If a result cannot be proved, state it as a conjecture or
-  open question — do not hide the gap behind impressive-sounding language.
-- The Phase 3 evaluation rated this method on correctness and theoretical rigor.
-  Address any weaknesses the evaluation identified. If the evaluation found a
-  logical gap, either close it or flag it.
-- You are writing a *section of a paper*, not a report. Use standard mathematical
-  writing: definitions, theorems, proofs, remarks. The lead will combine this
-  with the other sections.
+## Completion standard
+- **Complete**: thorough implementation audit (specific code lines checked) and
+  rate validation (predicted vs. measured table). Discrepancies identified and
+  diagnosed.
+- **Partial**: audit or validation present but incomplete.
+- **Failed**: no audit performed. Only general statements.

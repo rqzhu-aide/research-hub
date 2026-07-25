@@ -1,114 +1,104 @@
-# Draft Assembly: Data Analyst (Implementation + Empirical Report)
+# Implementation & Experiments: Data Analyst (Implementation + Experiments)
 
 ## Your task
-Implement the selected method in code, run experiments (simulations and real
-data), and produce a full empirical report with tables and figures. You work in
-parallel with the research lead (intro + method) and theorist (theory). You do
-not need to wait for them.
+**Implement the method in working code and run experiments that produce real
+data.** You are the one who does the implementation and experimental heavy
+lifting in this phase. The theorist audits your code against the math and your
+results against the theory. The lead pre-specifies the protocol.
 
-**Use the `stat-paper-writing` skill** (provisioned to your profile). Load it at
-the start of your work and follow its guidance on experiment reporting, table
-and figure formatting, statistical presentation, and citation format.
+## Required deliverables
 
-## Step 1: Implement the method
-Write a faithful implementation of the selected method:
+You MUST produce all of the following. A report without actual code files and
+actual measured data is a Failed run.
 
-1. **Code**: implement the method following the Phase 2 method definition. Write
-   clean, documented code. Record the source file path(s).
-2. **Verification**: verify the implementation against the mathematical
-   definition. Check:
-   - known-answer cases (where the correct output is known analytically);
-   - invariants and dimensional checks;
-   - edge cases (degenerate inputs, high dimensionality, numerical stability).
-3. **Independence**: if the method's central claim depends on a delicate
-   implementation, write an independent reference implementation to cross-check.
-   Do not validate a result only with the same code path that generated it.
+### 1. Working implementation
+Write actual Python code that implements the method from the Phase 3 theoretical
+development.
 
-## Step 2: Pre-specify the experiments (scientific integrity)
-**Before running the main experiments**, state what you will test:
+- The code must be **runnable** — not pseudocode, not a description.
+- It must be **faithful** to the mathematical definition from Phase 3.
+- It must include **baseline implementations** for comparison (independent
+  Langevin, ALDI).
+- Save the code files alongside your report. Record the file paths.
 
-- What metrics will you compute? (e.g., convergence rate, bias, variance, IAT)
-- What comparisons will you make? (e.g., against which baselines)
-- What result would **support** the method's stated properties?
-- What result would **contradict** them?
+### 2. Diagnostic checks (run BEFORE the main experiments)
+Verify the implementation against known cases. Record results in a JSON file
+with **actual measured values**:
 
-This pre-specification prevents post-hoc cherry-picking. State it explicitly in
-your report.
+- **Invariant measure check**: run the sampler on a standard Gaussian. Does the
+  empirical mean and covariance match the target? Report the actual discrepancy
+  with a number.
+- **Conservation check**: does the method preserve the quantity it should?
+- **Reproducibility**: same seed → same result? Report the actual difference
+  (should be exactly zero).
+- **Known-answer**: for a target where the answer is analytically known, does
+  the sampler recover it?
 
-## Step 3: Diagnostic checks first
-Before the main benchmark study, perform the simplest checks capable of
-revealing an error:
+Record each check in a JSON file: name, measured_value (actual number),
+expected_value, passed (boolean). Do NOT write a stub with zero values.
 
-- analytically solvable cases with known true parameter values;
-- zero-signal, identity, symmetry, or conservation invariants;
-- tiny problems that permit exhaustive verification;
-- deterministic reproducibility and random-seed checks.
+### 3. Benchmark experiments
+Run the pre-specified experiments from the lead's protocol:
 
-Record every diagnostic check in `diagnostics/diagnostic_results.json`. Each
-entry must include: a descriptive `name`, the `measured_value` (actual number,
-not a placeholder), the `expected_value` or `expected_range`, and a `passed`
-boolean. Do NOT write a stub with zero values.
+- **Convergence curves**: how does the sampler approach the target distribution
+  over iterations? Plot KL divergence or Wasserstein distance vs. iteration.
+- **ESS/s comparison**: compute effective sample size per second for the method
+  vs. baselines. This is the key practical metric.
+- **Rate estimation**: estimate the spectral gap (or mixing rate) empirically.
+  Compare to the proved bound from Phase 3.
+- **Scaling**: how does performance change with N (particles) and d (dimension)?
+- **Parameter sensitivity**: how does the graph structure (spectral gap) affect
+  performance? Does a larger graph spectral gap give faster convergence, as the
+  theory predicts?
 
-## Step 4: Run the main experiments
-Run the pre-specified experiments:
+Every number must come with an uncertainty estimate (MCSE, confidence interval).
 
-1. **Simulations**: synthetic data where the ground truth is known. Test across
-   representative settings, boundary cases, and sensitivity to key parameters.
-2. **Real data** (where available): apply the method to real datasets relevant
-   to the problem. If no real data is available, state this and explain why.
-3. **Baselines**: compare against existing methods identified in the Phase 1
-   literature review. Use faithful implementations of the baselines, not straw
-   men.
+### 4. Tables and figures
+Produce publication-quality output with real data:
+- Tables with measured values and uncertainty.
+- Figures with convergence curves, comparison plots, scaling plots.
+- Each table/figure has a caption explaining what it shows.
 
-## Step 5: Produce tables and figures
-Create publication-quality tables and figures:
+### 5. Reproducibility record
+- Random seeds used.
+- Software versions and environment.
+- Hardware.
+- Exact commands to rerun each experiment.
 
-- **Tables**: summary statistics, comparison metrics, sensitivity analysis. Each
-  table should answer a specific question.
-- **Figures**: convergence curves, bias vs. sample size, comparison plots,
-  diagnostic plots. Each figure should convey information that a table cannot.
-- Every table and figure must have a caption explaining what it shows and what
-  the reader should take away.
+## Pre-specification
+The lead provides the experiment protocol. Follow it. If you discover that a
+planned experiment is infeasible (e.g., too slow, numerically unstable), state
+this explicitly and explain why. Do not silently substitute a different
+experiment.
 
-## Step 6: Quantify uncertainty
-For every empirical claim, report uncertainty:
+## Cross-check (round 2+)
+The theorist will audit:
+- **Implementation correctness**: does the code compute what the math says?
+- **Result validity**: do the measured rates match the proved bounds?
 
-- Monte Carlo standard error (MCSE) for simulation-based estimates.
-- Confidence intervals where applicable.
-- Number of independent replications.
-
-A point estimate without an uncertainty interval is not a result.
-
-## Step 7: Reproducibility
-Record everything needed to reproduce the results:
-
-- random seeds used;
-- software versions and environment;
-- hardware used;
-- exact commands or scripts to rerun each experiment.
+Your job when audited:
+- If the theorist finds a bug, fix it and rerun.
+- If the theorist questions a result, explain your methodology or rerun with
+  more replications.
+- If the results disagree with theory, help identify why.
 
 ## What to produce
 Write to `{{output_path}}`:
 
 Begin with **Scientific completion outcome: Complete, Partial, or Failed**.
 
-1. **Implementation** — where the code lives, what it implements, verification
-   results.
-2. **Pre-specified experiment design** — what was tested, what would support or
-   contradict the claims.
-3. **Diagnostic checks** — results of all sanity checks (in
-   `diagnostics/diagnostic_results.json`).
-4. **Empirical results** — the full report with tables, figures, and analysis.
-   Written in the voice of a research paper's experiments section.
+1. **Implementation** — code file paths, what they implement, verification.
+2. **Diagnostic checks** — the JSON with actual measured values.
+3. **Experiment results** — tables, figures, measured numbers with uncertainty.
+4. **Key findings** — what the data shows, stated plainly.
 5. **Reproducibility** — seeds, versions, commands.
-6. **Notes for the lead** — any results that will affect framing of the intro or
-   theory sections (especially negative results or unexpected findings).
+6. **Notes for the lead** — anything that affects the synthesis.
 
-## Requirements
-- Report negative results honestly. If the method underperforms, say so with
-  specific numbers. Do not spin.
-- Every empirical claim needs an uncertainty estimate.
-- The Phase 3 evaluation rated this method on computational cost. Verify whether
-  the actual cost matches the prediction.
-- You are writing a *section of a paper*. Tables and figures should be
-  publication-quality, with clear captions.
+## Completion standard
+- **Complete**: working code, diagnostic checks with real values, benchmark
+  experiments with measured numbers and uncertainty. The implementation runs and
+  produces results.
+- **Partial**: some experiments run, some missing or incomplete. Code exists but
+  some diagnostics are missing.
+- **Failed**: no working code, or no actual experiment results. A report that
+  describes what experiments *would* show without running them.
