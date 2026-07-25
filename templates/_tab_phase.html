@@ -307,7 +307,7 @@
   {# ── Launch button with inline rounds selector ── #}
   <div class="launch-footer-compact">
     <button type="submit" class="btn btn-primary btn-large" {% if not unattended_tools %}disabled aria-disabled="true"{% endif %}>
-      {{ 'Run' if history else 'Launch' }} {{ pc.name }}
+      {{ 'Run / Improve' if history else 'Launch' }} {{ pc.name }}
     </button>
     {% if round_min != round_max %}
     <span class="rounds-inline-at-button">
