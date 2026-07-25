@@ -431,6 +431,31 @@ summary::-webkit-details-marker { display: none; }
 .run-summary-highlight .muted { color: var(--muted); font-style: italic; }
 .run-actions { display: flex; gap: 8px; align-items: center; }
 
+/* ── Method ranking table (Phase 02 upper panel) ── */
+.method-ranking-table-wrap {
+  overflow-x: auto; margin-top: 4px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+}
+.method-ranking-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+.method-ranking-table th {
+  text-align: left; padding: 7px 10px; border-bottom: 2px solid var(--line-strong);
+  color: var(--muted); font-size: .68rem; text-transform: uppercase; letter-spacing: .04em;
+  white-space: nowrap; background: var(--surface-raised);
+}
+.method-ranking-table td {
+  padding: 6px 10px; border-bottom: 1px solid var(--line); color: var(--text-soft);
+  white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis;
+}
+.method-ranking-table td:first-child { font-weight: 600; color: var(--text); }
+.method-ranking-table tbody tr:hover { background: var(--accent-soft); }
+.method-ranking-table .actions-col { text-align: center; white-space: nowrap; width: 70px; }
+.btn-xs { min-height: 22px; padding: 1px 6px; font-size: .68rem; border-radius: 3px; border: 1px solid var(--line-strong); }
+.btn-select-method { background: var(--accent-soft); color: var(--accent-bright); border-color: var(--accent); }
+.btn-select-method:hover { background: var(--accent); color: var(--surface); }
+.btn-retire-method { background: transparent; color: var(--muted); }
+.btn-retire-method:hover { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
+.retire-form-inline { display: inline; }
+
 /* ── Method browser (Phase 02) ── */
 .method-browser { display: grid; gap: 10px; }
 .method-browser-controls { display: flex; align-items: center; gap: 8px; }

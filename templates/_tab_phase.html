@@ -113,14 +113,55 @@
 
     {# ── Summary / comparison ── #}
     {% if pc.slug == '02-method-development' and pd.method_details | default([]) %}
-    {# Method Development: show overall comparison in upper panel #}
-    <div class="run-summary-highlight method-comparison-panel">
-      {% if pd.method_comparison %}
-      <div class="method-comparison-text">{{ pd.method_comparison }}</div>
-      {% else %}
-      <span class="muted">No comparison available yet. Run the phase to generate an evaluation.</span>
-      {% endif %}
+    {# Method Development: show ranking table in upper panel #}
+    {% if pd.method_ranking_table | default([]) %}
+    <div class="method-ranking-table-wrap">
+      <table class="method-ranking-table">
+        <thead>
+          <tr>
+            {% for key in pd.method_ranking_table[0].keys() %}
+            <th>{{ key }}</th>
+            {% endfor %}
+            <th class="actions-col">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in pd.method_ranking_table %}
+          <tr>
+            {% for key, val in row.items() %}
+            <td>{{ val }}</td>
+            {% endfor %}
+            <td class="actions-col">
+              {% set idea_name = row.get('Idea', row.get('idea', '')) %}
+              {# Match idea name to method stable_id for actions #}
+              {% for m in pd.method_details %}
+                {% if m.label | lower in idea_name | lower or idea_name | lower in m.label | lower %}
+              <button class="btn btn-xs btn-select-method" title="Use for following phases">{{ '✓' if m.status == 'recommended' else '→' }}</button>
+              <form action="{{ url_for('retire_branch', project_id=project.id, phase_slug=pc.slug) }}"
+                    method="post" class="retire-form-inline"
+                    data-confirm="Retire '{{ m.label }}'?">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="project_identity" value="{{ project_identity }}">
+                <input type="hidden" name="stable_id" value="{{ m.stable_id }}">
+                <button type="submit" class="btn btn-xs btn-retire-method" title="Retire this method" {% if m.status == 'retired' %}disabled{% endif %}>×</button>
+              </form>
+                {% endif %}
+              {% endfor %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
+    {% elif pd.method_comparison %}
+    <div class="run-summary-highlight method-comparison-panel">
+      <div class="method-comparison-text">{{ pd.method_comparison }}</div>
+    </div>
+    {% else %}
+    <div class="run-summary-highlight">
+      <span class="muted">No comparison available yet. Run the phase to generate an evaluation.</span>
+    </div>
+    {% endif %}
     {% else %}
     {# Other phases: regular summary highlight #}
     <div class="run-summary-highlight" data-run-highlight="{{ pc.slug }}">

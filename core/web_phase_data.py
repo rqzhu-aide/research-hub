@@ -394,6 +394,14 @@ def _format_method_ts(ts: str) -> str:
 
 def _method_comparison(project_dir: Path) -> str:
     """Extract method comparison/ranking from the latest method run summary."""
+    result = _method_comparison_data(project_dir)
+    if not result:
+        return ""
+    return result  # Already text, kept for backward compat
+
+
+def _method_comparison_data(project_dir: Path) -> str:
+    """Extract the Full Idea Set ranking table from the latest method run summary."""
     import re
 
     summary_dir = project_dir.resolve() / "phase-summaries" / "02-method-development"
@@ -427,6 +435,49 @@ def _method_comparison(project_dir: Path) -> str:
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r"[ \t]+", " ", text)
     return text.strip()[:3000]
+
+
+def _method_ranking_table(project_dir: Path) -> list[dict[str, str]]:
+    """Parse the Full Idea Set HTML table into structured rows.
+
+    Returns a list of dicts, each with keys from the table headers.
+    """
+    import re
+
+    summary_dir = project_dir.resolve() / "phase-summaries" / "02-method-development"
+    if not summary_dir.is_dir():
+        return []
+    summaries = sorted(
+        summary_dir.glob("*.html"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not summaries:
+        return []
+    try:
+        html = summaries[0].read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    # Find all tables, look for the one with "Idea" and "Source" headers
+    tables = re.findall(r"<table[^>]*>(.*?)</table>", html, re.DOTALL | re.IGNORECASE)
+    for table_html in tables:
+        headers = re.findall(r"<th[^>]*>(.*?)</th>", table_html, re.DOTALL | re.IGNORECASE)
+        headers = [re.sub(r"<[^>]+>", "", h).strip() for h in headers]
+        if not any("Idea" in h or "idea" in h for h in headers):
+            continue
+        if not any("Source" in h or "source" in h for h in headers):
+            continue
+        # This is the ranking table — parse rows
+        rows: list[dict[str, str]] = []
+        row_matches = re.findall(r"<tr[^>]*>(.*?)</tr>", table_html, re.DOTALL | re.IGNORECASE)
+        for row_html in row_matches[1:]:  # skip header row
+            cells = re.findall(r"<td[^>]*>(.*?)</td>", row_html, re.DOTALL | re.IGNORECASE)
+            cells = [re.sub(r"<[^>]+>", "", c).strip() for c in cells]
+            if len(cells) != len(headers):
+                continue
+            rows.append(dict(zip(headers, cells)))
+        return rows
+    return []
 
 
 def _summary_available(
@@ -1362,6 +1413,11 @@ def prepare_phase_data(
             _method_comparison(project_dir)
             if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE
             else ""
+        ),
+        "method_ranking_table": (
+            _method_ranking_table(project_dir)
+            if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE
+            else []
         ),
     }
 
