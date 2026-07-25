@@ -49,6 +49,26 @@ with a proof:
 - You do not need to write the paper's introduction or method section.
 - You do not need to assess computational cost (the data analyst does this).
 
+## On rerun
+
+If this is a rerun, read the prior run's proofs and assessments carefully. Your
+job is to **improve on them**, not merely re-derive the same results:
+
+- **Close gaps**: if the prior run left conjectures, attempt to prove them. If
+  you cannot, state the gap more precisely and identify what is missing.
+- **Strengthen bounds**: if the prior rate bound was loose, derive a tighter one
+  or prove a matching upper bound.
+- **Extend scope**: if the prior proof required restrictive assumptions, relax
+  them or identify what additional assumptions are needed.
+- **Fix errors**: if the prior audit identified gaps or unjustified steps,
+  correct them and re-prove the affected results.
+- **Deepen the analysis**: if the prior proof was complete but shallow, extend
+  it — prove additional properties, derive corollaries, or connect to broader
+  theory.
+
+Do not simply reproduce the prior proof. If you find the prior proof is already
+optimal, state this and explain why no improvement is possible.
+
 ## Conjectures
 If a result cannot be proved with current tools:
 - State it as a **conjecture**: "Conjecture: under assumptions A1-Ak, we expect

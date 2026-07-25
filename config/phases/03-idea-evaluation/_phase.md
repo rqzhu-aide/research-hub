@@ -76,6 +76,24 @@ definition and the idea set). Phase 01 (literature review) is also provided for
 positioning. The user may specify which idea to focus on in the run-start form;
 if not, the lead selects based on Phase 2 outcomes.
 
+**On rerun:** the prior Phase 03 run is provided as **comparison evidence** —
+"here is what was proved before, and what remains open." The new run must
+**improve on it**, not merely repeat it:
+
+- **Close gaps**: if the prior run left conjectures or unstated gaps, the new run
+  should attempt to close them — prove the conjectured results or state the
+  gap more precisely.
+- **Strengthen bounds**: if the prior rate bound was loose, derive a tighter one.
+- **Extend scope**: if the prior proof held only under restrictive assumptions,
+  relax them or identify what additional assumptions are needed.
+- **Fix errors**: if the prior proof had gaps the audit identified, correct them.
+- **Deepen the analysis**: if the prior cost analysis was incomplete, fill in
+  the missing computations.
+
+The prior run's proofs and assessments are starting material, not a constraint.
+The new run should read them carefully and build on them. Re-proving the same
+result from scratch without improvement is not useful.
+
 ## Files and outputs
 Write all outputs under `evaluations/run/NN/`:
 

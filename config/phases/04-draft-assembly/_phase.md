@@ -84,6 +84,26 @@ Requires a current Phase 03 summary approved by the user (contains the proved
 theorems and rate bounds). Phases 01 (literature) and 02 (methods) are also
 provided.
 
+**On rerun:** the prior Phase 04 run is provided as **comparison evidence** —
+"here is the implementation, the experiments, and what was measured before." The
+new run must **improve on it**, not merely repeat it:
+
+- **Fix bugs**: if the prior implementation had errors identified in the audit,
+  correct them and rerun the affected experiments.
+- **Extend experiments**: if the prior run tested only some targets or parameter
+  settings, test additional ones.
+- **Strengthen results**: if the prior measured rates were close to the bound,
+  run more replications to tighten the estimate. If the prior ESS/s improvement
+  was marginal, test at larger N or different graph structures.
+- **Close gaps**: if the prior run left diagnostics incomplete or experiments
+  untested, complete them.
+- **Improve code**: if the prior implementation was inefficient or unstable,
+  optimize it and rerun.
+
+The prior run's code and results are starting material, not a constraint. The
+new run should read them carefully and build on them. Re-running the same
+experiments from scratch without improvement is not useful.
+
 ## Files and outputs
 Write all outputs under `draft/sections/run/NN/`:
 

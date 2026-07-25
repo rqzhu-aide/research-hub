@@ -77,6 +77,22 @@ State which explanation is most likely and what evidence supports it.
 - You do not need to run experiments yourself.
 - You do not need to write paper sections.
 
+## On rerun
+If this is a rerun, read the prior run's audit findings and the current run's
+results carefully. Your job is to **improve on the prior audit**:
+
+- **Follow up on prior findings**: if the prior audit identified discrepancies
+  that were not resolved, investigate whether the new run resolves them.
+- **Deeper validation**: if the prior audit was cursory, do a more thorough
+  line-by-line check of the implementation.
+- **New predictions**: if Phase 3 was rerun with new results, validate the
+  experiments against the updated bounds.
+- **Explain prior discrepancies**: if the prior run's theory-experiment gap was
+  unexplained, attempt to explain it with the new data.
+
+Do not simply repeat the prior audit. If the prior audit was already thorough,
+state this and explain why no new findings are needed.
+
 ## What to produce
 Write to `{{output_path}}`:
 

@@ -71,6 +71,25 @@ planned experiment is infeasible (e.g., too slow, numerically unstable), state
 this explicitly and explain why. Do not silently substitute a different
 experiment.
 
+## On rerun
+If this is a rerun, read the prior run's code and results carefully. Your job
+is to **improve on them**, not merely re-run the same experiments:
+
+- **Fix bugs**: if the prior audit identified implementation errors, correct
+  them and rerun the affected experiments.
+- **Extend experiments**: test targets or parameter settings the prior run
+  didn't cover.
+- **Strengthen results**: if prior estimates were noisy, run more replications.
+  If the ESS/s improvement was marginal, test at larger N or different graph
+  structures.
+- **Improve code**: if the prior implementation was slow or unstable, optimize
+  it and rerun.
+- **Close gaps**: complete any diagnostics or experiments the prior run left
+  incomplete.
+
+Do not simply reproduce the prior results. If the prior results are already
+optimal, state this and explain why.
+
 ## Cross-check (round 2+)
 The theorist will audit:
 - **Implementation correctness**: does the code compute what the math says?

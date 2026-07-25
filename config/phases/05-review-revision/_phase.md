@@ -59,6 +59,22 @@ The lead combines:
 Requires a current Phase 04 summary approved by the user (experiment results).
 Phases 01–03 are also provided.
 
+**On rerun:** the prior Phase 05 run is provided as **comparison evidence** —
+"here is the assembled manuscript, the review, and the revision history." The
+new run must **improve on it**, not merely repeat it:
+
+- **Address remaining review points**: if the prior review identified weaknesses
+  that were not fully addressed, address them in the new revision.
+- **Deepen sections**: if the prior manuscript was thin in some areas (e.g.,
+  related work, discussion), expand them using the Phase 1–04 context.
+- **Fix issues**: if the prior assembly had notation inconsistencies or framing
+  mismatches, correct them.
+- **Respond to new evidence**: if Phase 3 or 4 was rerun and produced new
+  results, incorporate them into the manuscript.
+
+The prior manuscript and review are starting material, not a constraint. The
+new run should read them carefully and build on them.
+
 ## Files and outputs
 Write all outputs under `draft/revised/run/NN/`:
 
