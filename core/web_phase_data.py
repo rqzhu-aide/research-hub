@@ -437,6 +437,57 @@ def _method_comparison_data(project_dir: Path) -> str:
     return text.strip()[:3000]
 
 
+def _method_scores(project_dir: Path) -> dict[str, dict[str, str]]:
+    """Extract the 3-axis scoring (risk, potential, tractability) from the theorist output.
+
+    Parses markdown tables from ideas/run/*/round-01/theorist.md.
+    Returns {method_name_lower: {risk: str, potential: str, tractability: str}}.
+    """
+    import re
+
+    ideas_dir = project_dir.resolve() / "ideas" / "run"
+    if not ideas_dir.is_dir():
+        return {}
+    scores: dict[str, dict[str, str]] = {}
+    # Check all rounds for scoring tables
+    for run_dir in sorted(ideas_dir.iterdir()):
+        for round_dir in sorted((run_dir / "round-01").parent.iterdir() if (run_dir / "round-01").exists() else []):
+            theorist_file = round_dir / "theorist.md"
+            if not theorist_file.is_file():
+                continue
+            try:
+                text = theorist_file.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            # Find markdown scoring tables with our three axes
+            lines = text.split("\n")
+            for i, line in enumerate(lines):
+                if "Mathematical risk" not in line and "Acceleration potential" not in line:
+                    continue
+                headers = [h.strip() for h in line.split("|") if h.strip()]
+                if len(headers) < 4:
+                    continue
+                # Parse subsequent rows until empty/non-table line
+                for j in range(i + 2, min(len(lines), i + 12)):
+                    row_line = lines[j].strip()
+                    if not row_line.startswith("|"):
+                        break
+                    cells = [c.strip() for c in row_line.split("|") if c.strip()]
+                    if len(cells) < 4:
+                        continue
+                    idea_name = re.sub(r"^\d+\.\s*", "", cells[0]).strip()
+                    # Extract just the rating word (Low/Medium/High/Very high) from each cell
+                    def _extract_rating(cell: str) -> str:
+                        m = re.match(r"(Very high|High|Medium|Low|Moderate)", cell, re.IGNORECASE)
+                        return m.group(1) if m else cell[:20]
+                    scores[idea_name.lower()] = {
+                        "risk": _extract_rating(cells[1]),
+                        "potential": _extract_rating(cells[2]),
+                        "tractability": _extract_rating(cells[3]),
+                    }
+    return scores
+
+
 def _method_ranking_rows(project_dir: Path) -> list[dict[str, Any]]:
     """Parse the Full Idea Set table and enrich with downstream phase status.
 
@@ -515,6 +566,7 @@ def _method_ranking_rows(project_dir: Path) -> list[dict[str, Any]]:
             break
 
     # Build simplified rows
+    method_scores = _method_scores(project_dir)
     result: list[dict[str, Any]] = []
     for row in raw_rows:
         idea = row.get("Idea", row.get("idea", ""))
@@ -533,9 +585,22 @@ def _method_ranking_rows(project_dir: Path) -> list[dict[str, Any]]:
         p4 = "done" if (is_approved and p04_has) else ""
         p5 = "done" if (is_approved and p05_has) else ""
 
+        # Scores from theorist evaluation — match by substring
+        idea_lower = idea.lower().strip()
+        scores = method_scores.get(idea_lower, {})
+        if not scores:
+            # Try partial match: score keys are abbreviated names
+            for score_key, score_val in method_scores.items():
+                if score_key in idea_lower or idea_lower.startswith(score_key):
+                    scores = score_val
+                    break
+
         result.append({
             "name": idea,
             "note": brief,
+            "risk": scores.get("risk", ""),
+            "potential": scores.get("potential", ""),
+            "tractability": scores.get("tractability", ""),
             "p3": p3,
             "p4": p4,
             "p5": p5,

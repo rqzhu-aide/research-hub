@@ -446,9 +446,16 @@ summary::-webkit-details-marker { display: none; }
   padding: 6px 10px; border-bottom: 1px solid var(--line); color: var(--text-soft);
 }
 .method-ranking-table td:first-child { font-weight: 600; color: var(--text); }
-.method-ranking-table .note-col { color: var(--muted); font-size: .74rem; max-width: 300px; }
+.method-ranking-table .note-col { color: var(--muted); font-size: .74rem; max-width: 250px; }
 .method-ranking-table tbody tr:hover { background: var(--accent-soft); }
-.method-ranking-table .phase-col { text-align: center; width: 32px; }
+.method-ranking-table .score-col { text-align: center; white-space: nowrap; }
+.method-ranking-table .phase-col { text-align: center; width: 28px; }
+.score-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: .65rem; font-weight: 600; text-transform: capitalize; }
+.score-low { background: var(--approved-soft); color: var(--approved); }
+.score-moderate { background: var(--accent-soft); color: var(--accent-bright); }
+.score-medium { background: var(--accent-soft); color: var(--accent-bright); }
+.score-high { background: var(--review-soft, rgba(244,196,109,.15)); color: var(--review, #f4c46d); }
+.score-very-high { background: var(--danger-soft); color: var(--danger); }
 .method-ranking-table .actions-col { text-align: center; white-space: nowrap; width: 60px; }
 .phase-light { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
 .phase-done { background: var(--approved); box-shadow: 0 0 4px rgba(102,216,194,.4); }
