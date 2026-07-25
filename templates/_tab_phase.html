@@ -83,13 +83,15 @@
         {% else %}
         <span class="run-status-badge">{{ latest_status | replace('_', ' ') }}</span>
         {% endif %}
-        {# Method count for method development phase #}
+        {# Method count — only for method development phase #}
+        {% if pc.slug == '02-method-development' %}
         {% set method_menu = pd.method_menu | default(none) %}
         {% if method_menu and method_menu.entries %}
           {% set active_methods = method_menu.entries | rejectattr('status', 'equalto', 'retired') | rejectattr('errors') | list %}
           {% if active_methods %}
         <span class="method-count-badge">{{ active_methods | length }} method{{ 's' if active_methods | length != 1 }} developed</span>
           {% endif %}
+        {% endif %}
         {% endif %}
       </div>
 
@@ -241,8 +243,8 @@
 </section>
 {% endif %}
 
-{# ── MathJax for method body rendering ── #}
-{% if pc.slug == '02-method-development' and pd.method_details | default([]) and not run_active and latest %}
+{# ── MathJax for math rendering in summaries and method bodies ── #}
+{% if latest and not run_active %}
 <script>
   window.MathJax = {
     tex: { inlineMath: [['$', '$'], ['\\(', '\\)']],
@@ -318,47 +320,10 @@
   </div>
   {% endif %}
 
-  {# ── Method selection (Phase 03+ only) ── #}
-  {% if method_bound_phase %}
-  {% set method_menu = pd.method_menu | default(none) %}
-  {% set menu_branches = (method_menu.entries | selectattr('status', 'ne', 'retired') | rejectattr('errors') | list) if method_menu else [] %}
-  <fieldset class="launch-fieldset-compact method-selection-control" data-method-selection-control>
-    <div class="method-row">
-      <span class="field-label">Method:</span>
-      {% if approved_method %}
-      <span class="approved-method-tag"><code>{{ approved_method.stable_id }}</code> ({{ approved_method.version }})</span>
-      {% endif %}
-      {% if menu_branches %}
-      <select class="form-input-compact" name="method_branch">
-        <option value="">{% if approved_method %}Use approved{% else %}Select…{% endif %}</option>
-        {% for entry in menu_branches %}
-        <option value="{{ entry.stable_id }}">{{ entry.label }} ({{ entry.status }})</option>
-        {% endfor %}
-      </select>
-      {% else %}
-      <input class="form-input-compact" name="run_specific_method_id" type="text" maxlength="200" placeholder="method id">
-      <input class="form-input-compact" name="run_specific_method_version" type="text" maxlength="200" placeholder="version">
-      {% endif %}
-    </div>
-    {# Compact retire buttons #}
-    {% if menu_branches %}
-    <div class="branch-roster-compact" data-branch-roster>
-      {% for entry in menu_branches %}
-      <span class="branch-tag branch-{{ entry.status }}">
-        {{ entry.label }}
-        <form action="{{ url_for('retire_branch', project_id=project.id, phase_slug=pc.slug) }}"
-              method="post" class="retire-form-inline"
-              data-confirm="Retire '{{ entry.label }}'?">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="project_identity" value="{{ project_identity }}">
-          <input type="hidden" name="stable_id" value="{{ entry.stable_id }}">
-          <button type="submit" class="btn-retire-mini" title="Retire this method">×</button>
-        </form>
-      </span>
-      {% endfor %}
-    </div>
-    {% endif %}
-  </fieldset>
+  {# ── Method selection (Phase 03+): handled by context chip above, 
+       just pass the approved method as hidden field ── #}
+  {% if method_bound_phase and approved_method %}
+  <input type="hidden" name="method_branch" value="{{ approved_method.stable_id }}">
   {% endif %}
 
   {# ── Theory audit plan (Phase 03 only) ── #}
