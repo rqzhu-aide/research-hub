@@ -23,14 +23,14 @@ cd research-hub
 ./setup.sh
 ```
 
-`setup.sh` creates the virtual environment, installs dependencies, initializes the database, and validates the config. It also checks whether `hermes` is on `PATH` and warns you if not.
+`setup.sh` creates the virtual environment, installs the `research-hub` package (editable mode), initializes the database, and validates the config. It also checks whether `hermes` is on `PATH` and warns you if not.
 
 <details>
 <summary>Manual setup (if you prefer)</summary>
 
 ```bash
 python -m venv .venv
-.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -e .
 .venv/bin/python hub.py init
 ```
 
@@ -66,8 +66,8 @@ Open [http://127.0.0.1:5055](http://127.0.0.1:5055), then:
 | Command | What it does |
 |---|---|
 | `./setup.sh` | First-time setup: venv, install, init, sanity check |
-| `make install` | Create venv + install runtime dependencies |
-| `make install-dev` | Create venv + install runtime + test dependencies |
+| `make install` | Create venv + install package (runtime) |
+| `make install-dev` | Create venv + install package (runtime + dev) |
 | `make init` | Initialize or migrate the hub database |
 | `make run` | Start the web UI |
 | `make test` | Run the full test suite |
@@ -85,11 +85,9 @@ research-hub/
 ├── hub.py                        ← Project registry, config loader
 ├── schema.sql                    ← Hub database schema
 ├── config.yaml                   ← Main configuration (phases, agents, hub)
-├── requirements.txt              ← Runtime dependencies
-├── requirements-dev.txt          ← Test dependencies
+├── pyproject.toml                ← Package metadata + dependencies + pytest config
 ├── setup.sh                      ← First-time setup script
 ├── Makefile                      ← Convenience commands
-├── pyproject.toml                ← pytest config
 │
 ├── core/                         ← Application package
 │   ├── __init__.py
@@ -369,7 +367,7 @@ Do not put API keys or other secrets in project briefs, playbooks, feedback, log
 ## Tests
 
 ```bash
-make install-dev   # or: .venv/bin/pip install -r requirements-dev.txt
+make install-dev   # or: .venv/bin/pip install -e ".[dev]"
 make test          # or: .venv/bin/python -m pytest
 ```
 

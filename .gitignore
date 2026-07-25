@@ -8,3 +8,4 @@ tests/.pytest-tmp-*/
 hub.db
 projects/
 .hermes/
+*.egg-info/

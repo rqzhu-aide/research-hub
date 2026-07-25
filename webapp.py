@@ -37,8 +37,6 @@ from flask import (
 )
 from werkzeug.sansio.utils import host_is_trusted
 
-sys.path.insert(0, str(Path(__file__).parent.resolve()))
-
 import hub
 from core import profile_skills, project_state
 from core.launch_run import (

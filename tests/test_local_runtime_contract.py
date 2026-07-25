@@ -95,17 +95,11 @@ def test_flask_rejects_non_loopback_server_or_client_addresses(
     assert response.status_code == 400
 
 
-def test_repository_declares_source_run_installation() -> None:
+def test_repository_declares_editable_package_install() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    runtime = (ROOT / "requirements.txt").read_text(encoding="utf-8")
-    development = (ROOT / "requirements-dev.txt").read_text(encoding="utf-8")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
-    assert "[build-system]" not in pyproject
-    assert "[project]" not in pyproject
-    assert "Flask==3.1.3" in runtime
-    assert "Werkzeug==3.1.8" in runtime
-    assert "-r requirements.txt" in development
-    assert "pytest==8.4.1" in development
-    assert "not distributed as a Python package or wheel" not in readme  # old phrasing, removed
-    assert "pip install -e" not in readme
+    assert "[build-system]" in pyproject
+    assert "[project]" in pyproject
+    assert "packages = [\"core\"]" in pyproject
+    assert "pip install -e" in readme

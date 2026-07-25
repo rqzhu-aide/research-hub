@@ -48,10 +48,10 @@ else
 fi
 echo
 
-# -- 4. Install dependencies ------------------------------------------------
-echo "▶ Installing runtime dependencies…"
+# -- 4. Install dependencies and package -----------------------------------
+echo "▶ Installing research-hub package (editable)…"
 .venv/bin/pip install --upgrade pip --quiet
-.venv/bin/pip install -r requirements.txt --quiet
+.venv/bin/pip install -e ".[dev]" --quiet
 echo "  Done."
 echo
 

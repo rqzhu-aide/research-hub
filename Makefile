@@ -11,11 +11,11 @@ help: ## Show this help
 venv: ## Create the virtual environment
 	$(PYTHON) -m venv $(VENV)
 
-install: venv ## Install runtime dependencies
-	$(PIP) install -r requirements.txt
+install: venv ## Install the package in editable mode (runtime deps only)
+	$(PIP) install -e .
 
-install-dev: venv ## Install runtime + test dependencies
-	$(PIP) install -r requirements-dev.txt
+install-dev: venv ## Install the package in editable mode (runtime + dev deps)
+	$(PIP) install -e ".[dev]"
 
 init: ## Initialize (or migrate) the hub database
 	$(VENV)/bin/python hub.py init
@@ -31,4 +31,4 @@ check: ## Validate the shipped config.yaml
 
 clean: ## Remove caches and compiled files
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	rm -rf .pytest_cache
+	rm -rf .pytest_cache *.egg-info build
