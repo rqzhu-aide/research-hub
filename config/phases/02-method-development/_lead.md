@@ -98,6 +98,38 @@ Then recommend a path forward:
 
 State this recommendation clearly. The user alone decides the next step.
 
+**Publish the method menu.** Before submitting the summary, write one markdown
+file per retained idea to `ideas/methods/<stable_id>.md` (create the folder if
+needed). These files are the menu the Phase 03 interface lists for branch
+selection — one file per method the user can choose to evaluate. Format:
+
+    ---
+    stable_id: spectral-graph-coupling
+    version: v1
+    label: Spectral graph coupling
+    status: recommended
+    ---
+
+    # <label>
+
+    <2–4 sentences: the mechanism and what makes it new.>
+
+    ## Unique position
+    <what it enables that no existing method can.>
+
+    ## Phase 03 focus
+    <the specific questions a Phase 03 evaluation of this method should answer.>
+
+Rules:
+
+- `stable_id` is lowercase-hyphenated; the filename must be `<stable_id>.md`.
+- `status` is one of `recommended`, `viable`, `frontier`, `retired`. Exactly
+  one file is `recommended`, and its `stable_id` and `version` must match the
+  decision record's selected method.
+- On reruns: add files for new ideas, update `version`/`status` in place for
+  retained ideas, and never delete a file — mark it `status: retired` with the
+  reason in the body instead.
+
 Include:
 - a **Scientific record changes** section with proposed additions;
 - the **Proposed scientific baseline**, which becomes accepted only after user

@@ -65,6 +65,13 @@ Write all outputs under `ideas/run/NN/`:
 - Write the HTML summary to the exact path provided for this run and do not
   overwrite earlier summaries.
 
+Outputs under `ideas/run/NN/` are per-run. In addition, the lead maintains the
+shared **method menu** at `ideas/methods/<stable_id>.md` — one file per retained
+idea, written during the final synthesis (format and rules in `_lead.md`).
+Phase 03 lists these files for branch selection. Menu files persist across
+runs; an idea is retired by setting `status: retired` in its file, never by
+deleting the file.
+
 Each role report begins with Complete, Partial, or Failed as defined in the team
 norms. Nonempty Partial and Failed reports preserve usable ideas and do not
 prevent the lead from completing the configured run.
