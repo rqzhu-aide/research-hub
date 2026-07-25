@@ -47,7 +47,33 @@ Write the HTML summary. Present:
 4. **Theory-experiment agreement** — do the measured rates match the proved
    bounds?
 5. **What worked and what didn't** — honest assessment.
-6. **Recommendation** — proceed to paper assembly, or what needs more work.
+
+6. **Readiness assessment and recommendation.** Evaluate explicitly:
+
+   a. **Are the results sufficient to proceed to Phase 05?** Does the evidence
+      support the method's claims? Are the experiments complete enough to write
+      the paper? If yes, recommend proceeding and state what the paper should
+      emphasize.
+
+   b. **Do the experiments need improvement before Phase 05?** If the experiments
+      are incomplete, the diagnostics failed, or the results are ambiguous,
+      recommend rerunning this phase with a specific focus (e.g., "run additional
+      targets," "test at larger N," "fix the discretization instability"). State
+      exactly what needs to be tested.
+
+   c. **Should a previous phase be rerun?** If the experiments reveal a theory
+      gap (e.g., the proved bound doesn't match reality, the method's scope was
+      mischaracterized), recommend rerunning Phase 03 to close the gap. State
+      exactly what theoretical result is missing.
+
+   d. **Is this method a dead end?** If the experiments show the method does not
+      work (e.g., no acceleration over baselines, numerically unstable, does not
+      converge), recommend returning to Phase 02 to select a different method.
+      State why this method failed with specific numbers.
+
+   State the recommendation clearly as one of: **proceed**, **improve
+   experiments**, **return to Phase N**, or **dead end — select different
+   method**. Justify with specific evidence from the measured results.
 
 ## Requirements
 - The data analyst MUST produce working code. A report without actual code files

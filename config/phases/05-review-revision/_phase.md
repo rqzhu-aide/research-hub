@@ -88,6 +88,13 @@ Write all outputs under `draft/revised/run/NN/`:
 - `paper_reviewer.md`: instructions for the paper reviewer.
 
 ## What the user decides
-The user starts every run. After the revised manuscript is produced, the user
-decides whether to approve it, request further revision, or rerun. The final
-manuscript is the deliverable — it can be packaged and sent as a complete paper.
+The user starts every run. After the revised manuscript is produced, the lead
+presents a **readiness assessment** with a clear recommendation:
+
+- **approve** — the manuscript is ready for submission
+- **revise further** — specific weaknesses need another revision cycle
+- **return to Phase N** — the theory, experiments, or literature needs more work
+- **dead end** — the method cannot be supported; select a different one
+
+The final manuscript is the deliverable — it can be packaged and sent as a
+complete paper.

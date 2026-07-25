@@ -102,8 +102,29 @@ Include:
 - a **Scientific record changes** section with proposed additions;
 - the **Proposed scientific baseline**, which becomes accepted only after user
   approval;
-- explicit user options: proceed to Phase 03 with named idea(s), return to
-  Phase 01 for deeper review, request revision, or rerun the brainstorm.
+- **Readiness assessment and recommendation.** Evaluate explicitly:
+
+  a. **Are the ideas sufficient to proceed to Phase 03?** Can the theorist
+     develop proofs from what was proposed? If yes, recommend proceeding and
+     state which idea(s) are most promising and why.
+
+  b. **Do the ideas need improvement before Phase 03?** If the proposals are
+     too vague, too similar to existing work, or lack mathematical
+     specification, recommend rerunning this phase with a specific focus (e.g.,
+     "develop the interaction structure more precisely," "propose a mechanism
+     with a clear rate bound"). State exactly what is missing.
+
+  c. **Should Phase 01 be rerun?** If the literature review missed relevant
+     work that would inform the method design, recommend rerunning Phase 01
+     with a specific focus. State exactly what literature is missing.
+
+  d. **Are any ideas clearly not viable?** If a proposed idea has a fundamental
+     flaw (e.g., cannot preserve the invariant, computationally infeasible,
+     already solved), state this honestly and recommend against pursuing it.
+
+  State the recommendation clearly as one of: **proceed**, **improve ideas**,
+  **return to Phase 01**, or **revise direction**. Justify with specific
+  evidence from the proposals.
 
 After submitting the summary, stop. The user alone decides the next step.
 

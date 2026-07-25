@@ -117,11 +117,25 @@ Include:
    recorded; the proposed baseline becomes accepted only after user approval;
 6. coverage gaps and precise questions for a focused literature update;
 7. searched scope, stopping rule, and any "not found within scope" conclusions;
-8. explicit options for the user:
-   - approve this literature evidence summary as the current evidence base;
-   - request revision of named components of the contribution;
-   - rerun a focused search;
-   - set aside or discontinue the candidate contribution.
+8. **Readiness assessment and recommendation.** Evaluate explicitly:
+
+   a. **Is the literature sufficient to proceed to Phase 02?** Can the team
+      brainstorm new methods with the current evidence base? If yes, recommend
+      proceeding and state what aspects of the literature are most relevant.
+
+   b. **Does the literature need improvement before Phase 02?** If there are
+      coverage gaps, missing recent work, or unclear theoretical foundations,
+      recommend rerunning this phase with a specific focus (e.g., "survey
+      non-reversible MCMC methods," "update with 2024-2026 papers"). State
+      exactly what is missing.
+
+   c. **Is the research direction viable?** If the literature reveals that the
+      proposed approach is already solved, or that the problem is fundamentally
+      harder than expected, state this honestly with specific evidence.
+
+   State the recommendation clearly as one of: **proceed**, **improve
+   literature**, or **reconsider direction**. Justify with specific evidence
+   from the survey.
 
 Do not select an option for the user. After submitting the summary, stop. The
 user alone decides whether to approve it, request changes, rerun the phase, or

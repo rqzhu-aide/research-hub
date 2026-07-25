@@ -52,9 +52,28 @@ Write the HTML summary to the exact path provided. Report:
 - the final draft's readiness for submission;
 - any remaining open questions.
 
-Present explicit user options: approve the final draft, request further revision
-(specific points), rerun the review, or proceed to Phase 6 (if used for
-additional finalization).
+**Readiness assessment and recommendation.** Evaluate explicitly:
+
+a. **Is the manuscript ready for submission?** Does it meet the standard for a
+   complete research paper: clear contribution, rigorous proofs, validated
+   experiments, honest limitations? If yes, recommend approving.
+
+b. **Does the manuscript need further revision?** If the reviewer identified
+   weaknesses that were not fully addressed, or if new issues emerged during
+   revision, recommend another revision cycle with specific focus areas.
+
+c. **Should a previous phase be rerun?** If the review reveals that the theory
+   is incomplete (return to Phase 03), the experiments are insufficient (return
+   to Phase 04), or the literature positioning is wrong (return to Phase 01),
+   recommend rerunning that phase with a specific focus.
+
+d. **Is the method fundamentally flawed?** If the review reveals that the
+   method's claims cannot be supported by the evidence, recommend returning to
+   Phase 02 to select a different method. State why with specific evidence.
+
+State the recommendation clearly as one of: **approve**, **revise further**,
+**return to Phase N**, or **dead end — select different method**. Justify with
+specific evidence from the review and revision.
 
 ## Requirements
 - Do not skip review points. Every weakness or recommendation must be addressed

@@ -51,7 +51,34 @@ Write the HTML summary to the exact path provided. Present:
 3. **Computational assessment**: cost, feasibility, stability.
 4. **Cross-check outcomes**: what the audit found, what was revised.
 5. **Open questions**: results that could not be proved, with the specific gap.
-6. **Recommendation**: proceed to Phase 04, or what needs more work first.
+
+6. **Readiness assessment and recommendation.** Evaluate explicitly:
+
+   a. **Is the theory sufficient to proceed to Phase 04?** Can the analyst
+      implement the method and design experiments from what was proved? If yes,
+      recommend proceeding and state what Phase 04 should test first.
+
+   b. **Does the theory need improvement before Phase 04?** If the proofs are
+      incomplete, the rate bound is loose, or the scope is unclear, recommend
+      rerunning this phase with a specific focus (e.g., "close the gap in the
+      invariance proof," "tighten the rate bound," "extend to non-Gaussian
+      targets"). State exactly what needs to be proved.
+
+   c. **Should a previous phase be rerun?** If the method definition from Phase 02
+      is unclear, or the literature review from Phase 01 missed relevant work,
+      recommend rerunning that phase with a specific focus (e.g., "Phase 02
+      should clarify the interaction structure," "Phase 01 should survey
+      non-reversible MCMC").
+
+   d. **Is this method a dead end?** If the proofs reveal a fundamental obstacle
+      (e.g., the interaction cannot preserve the invariant, the rate bound is
+      worse than the baseline, the assumptions are unrealistic), recommend
+      returning to Phase 02 to select a different method. State why this method
+      is not viable.
+
+   State the recommendation clearly as one of: **proceed**, **improve theory**,
+   **return to Phase N**, or **dead end — select different method**. Justify with
+   specific evidence from the proofs and cost analysis.
 
 ## Requirements
 - The theorist MUST produce actual proofs. A run where the theorist only writes
