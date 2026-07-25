@@ -193,12 +193,13 @@ summary::-webkit-details-marker { display: none; }
   background: currentColor;
   color: var(--faint);
 }
-.status-active, .status-pending, .status-recorded, .status-superseded { color: var(--faint); }
+.status-pending, .status-recorded, .status-superseded { color: var(--faint); }
 .state-active, .state-pending, .state-recorded, .state-superseded { color: var(--faint); }
 .status-starting, .status-running, .status-submitting,
 .state-starting, .state-running, .state-submitting { color: var(--running); }
 .status-stopping, .state-stopping { color: var(--review); }
 .status-awaiting_review, .status-completed, .state-awaiting_review, .state-completed { color: var(--review); }
+.status-active, .state-active { color: var(--approved); }
 .status-approved, .state-approved { color: var(--approved); }
 .status-stale, .status-revision_requested, .status-needs_revision,
 .state-stale, .state-revision_requested, .state-needs_revision { color: var(--review); }
