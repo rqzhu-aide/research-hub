@@ -367,12 +367,17 @@ def _method_details(project_dir: Path) -> list[dict[str, Any]]:
         except OSError:
             pass
 
+        # Render markdown body to HTML
+        import markdown as md
+        body_html = md.markdown(body, extensions=["fenced_code", "tables", "md_in_html"])
+
         entries.append({
             "stable_id": _yaml_val("stable_id") or path.stem,
             "version": _yaml_val("version"),
             "label": _yaml_val("label") or path.stem,
             "status": _yaml_val("status") or "viable",
             "body": body,
+            "body_html": body_html,
             "created_ts": created_ts,
             "created_display": _format_method_ts(created_ts),
         })

@@ -235,10 +235,22 @@
       <span class="method-status-tag method-status-{{ m.status }}">{{ m.status }}</span>
       {% if m.version %}<span class="method-version">v{{ m.version }}</span>{% endif %}
     </div>
-    <div class="method-detail-body">{{ m.body }}</div>
+    <div class="method-detail-body markdown-body">{{ m.body_html | safe }}</div>
   </div>
   {% endfor %}
 </section>
+{% endif %}
+
+{# ── MathJax for method body rendering ── #}
+{% if pc.slug == '02-method-development' and pd.method_details | default([]) and not run_active and latest %}
+<script>
+  window.MathJax = {
+    tex: { inlineMath: [['$', '$'], ['\\(', '\\)']],
+           displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+    svg: { fontCache: 'global' }
+  };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" id="MathJax-script" async></script>
 {% endif %}
 
 {# ── Hidden data for JS run-switching ── #}

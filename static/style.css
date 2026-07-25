@@ -497,7 +497,17 @@ summary::-webkit-details-marker { display: none; }
 .method-status-frontier { background: var(--review-soft, rgba(244,196,109,.15)); color: var(--review, #f4c46d); }
 .method-status-retired { background: var(--danger-soft); color: var(--danger); }
 .method-version { color: var(--muted); font-size: .72rem; font-family: "IBM Plex Mono", monospace; }
-.method-detail-body { font-size: .84rem; color: var(--text-soft); line-height: 1.6; white-space: pre-wrap; }
+.method-detail-body { font-size: .84rem; color: var(--text-soft); line-height: 1.7; white-space: normal; }
+.method-detail-body.markdown-body { white-space: normal; }
+.method-detail-body h1 { font-size: 1.1rem; color: var(--text); margin: 14px 0 8px; font-weight: 700; }
+.method-detail-body h2 { font-size: .95rem; color: var(--text); margin: 14px 0 6px; font-weight: 600; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+.method-detail-body h3 { font-size: .88rem; color: var(--text); margin: 10px 0 4px; font-weight: 600; }
+.method-detail-body p { margin: 6px 0; }
+.method-detail-body ul, .method-detail-body ol { margin: 6px 0; padding-left: 20px; }
+.method-detail-body li { margin: 3px 0; }
+.method-detail-body code { background: var(--surface-raised); padding: 1px 5px; border-radius: 3px; font-size: .8rem; color: var(--accent-bright); }
+.method-detail-body strong { color: var(--text); font-weight: 600; }
+.method-detail-body em { color: var(--text); }
 
 /* ═══ LOWER PANEL ═══ */
 .launch-form-lower {
