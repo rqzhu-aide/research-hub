@@ -75,4 +75,4 @@ All details live on the documentation site:
 
 ## License
 
-Private project.
+[MIT](LICENSE)
