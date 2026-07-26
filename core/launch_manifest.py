@@ -703,8 +703,11 @@ def _verify_frozen_inputs(
 
     verify_node(manifest.get("snapshots", {}))
     phase = manifest["phase"]
+    method_selection = manifest.get("method_selection") or {}
+    stable_id = method_selection.get("stable_id")
     expected_output = (
         project_dir
+        / (("branches/" + str(stable_id)) if stable_id else "")
         / str(phase.get("folder", ""))
         / "run"
         / f"{int(manifest['run_number']):02d}"
