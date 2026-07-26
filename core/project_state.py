@@ -30,6 +30,9 @@ import yaml
 
 from core.filesystem_utils import metadata_is_link_or_reparse
 
+import logging
+log = logging.getLogger(__name__)
+
 
 SCHEMA_VERSION = 6
 
@@ -1128,6 +1131,9 @@ def _migrate_slug_aliases(
         for run_index, run in enumerate(runs):
             if not isinstance(run, dict):
                 continue
+            # Backfill run_number for legacy runs (pre-R11)
+            if not run.get("run_number"):
+                run["run_number"] = run_index + 1
             # context_inputs
             ctx = run.get("context_inputs")
             if isinstance(ctx, list):
@@ -3697,8 +3703,10 @@ def reserve_run(
 
         run_id = str(uuid.uuid4())
         timestamp = _now_iso()
+        run_number = len(phase["runs"]) + 1
         run = {
             "run_id": run_id,
+            "run_number": run_number,
             "status": "starting",
             "mode": str(mode),
             "rounds_requested": requested,
@@ -3740,32 +3748,6 @@ def reserve_run(
         _refresh_derived_state(data)
         _save_unlocked(project_dir, data)
         return run_id
-
-
-def start_run(
-    project_dir: str | Path,
-    phase_slug: str,
-    mode: str,
-    rounds_requested: int = 1,
-    user_feedback: str = "",
-    **kwargs: Any,
-) -> int:
-    """Backward-compatible reserve call returning the legacy run index.
-
-    New code should use :func:`reserve_run`, which returns the immutable ID.
-    Every lifecycle function accepts either reference.
-    """
-
-    run_id = reserve_run(
-        project_dir,
-        phase_slug,
-        mode,
-        rounds_requested,
-        user_feedback,
-        **kwargs,
-    )
-    data = load(project_dir)
-    return _run_index(data["phases"][phase_slug], run_id)
 
 
 def set_process_pid(
@@ -4465,35 +4447,6 @@ def submit_run_for_review(
         raise StateConflict("run changed state before it could enter user review")
 
 
-def complete_run(
-    project_dir: str | Path,
-    phase_slug: str,
-    run_ref: str | int,
-    final_summary: str | Path | None = None,
-    status: str = "completed",
-    decision_record: str | Path | None = None,
-) -> None:
-    """Compatibility transition.
-
-    ``completed`` now means submitted for user review.  It deliberately does
-    not approve the result.  Failure and cancellation map to their explicit
-    state-machine transitions.
-    """
-
-    if status in {"completed", "awaiting_review"}:
-        if final_summary is None:
-            raise StateValidationError("a final summary is required")
-        submit_run_for_review(
-            project_dir, phase_slug, run_ref, final_summary, decision_record
-        )
-    elif status == "failed":
-        fail_run(project_dir, phase_slug, run_ref, "run reported failure")
-    elif status == "cancelled":
-        cancel_run(project_dir, phase_slug, run_ref, "run was cancelled")
-    else:
-        raise StateValidationError(f"unsupported completion status: {status!r}")
-
-
 def approve_run(
     project_dir: str | Path,
     phase_slug: str,
@@ -5008,19 +4961,6 @@ def approval_context_report(
                 data, phase_slug, run, normalized, project_dir
             )
         )
-
-
-def can_run(
-    project_dir: str | Path,
-    phase_slug: str,
-    gating: Mapping[str, Sequence[str]],
-) -> tuple[bool, str]:
-    """Compatibility query based only on approved, non-stale prerequisites."""
-
-    report = prerequisite_report(project_dir, phase_slug, gating)
-    if report["satisfied"]:
-        return True, ""
-    return False, "Waiting on approved, current results from: " + ", ".join(report["blockers"])
 
 
 def summary(project_dir: str | Path) -> str:

@@ -9,11 +9,14 @@ import shlex
 import stat
 import subprocess
 import tempfile
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
 from core.filesystem_utils import metadata_is_link_or_reparse
+
+log = logging.getLogger(__name__)
 
 
 # Repository root is the parent of the core/ package directory.

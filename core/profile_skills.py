@@ -25,6 +25,9 @@ from urllib.parse import urlsplit
 
 from core.filesystem_utils import metadata_is_link_or_reparse
 
+import logging
+log = logging.getLogger(__name__)
+
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = APP_ROOT / "bundled_skills" / "manifest.json"

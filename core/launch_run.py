@@ -1216,6 +1216,47 @@ def _worker(
                 return 0
             if current.get("status") not in project_state.ACTIVE_RUN_STATUSES:
                 return 1
+            # The lead exited cleanly but never called the complete CLI
+            # (or the call failed silently). If a valid summary file exists
+            # at the manifest's declared path, attempt the staging +
+            # finalization here rather than declaring failure.
+            if current.get("status") == "submitting":
+                # Staging succeeded but finalization returned False —
+                # retry once in case of a transient lock conflict.
+                finalized = project_state.finalize_run_submission(
+                    project_path,
+                    phase_slug,
+                    run_id,
+                    expected_pid=os.getpid(),
+                )
+                if finalized:
+                    return 0
+            elif (
+                manifest.get("summary_path")
+                and Path(str(manifest["summary_path"])).is_file()
+                and Path(str(manifest.get("decision_path", ""))).is_file()
+            ):
+                # The lead wrote the summary + decision files but the
+                # `complete` CLI command never ran (or failed silently).
+                # Stage the submission now, then finalize.
+                try:
+                    project_state.stage_run_submission(
+                        project_path,
+                        phase_slug,
+                        run_id,
+                        str(manifest["summary_path"]),
+                        str(manifest.get("decision_path") or "") or None,
+                    )
+                    finalized = project_state.finalize_run_submission(
+                        project_path,
+                        phase_slug,
+                        run_id,
+                        expected_pid=os.getpid(),
+                    )
+                    if finalized:
+                        return 0
+                except Exception:
+                    pass
             error = "Hermes exited without recording a summary for user review."
         else:
             error = (

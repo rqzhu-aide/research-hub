@@ -17,6 +17,9 @@ from core import project_state
 from core import profile_skills
 from core import launch_plans
 
+import logging
+log = logging.getLogger(__name__)
+
 MANIFEST_SCHEMA_VERSION = 8
 
 
@@ -332,6 +335,15 @@ def _validate_manifest_snapshot_schema(manifest: Mapping[str, Any]) -> None:
         not isinstance(role, str) or not role for role in members
     ):
         raise launch_common.LaunchError("Run manifest phase members must be a list of role names")
+    # F16: validate run_plan if present — must be a recognized theory plan
+    # or run mode. An empty string is acceptable (no plan specified).
+    raw_plan = phase.get("run_plan", "")
+    if isinstance(raw_plan, str) and raw_plan:
+        valid_plans = launch_common.THEORY_RUN_PLANS | launch_common.RUN_MODES | launch_common.PAPER_RUN_MODES
+        if raw_plan not in valid_plans:
+            raise launch_common.LaunchError(
+                f"Run manifest phase run_plan has unrecognized value: {raw_plan!r}"
+            )
     required_roles = set(members) | {"research_lead"}
     snapshots = manifest.get("snapshots")
     if not isinstance(snapshots, Mapping):

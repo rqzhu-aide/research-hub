@@ -40,6 +40,7 @@ from werkzeug.sansio.utils import host_is_trusted
 
 import hub
 from core import method_menu, profile_skills, project_state
+from core import launch_plans
 from core.launch_run import (
     PAPER_WRITING_PHASE,
     IDEA_EVALUATION_PHASE,
@@ -1233,7 +1234,14 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
                 review_target_sha256 = exact_options["review_target_sha256"]
             elif exact_options["kind"] == "run_mode":
                 run_mode = exact_options["run_mode"]
-            elif exact_options["kind"] not in {"paper_full", "standard"}:
+            elif exact_options["kind"] == "paper_full":
+                # Legacy Phase 05 run from before run_modes shipped. Map to
+                # the configured default mode so the rerun uses the current
+                # pipeline rather than silently falling through.
+                if launch_plans.phase_supports_run_modes(phase):
+                    _plans, default_mode = launch_plans._configured_run_modes(phase)
+                    run_mode = default_mode
+            elif exact_options["kind"] not in {"standard"}:
                 raise ValueError("The prior run's recorded configuration is not supported")
         if len(proof_audit_source_run_id) > 256:
             raise ValueError("The selected proof-audit source run ID is too long")
@@ -1730,6 +1738,11 @@ def recover_cleanup(project_id: int, phase_slug: str, run_id: str) -> Response:
 
 @app.get("/project/<int:project_id>/phase/<phase_slug>/run/<run_id>/summary")
 def phase_summary(project_id: int, phase_slug: str, run_id: str) -> Response:
+    # F18: validate route slugs before any path construction
+    if not phase_slug or "/" in phase_slug or ".." in phase_slug:
+        abort(404, description="Unknown phase")
+    if not run_id or "/" in run_id or ".." in run_id:
+        abort(404, description="Unknown run")
     resolved = _project_context(project_id)
     if not resolved:
         abort(404, description="Project not found")

@@ -11,6 +11,9 @@ from . import method_menu, project_state
 from .launch_manifest import phase_requires_method_binding
 from .launch_run import LaunchError, exact_rerun_options
 
+import logging
+log = logging.getLogger(__name__)
+
 
 MAX_REVIEW_TARGET_BYTES = 2 * 1024 * 1024
 SOURCE_BASELINE_STATUS_BY_RUN_STATUS = {
@@ -785,6 +788,67 @@ def _source_descriptor(
     }
 
 
+def _available_review_targets(
+    project_dir: Path,
+    phase_slug: str,
+) -> list[dict[str, str]]:
+    """Build a list of prior Phase 05 assembly runs whose manuscript can be reviewed.
+
+    Each entry has: run_id, label (run number + date), path (relative to
+    project root), and sha256 of the manuscript-post-review.md.
+    Only runs with status ``approved`` or ``awaiting_review`` and a valid
+    sealed ``post_review_manuscript`` artifact are included.
+    """
+
+    if phase_slug != "05-review-revision":
+        return []
+    root = project_dir.resolve()
+    targets: list[dict[str, str]] = []
+    try:
+        runs = project_state.get_runs(root, "05-review-revision")
+    except (KeyError, project_state.ProjectStateError):
+        return []
+    for run in runs:
+        if not isinstance(run, Mapping):
+            continue
+        status = str(run.get("status", ""))
+        if status in project_state.ACTIVE_RUN_STATUSES:
+            continue
+        artifacts = run.get("submission_artifacts")
+        if not isinstance(artifacts, Mapping):
+            continue
+        record = artifacts.get("post_review_manuscript")
+        if not isinstance(record, Mapping):
+            continue
+        try:
+            rel_path = str(record.get("path", ""))
+            full_path = (root / rel_path).resolve()
+            full_path.relative_to(root)
+            if not full_path.is_file():
+                continue
+        except (OSError, ValueError):
+            continue
+        sha256 = str(record.get("sha256", "")).strip().lower()
+        if len(sha256) != 64:
+            continue
+        run_id = str(run.get("run_id", ""))
+        run_number = run.get("number", run.get("run_number", ""))
+        ts = run.get("completed_at") or run.get("started_at") or ""
+        date_str = ts[:10] if ts else ""
+        label = f"Run {run_number}"
+        if date_str:
+            label += f" ({date_str})"
+        if status == "approved":
+            label += " ✓"
+        targets.append({
+            "run_id": run_id,
+            "label": label,
+            "path": rel_path,
+            "sha256": sha256,
+        })
+    return targets
+
+
 def _phase_six_post_review_target(
     project_dir: Path,
     phase_slug: str,
@@ -1104,10 +1168,14 @@ def _phase_runs(
     phase_slug: str,
     phase_state: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
-    return [
-        _run_view(project_dir, phase_slug, run, index + 1)
-        for index, run in enumerate(phase_state.get("runs", []))
-    ]
+    result = []
+    for index, run in enumerate(phase_state.get("runs", [])):
+        # Use the sealed run_number if present (survives slug merges);
+        # fall back to positional index for legacy runs created before
+        # run_number was stored.
+        number = run.get("run_number") or (index + 1)
+        result.append(_run_view(project_dir, phase_slug, run, number))
+    return result
 
 
 def _rounds_policy(phase: Mapping[str, Any]) -> dict[str, Any]:
@@ -1178,6 +1246,8 @@ def _decision_label(phase_state: Mapping[str, Any], latest: Mapping[str, Any] | 
         if latest.get("status") == "stopping":
             return "Cleanup needs your attention"
         return "Agents are working"
+    if latest is not None and latest.get("status") == "awaiting_review":
+        return "Your decision is needed"
     if phase_state.get("stale"):
         return "Approved result needs review after an upstream change"
     if latest is None:
@@ -1570,6 +1640,9 @@ def prepare_phase_data(
             _method_ranking_rows(project_dir)
             if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE
             else []
+        ),
+        "review_target_options": _available_review_targets(
+            project_dir, phase_slug
         ),
     }
 

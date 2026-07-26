@@ -17,6 +17,9 @@ from core import launch_manifest
 from core import launch_process
 from core import launch_prompts
 
+import logging
+log = logging.getLogger(__name__)
+
 def _planned_roles(manifest: Mapping[str, Any], round_n: int) -> list[str]:
     phase = manifest["phase"]
     if phase.get("pattern") == "sequential":

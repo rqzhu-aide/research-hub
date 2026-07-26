@@ -18,6 +18,9 @@ from core import launch_dispatch
 from core import launch_manifest
 from core import launch_plans
 
+import logging
+log = logging.getLogger(__name__)
+
 def _snapshot_run_inputs(
     project_dir: Path,
     phase: Mapping[str, Any],

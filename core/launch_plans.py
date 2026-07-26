@@ -20,6 +20,9 @@ from core import launch_dispatch
 from core import launch_manifest
 from core import launch_prompts
 
+import logging
+log = logging.getLogger(__name__)
+
 def _source_baseline_status(source_baseline: Mapping[str, Any]) -> str:
     """Read baseline status while retaining frozen schema 1 runs."""
 

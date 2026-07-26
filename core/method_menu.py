@@ -17,6 +17,9 @@ from typing import Any
 
 import yaml
 
+import logging
+log = logging.getLogger(__name__)
+
 METHOD_MENU_DIR = Path("ideas") / "methods"
 
 VALID_STATUSES = ("recommended", "viable", "frontier", "retired")

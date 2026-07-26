@@ -395,6 +395,42 @@
   </fieldset>
   {% endif %}
 
+  {# ── Review target selector (Phase 05 only): lets the user pick a prior
+       assembly run's manuscript for a fresh review-only pass. ── #}
+  {% set review_targets = pd.review_target_options | default([]) %}
+  {% if pc.slug == '05-review-revision' and review_targets %}
+  <fieldset class="launch-fieldset-compact" data-review-target-row>
+    <div class="method-row">
+      <span class="field-label">Review target:</span>
+      <select class="form-input-compact" name="review_target_select" data-review-target-select>
+        <option value="">Standard run (write + review)</option>
+        {% for target in review_targets %}
+        <option value="{{ target.path }}"
+                data-sha256="{{ target.sha256 }}">
+          {{ target.label }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    {# Hidden fields populated by JS when the user picks a review target #}
+    <input type="hidden" name="review_target" value="" data-review-target-path>
+    <input type="hidden" name="review_target_sha256" value="" data-review-target-hash>
+  </fieldset>
+  <script>
+  (function() {
+    var sel = document.querySelector('[data-review-target-select]');
+    var pathField = document.querySelector('[data-review-target-path]');
+    var hashField = document.querySelector('[data-review-target-hash]');
+    if (!sel || !pathField || !hashField) return;
+    sel.addEventListener('change', function() {
+      var opt = sel.options[sel.selectedIndex];
+      pathField.value = sel.value;
+      hashField.value = opt ? opt.getAttribute('data-sha256') || '' : '';
+    });
+  })();
+  </script>
+  {% endif %}
+
   {# ── Rounds value (hidden — only surfaced inline at the button) ── #}
   {% if round_min == round_max %}
     <input type="hidden" name="rounds" value="{{ round_default }}">
@@ -416,9 +452,21 @@
   </label>
   {% endif %}
 
+  {# ── Replace awaiting-review run (R10): if the latest run is awaiting
+       review, allow the user to launch a new run that replaces it directly,
+       without needing to approve or request revision first. ── #}
+  {% if latest and latest_status == 'awaiting_review' and latest_identity %}
+  <input type="hidden" name="rerun_from" value="{{ latest_identity }}">
+  <label class="check-row-compact" for="replace-awaiting-{{ pc.slug }}">
+    <input type="checkbox" id="replace-awaiting-{{ pc.slug }}" name="replace_awaiting_review" value="1" required>
+    <span>Replace the result currently awaiting my decision with this new run</span>
+  </label>
+  {% endif %}
+
   {# ── Launch button with inline rounds selector ── #}
   <div class="launch-footer-compact">
-    <button type="submit" class="btn btn-primary btn-large" {% if not unattended_tools %}disabled aria-disabled="true"{% endif %}>
+    {% set no_method = method_bound_phase and not approved_method %}
+    <button type="submit" class="btn btn-primary btn-large" {% if not unattended_tools or no_method %}disabled aria-disabled="true"{% endif %}>
       {{ 'Run / Improve' if history else 'Launch' }} {{ pc.name }}
     </button>
     {% if round_min != round_max and not run_modes.plans %}
@@ -438,6 +486,9 @@
     {# Mode-locked phases: rounds are determined by the run mode, not by the
        user. Send a default so the form field is always present. #}
     <input type="hidden" name="rounds" value="{{ round_default }}">
+    {% endif %}
+    {% if no_method %}
+    <span class="launch-hint">Approve a method in <strong>New Method</strong> first.</span>
     {% endif %}
   </div>
 </form>

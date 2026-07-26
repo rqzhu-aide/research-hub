@@ -8,8 +8,11 @@ dependencies.
 
 from __future__ import annotations
 
+import logging
 import os
 import stat
+
+log = logging.getLogger(__name__)
 
 
 def metadata_is_link_or_reparse(metadata: os.stat_result) -> bool:
