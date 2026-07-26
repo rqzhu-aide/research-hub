@@ -969,6 +969,52 @@ def _phase_or_404(phase_slug: str) -> tuple[dict[str, Any], dict[str, Any]]:
     return config, phase
 
 
+def _sealed_method_version(project_dir: Path, stable_id: str) -> str | None:
+    """Return the sealed Phase-02 decision's version for *stable_id*, or None.
+
+    Used to override the editable menu-file version when the launched branch
+    matches the approved Phase-02 selection (R4 fix).
+    """
+    try:
+        state = project_state.load(project_dir)
+    except Exception:
+        return None
+    method_phase = state.get("phases", {}).get(
+        project_state.METHOD_DEVELOPMENT_PHASE, {}
+    )
+    if bool(method_phase.get("stale")):
+        return None
+    method_run_id = str(method_phase.get("approved_run") or "").strip()
+    if not method_run_id:
+        return None
+    method_run = next(
+        (
+            candidate
+            for candidate in method_phase.get("runs", [])
+            if isinstance(candidate, Mapping)
+            and str(candidate.get("run_id", "")) == method_run_id
+        ),
+        None,
+    )
+    if not isinstance(method_run, Mapping) or method_run.get("status") != "approved":
+        return None
+    decision = method_run.get("decision_record")
+    selected = (
+        decision.get("data", {}).get("selected_scientific_object")
+        if isinstance(decision, Mapping)
+        and isinstance(decision.get("data"), Mapping)
+        else None
+    )
+    if (
+        isinstance(selected, Mapping)
+        and selected.get("kind") == "method"
+        and str(selected.get("stable_id", "")) == stable_id
+        and str(selected.get("version", "")).strip()
+    ):
+        return str(selected["version"])
+    return None
+
+
 def _phase_catalog(project_dir: Path, config: dict[str, Any]) -> list[dict[str, Any]]:
     """Return configured phases plus non-launchable records removed from config."""
 
@@ -1223,33 +1269,17 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
         elif run_mode:
             raise ValueError("This phase does not declare run modes")
 
-        run_specific_method_id = _bounded_form_value(
-            "run_specific_method_id", 200
-        )
-        run_specific_method_version = _bounded_form_value(
-            "run_specific_method_version", 200
-        )
-        if bool(run_specific_method_id) != bool(run_specific_method_version):
-            raise ValueError(
-                "Enter both the stable method ID and method version, or leave both blank"
-            )
+        # R8 fix: run_specific_method_id/version were never rendered in any
+        # template. They are now internal-only, populated from method_branch
+        # below. The direct form fields are removed.
+        run_specific_method_id = ""
+        run_specific_method_version = ""
         method_bound_phase = phase_requires_method_binding(phase)
-        if not method_bound_phase and (
-            run_specific_method_id or run_specific_method_version
-        ):
-            raise ValueError(
-                "A run-specific method identity is not valid for this phase"
-            )
         method_branch = _bounded_form_value("method_branch", 200)
         if method_branch:
             if not method_bound_phase:
                 raise ValueError(
                     "A method branch selection is not valid for this phase"
-                )
-            if run_specific_method_id or run_specific_method_version:
-                raise ValueError(
-                    "Choose either a method menu branch or a custom method "
-                    "identity, not both"
                 )
             branch_entry, branch_error = method_menu.find_selectable_entry(
                 project_dir, method_branch
@@ -1261,6 +1291,14 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
                 )
             run_specific_method_id = branch_entry["stable_id"]
             run_specific_method_version = branch_entry["version"]
+            # R4 fix: when the posted branch is the Phase-02-approved
+            # method, bind the SEALED decision's version rather than the
+            # editable menu file's version.  This prevents the manifest
+            # from sealing a version that diverges from the sealed
+            # Phase-02 decision record displayed in the UI banner.
+            sealed_version = _sealed_method_version(project_dir, run_specific_method_id)
+            if sealed_version is not None:
+                run_specific_method_version = sealed_version
         if (
             theory_plans_available
             and theory_plan == THEORY_PLAN_AUDIT_ONLY
@@ -1440,6 +1478,18 @@ def retire_branch(project_id: int, phase_slug: str) -> Response:
     stable_id = _bounded_form_value("stable_id", 200)
     if not stable_id:
         abort(400, description="No branch selected to retire")
+    # R7 fix: block retiring the currently approved Phase-02 branch.
+    # Otherwise the banner still shows "Active method branch: X" from the
+    # sealed decision, but the form can no longer launch it.
+    sealed_version = _sealed_method_version(project_dir, stable_id)
+    if sealed_version is not None:
+        abort(
+            409,
+            description=(
+                f"Branch '{stable_id}' is the currently approved method and cannot "
+                "be retired. Approve a different Phase 02 result first."
+            ),
+        )
     try:
         method_menu.retire_branch(project_dir, stable_id)
     except method_menu.BranchNotFound:

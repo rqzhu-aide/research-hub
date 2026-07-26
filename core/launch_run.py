@@ -542,9 +542,21 @@ def _launch_run_locked(
         hermes_root=hermes_root,
         recommended_skills_snapshot=initial_recommended_skills,
     )
+    # R1 fix: the webapp GET handler renders the CONFIGURED-phase token
+    # (it doesn't know which variant the user will select).  Accept the
+    # submitted token if it matches either the shaped-phase fingerprint
+    # or the configured-phase fingerprint.  This closes the regression
+    # where every Phase 04/05 launch failed the version check.
+    configured_phase_plan_version = launch_plans.launch_plan_version(
+        config,
+        phase_slug,
+        effective_phase=configured_phase,
+        hermes_root=hermes_root,
+    )
     reviewed_phase_plan_version = str(expected_phase_plan_version).strip().lower()
-    if reviewed_phase_plan_version and not hmac.compare_digest(
-        reviewed_phase_plan_version, current_phase_plan_version
+    if reviewed_phase_plan_version and not (
+        hmac.compare_digest(reviewed_phase_plan_version, current_phase_plan_version)
+        or hmac.compare_digest(reviewed_phase_plan_version, configured_phase_plan_version)
     ):
         raise launch_common.LaunchError(
             "The phase plan or scientific instructions changed since this page was "
@@ -694,9 +706,10 @@ def _launch_run_locked(
             and selected_run_mode == launch_common.RUN_MODE_REVIEW_REVISION
             and resolved_method_id
         ):
-            if not launch_plans._review_revision_gate_satisfied(
+            assembly_run = launch_plans._find_approved_assembly_run(
                 project_dir, resolved_method_id
-            ):
+            )
+            if not assembly_run:
                 raise launch_common.LaunchError(
                     "A review-revision Phase 05 run requires a prior approved assembly "
                     "run for this method branch. Launch an assembly run first to "
@@ -715,6 +728,56 @@ def _launch_run_locked(
             "kind": "full",
             "review_path": str(launch_plans._paper_manuscript_paths(output_root)["review"]),
         }
+        # R5 fix: assembly mode has no reviewer stage. Use an "assembly"
+        # kind that expects manuscript.md (the assembled manuscript), not
+        # the review/post-review pair. Review-revision mode keeps "full".
+        if (
+            phase_slug == launch_common.PAPER_WRITING_PHASE
+            and selected_run_mode == launch_common.RUN_MODE_ASSEMBLY
+        ):
+            paper_review = {
+                "schema_version": 2,
+                "kind": "assembly",
+                "assembly_path": str(launch_plans._paper_manuscript_paths(output_root)["assembly"]),
+            }
+        # R2 fix: for review_revision runs, freeze the approved assembly
+        # run's manuscript into the new run's review path. Without this,
+        # the reviewer has no manuscript to review — the file never exists.
+        assembly_run_ref = locals().get("assembly_run")
+        if (
+            selected_run_mode == launch_common.RUN_MODE_REVIEW_REVISION
+            and assembly_run_ref
+        ):
+            assembly_root = Path(str(assembly_run_ref["output_root"]))
+            # R5: assembly runs produce manuscript.md, not manuscript-post-review.md.
+            # Fall back to post_review for older runs sealed before the R5 fix.
+            assembly_paths = launch_plans._paper_manuscript_paths(assembly_root)
+            assembly_manuscript = assembly_paths["assembly"]
+            if not assembly_manuscript.is_file():
+                assembly_manuscript = assembly_paths["post_review"]
+            review_path = launch_plans._paper_manuscript_paths(output_root)["review"]
+            if assembly_manuscript.is_file():
+                manuscript_payload = launch_common._bounded_bytes(
+                    assembly_manuscript,
+                    label="assembly manuscript",
+                    max_bytes=launch_common.MAX_REVIEW_MANUSCRIPT_BYTES,
+                )
+                manuscript_digest = hashlib.sha256(manuscript_payload).hexdigest()
+                launch_common._write_bytes_atomic(review_path, manuscript_payload)
+                paper_review = {
+                    "schema_version": 2,
+                    "kind": "review_only",
+                    "source_path": str(assembly_manuscript),
+                    "source_sha256": manuscript_digest,
+                    "review_path": str(review_path),
+                    "review_sha256": manuscript_digest,
+                    "from_assembly_run": True,
+                }
+            else:
+                raise launch_common.LaunchError(
+                    "The approved assembly run's manuscript is missing. "
+                    "This may indicate a corrupted project state."
+                )
         if review_source:
             source_path, source_digest, _source_baseline = review_source
             review_path = launch_plans._paper_manuscript_paths(output_root)["review"]
@@ -730,8 +793,26 @@ def _launch_run_locked(
                 "review_sha256": source_digest,
             }
         paper_paths = launch_plans._paper_manuscript_paths(output_root)
-        submission_outputs = (
-            {
+        # R5 fix: assembly mode requires manuscript.md, not the
+        # post-review/diff pair. Review-revision mode requires the
+        # post-review pair (reviewer creates review, reviser creates
+        # post-review). Review-target mode requires nothing extra.
+        if (
+            phase_slug == launch_common.PAPER_WRITING_PHASE
+            and selected_run_mode == launch_common.RUN_MODE_ASSEMBLY
+        ):
+            submission_outputs = {
+                "assembly_manuscript": {
+                    "path": str(paper_paths["assembly"]),
+                    "allow_empty": False,
+                },
+            }
+        elif (
+            phase_slug == launch_common.PAPER_WRITING_PHASE
+            and not review_source
+            and selected_run_mode != launch_common.RUN_MODE_ASSEMBLY
+        ):
+            submission_outputs = {
                 "post_review_manuscript": {
                     "path": str(paper_paths["post_review"]),
                     "allow_empty": False,
@@ -741,9 +822,8 @@ def _launch_run_locked(
                     "allow_empty": True,
                 },
             }
-            if phase_slug == launch_common.PAPER_WRITING_PHASE and not review_source
-            else {}
-        )
+        else:
+            submission_outputs = {}
         if review_source:
             paper_review["source_baseline"] = launch_plans._freeze_source_baseline(
                 project_dir,

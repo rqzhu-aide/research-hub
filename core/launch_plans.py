@@ -222,7 +222,18 @@ def _comprehensive_gate_satisfied(
       - its manifest's phase.run_plan == "preliminary"
       - its manifest's method_selection.stable_id == branch_stable_id
       - its run status == "approved"
+      - the phase is not stale (R6 fix)
     """
+    # R6 fix: if the Phase 04 phase is stale, its approved runs no longer
+    # satisfy the gate — the comprehensive benchmark must not build on a
+    # version-drifted base.
+    state = project_state.load(project_dir)
+    if bool(
+        state.get("phases", {})
+        .get(launch_common.DRAFT_ASSEMBLY_PHASE, {})
+        .get("stale")
+    ):
+        return False
 
     root = Path(project_dir).resolve()
     runs = project_state.get_runs(root, launch_common.DRAFT_ASSEMBLY_PHASE)
@@ -276,6 +287,29 @@ def _review_revision_gate_satisfied(
       - its manifest's method_selection.stable_id == branch_stable_id
       - its run status == "approved"
     """
+    return _find_approved_assembly_run(project_dir, branch_stable_id) is not None
+
+
+def _find_approved_assembly_run(
+    project_dir: Path,
+    branch_stable_id: str,
+) -> dict[str, Any] | None:
+    """Return the most recent approved assembly run's manifest for this branch.
+
+    Returns a dict with ``output_root`` and ``manifest_sha256``, or ``None``
+    if no approved assembly run exists.  Used by the launcher to freeze the
+    assembly manuscript into the new review_revision run's review path.
+    """
+    # R6 fix: if the Phase 05 phase is stale, its approved assembly runs
+    # no longer satisfy the gate — the reviewer must not review a
+    # version-drifted manuscript.
+    state = project_state.load(project_dir)
+    if bool(
+        state.get("phases", {})
+        .get(launch_common.PAPER_WRITING_PHASE, {})
+        .get("stale")
+    ):
+        return None
 
     root = Path(project_dir).resolve()
     runs = project_state.get_runs(root, launch_common.PAPER_WRITING_PHASE)
@@ -314,8 +348,11 @@ def _review_revision_gate_satisfied(
         if not isinstance(method_selection, Mapping):
             continue
         if str(method_selection.get("stable_id", "")) == str(branch_stable_id):
-            return True
-    return False
+            return {
+                "output_root": str(manifest.get("output_root", "")),
+                "manifest_sha256": expected_hash,
+            }
+    return None
 
 
 def paper_review_only_phase(phase: Mapping[str, Any]) -> dict[str, Any]:
@@ -793,8 +830,7 @@ def _method_selection_for_run(
         }
     raise launch_common.LaunchError(
         "This run needs an exact method identity. Approve a current Phase 02 result "
-        "with a structured method ID and version, or enter a run-specific method "
-        "ID and version in the Web UI."
+        "with a structured method ID and version."
     )
 
 
@@ -826,6 +862,7 @@ def _paper_manuscript_paths(output_root: str | Path) -> dict[str, Path]:
         "review": root / "manuscript-review.md",
         "post_review": root / "manuscript-post-review.md",
         "diff": root / "manuscript-post-review.diff",
+        "assembly": root / "manuscript.md",
     }
 
 

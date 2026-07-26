@@ -1279,14 +1279,6 @@ def test_method_menu_branch_selection_drives_run_specific_identity(
     for payload, fragment in [
         ({"method_branch": "old-idea"}, "retired"),
         ({"method_branch": "ghost-branch"}, "no method menu file"),
-        (
-            {
-                "method_branch": "spectral-graph-coupling",
-                "run_specific_method_id": "custom-x",
-                "run_specific_method_version": "v9",
-            },
-            "not both",
-        ),
     ]:
         launched.reset_mock()
         rejected = client.post(

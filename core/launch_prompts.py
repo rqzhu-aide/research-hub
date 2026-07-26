@@ -1257,6 +1257,16 @@ quote, summarize, identify, or pass either baseline file in its directive. The
 contextual second reviewer receives the frozen baseline automatically after the
 first-reading report has been preserved.
 """
+        elif paper_review and paper_review.get("kind") == "assembly":
+            manuscript_paths_text = f"""## Assembly manuscript path
+
+- Assembled manuscript: `{paths['assembly']}`
+
+Write the complete assembled manuscript to the path above. This is the sole
+output of the assembly stage — there is no review or post-review variant.
+The user will review the assembled manuscript, then launch a review-revision
+run to audit and revise it.
+"""
         else:
             manuscript_paths_text = f"""## Required manuscript version paths
 

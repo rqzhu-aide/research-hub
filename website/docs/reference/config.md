@@ -41,7 +41,7 @@ agents:
 
 - id: "data_scientist"
   profile: "data_scientist"
-  name: "Data Scientist"
+  name: "Data Analyst"
   role: "computational, algorithms, implementation"
 
 - id: "paper_reviewer"
@@ -61,6 +61,7 @@ agents:
 ```yaml
 - slug: "02-method-development"
   name: "Method Development"
+  short_name: "New Method"
   description: "Brainstorm genuinely new ideas"
   pattern: parallel
   gated_by: ["01-literature-review"]
@@ -134,6 +135,7 @@ agents:
 | `rounds` | User-selectable round count: `{min, default, max}` |
 | `stages` | For sequential phases: ordered list of `{role, name, description}` |
 | `run_modes` | User-selectable run variants: `{plans: [...], default: ...}` (Phases 4 & 5) |
+| `short_name` | Short tab/sidebar label (e.g. `"Lit Review"`, `"New Method"`) |
 
 ## Optional feature declarations
 

@@ -141,7 +141,7 @@ agents:
 
   - id: "data_scientist"
     profile: "data_scientist"
-    name: "Data Scientist"
+    name: "Data Analyst"
     role: "computational, algorithms, implementation"
 
   - id: "paper_reviewer"

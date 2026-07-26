@@ -332,13 +332,7 @@
           {% if ctx.run_number %}<span class="chip-run">#{{ ctx.run_number }}</span>{% endif %}
           {# Method Development: show method picker dropdown #}
           {% if ctx.method_menu and ctx.method_menu.entries %}
-          <select class="chip-method-select" name="include_methods" multiple size="1">
-            {% for entry in ctx.method_menu.entries if entry.status != 'retired' and not entry.errors %}
-            <option value="{{ entry.stable_id }}" {% if entry.status == 'recommended' %}selected{% endif %}>
-              {{ entry.label }}
-            </option>
-            {% endfor %}
-          </select>
+          <span class="chip-method">{{ ctx.method_menu.entries | length }} methods</span>
           {% elif ctx.method_id %}
           <span class="chip-method">{{ ctx.method_id }}</span>
           {% endif %}
@@ -427,11 +421,11 @@
     <button type="submit" class="btn btn-primary btn-large" {% if not unattended_tools %}disabled aria-disabled="true"{% endif %}>
       {{ 'Run / Improve' if history else 'Launch' }} {{ pc.name }}
     </button>
-    {% if round_min != round_max %}
+    {% if round_min != round_max and not run_modes.plans %}
     <span class="rounds-inline-at-button">
       for
       <select name="rounds" class="rounds-dropdown-inline">
-        {% set effective_max = round_max if round_max <= 3 else 3 %}
+        {% set effective_max = round_max %}
         {% set raw_options = rounds_policy.options | default(range(round_min, effective_max + 1)) %}
         {% set options = raw_options | select('le', effective_max) | list %}
         {% for option in options %}
@@ -440,6 +434,10 @@
       </select>
       {{ 'rounds of debate' if pc.pattern == 'debate' else 'rounds of refinement' }}
     </span>
+    {% elif run_modes.plans %}
+    {# Mode-locked phases: rounds are determined by the run mode, not by the
+       user. Send a default so the form field is always present. #}
+    <input type="hidden" name="rounds" value="{{ round_default }}">
     {% endif %}
   </div>
 </form>

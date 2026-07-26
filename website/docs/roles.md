@@ -14,7 +14,7 @@ Research Hub uses **four specialized roles**, each backed by a separate Hermes p
 |------|-------|-----------------|-------|
 | **Research Lead** | Domain expertise, framing, writing, coordination | Phases 1–5 | `stat-paper-writing` |
 | **Theorist** | Methods, mathematics, rigor | Phases 1–4 | `stat-paper-writing` |
-| **Data Scientist** | Computational approaches, algorithms, implementation | Phases 1–4 | `stat-paper-writing` |
+| **Data Analyst** | Computational approaches, algorithms, implementation | Phases 1–4 | `stat-paper-writing` |
 | **Paper Reviewer** | Independent audit, quality control | Phase 5 only | `stat-paper-reviewer` |
 
 ## Responsibilities by phase
@@ -23,7 +23,7 @@ Research Hub uses **four specialized roles**, each backed by a separate Hermes p
 |---|---|---|---|---|---|
 || **Research Lead** | Position contribution, find closest prior work | Propose new contributions; coordinate method menu; select recommended method | Identify contribution structure, position against literature, structure paper narrative | Implement code, run experiments, synthesize results | Address review points, produce final manuscript |
 || **Theorist** | Find theoretical foundations, prior math frameworks | Propose new mathematical mechanisms (2–3+ ideas) | Derive and prove theorems, establish rate bounds, full proofs | Validate experiments against theoretical bounds; audit numerical results | — |
-|| **Data Scientist** | Find existing implementations, benchmarks | Propose computational structures, algorithms, infrastructure | Assess computational feasibility, numerical stability, experiment design | Implement code, run experiments, produce real data | — |
+|| **Data Analyst** | Find existing implementations, benchmarks | Propose computational structures, algorithms, infrastructure | Assess computational feasibility, numerical stability, experiment design | Implement code, run experiments, produce real data | — |
 | **Paper Reviewer** | — | — | — | — | Audit draft for soundness, clarity, significance, originality |
 
 ## How roles interact
@@ -71,7 +71,7 @@ This ensures the Phase 5 review is genuinely independent — the reviewer hasn't
 
 | Role | Skill | Purpose |
 |------|-------|---------|
-| Research Lead, Theorist, Data Scientist | `stat-paper-writing` | Paper writing conventions, proof formatting, experiment standards |
+| Research Lead, Theorist, Data Analyst | `stat-paper-writing` | Paper writing conventions, proof formatting, experiment standards |
 | Paper Reviewer | `stat-paper-reviewer` | Structured review framework, consistency across projects |
 
 Skills are **recommendations, not prerequisites**. A phase runs even if a skill is absent. The web UI's **Profiles** page shows skill status and lets you install them.

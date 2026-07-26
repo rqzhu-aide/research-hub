@@ -13,7 +13,7 @@ Take the selected method from Phase 2 and **develop its theory rigorously**: pro
 | | |
 |---|---|
 | **Pattern** | Debate |
-| **Participants** | Theorist, Research Lead, Data Scientist |
+| **Participants** | Theorist, Research Lead, Data Analyst |
 | **Rounds** | 2–3 (default 2) |
 | **Output** | `branches/<method>/evaluations/` |
 | **Method-bound** | Yes — output routes to the selected method's branch |
@@ -26,7 +26,7 @@ Take the selected method from Phase 2 and **develop its theory rigorously**: pro
 Each role works independently on their aspect, **without reading each other's work**:
 
 - **Theorist**: derives and proves the main theorems. Produces **actual theorems with full proofs** — not just sketches. Establishes rate bounds (e.g., spectral gap lower bounds via Bakry–Émery Γ₂ calculus). Identifies every assumption, hidden or explicit.
-- **Data Scientist**: assesses **computational feasibility** — can this be implemented? At what cost? Evaluates numerical stability. Proposes concrete experiment designs that would validate or challenge the theory.
+- **Data Analyst**: assesses **computational feasibility** — can this be implemented? At what cost? Evaluates numerical stability. Proposes concrete experiment designs that would validate or challenge the theory.
 - **Research Lead**: identifies the **contribution structure** — what was proved, what it means, how it positions. Structures the paper's narrative.
 
 ### Round 2+: Debate
@@ -48,7 +48,7 @@ Roles **concede** when persuaded (with reasoning) or **hold** their position (wi
 - Flag where the proof is **incomplete** or relies on conjecture
 - In debate rounds: defend proofs against critique, or concede gaps honestly
 
-### Data Scientist
+### Data Analyst
 - Assess **computational cost**: per-step complexity, memory, scalability
 - Evaluate **numerical stability**: will the method blow up? Under what conditions?
 - Identify the **key algorithmic challenges** (e.g., divergence correction, sparsity management)

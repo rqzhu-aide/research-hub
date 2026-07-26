@@ -384,33 +384,51 @@ def _validate_manifest_snapshot_schema(manifest: Mapping[str, Any]) -> None:
             and isinstance(paper_review, Mapping)
             and paper_review.get("kind") == "full"
         )
-        expected_names = {"post_review_manuscript", "review_diff"} if full_paper_run else set()
+        assembly_paper_run = (
+            phase_slug == launch_common.PAPER_WRITING_PHASE
+            and isinstance(paper_review, Mapping)
+            and paper_review.get("kind") == "assembly"
+        )
+        # R5: assembly runs expect {assembly_manuscript}; full runs expect
+        # {post_review_manuscript, review_diff}; other runs expect {}.
+        if assembly_paper_run:
+            expected_names = {"assembly_manuscript"}
+        elif full_paper_run:
+            expected_names = {"post_review_manuscript", "review_diff"}
+        else:
+            expected_names = set()
         if set(outputs) != expected_names:
             raise launch_common.LaunchError(
                 "Run manifest submission_outputs do not match the selected run variant"
             )
-        if full_paper_run:
-            expected_paths = launch_plans._paper_manuscript_paths(str(manifest.get("output_root", "")))
+        expected_paths = launch_plans._paper_manuscript_paths(str(manifest.get("output_root", "")))
+        if assembly_paper_run:
+            expected = {
+                "assembly_manuscript": (expected_paths["assembly"], False),
+            }
+        elif full_paper_run:
             expected = {
                 "post_review_manuscript": (expected_paths["post_review"], False),
                 "review_diff": (expected_paths["diff"], True),
             }
-            for name, (expected_path, allow_empty) in expected.items():
-                record = outputs.get(name)
-                if not isinstance(record, Mapping):
-                    raise launch_common.LaunchError(f"Submission output {name} must be a mapping")
-                if set(record) != {"path", "allow_empty"}:
-                    raise launch_common.LaunchError(
-                        f"Submission output {name} must contain path and allow_empty"
-                    )
-                if Path(str(record.get("path", ""))).resolve() != expected_path.resolve():
-                    raise launch_common.LaunchError(
-                        f"Submission output {name} does not match the Phase 05 plan"
-                    )
-                if record.get("allow_empty") is not allow_empty:
-                    raise launch_common.LaunchError(
-                        f"Submission output {name} has an invalid empty-file policy"
-                    )
+        else:
+            expected = {}
+        for name, (expected_path, allow_empty) in expected.items():
+            record = outputs.get(name)
+            if not isinstance(record, Mapping):
+                raise launch_common.LaunchError(f"Submission output {name} must be a mapping")
+            if set(record) != {"path", "allow_empty"}:
+                raise launch_common.LaunchError(
+                    f"Submission output {name} must contain path and allow_empty"
+                )
+            if Path(str(record.get("path", ""))).resolve() != expected_path.resolve():
+                raise launch_common.LaunchError(
+                    f"Submission output {name} does not match the Phase 05 plan"
+                )
+            if record.get("allow_empty") is not allow_empty:
+                raise launch_common.LaunchError(
+                    f"Submission output {name} has an invalid empty-file policy"
+                )
     if _manifest_schema_version(manifest) >= 4:
         decision_path = manifest.get("decision_path")
         summary_path = manifest.get("summary_path")

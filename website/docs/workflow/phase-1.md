@@ -13,7 +13,7 @@ Survey relevant prior work, produce structured notes, and identify the gaps your
 | | |
 |---|---|
 | **Pattern** | Parallel |
-| **Participants** | Theorist, Research Lead, Data Scientist |
+| **Participants** | Theorist, Research Lead, Data Analyst |
 | **Rounds** | 1–5 (default 2) |
 | **Output** | `references/` |
 | **Prerequisites** | None |
@@ -26,7 +26,7 @@ Each role searches the literature from their own angle, **without reading each o
 
 - **Theorist**: finds **theoretical foundations** — the mathematical frameworks the project builds on (e.g., Bakry–Émery theory, hypocoercivity, optimal transport). Identifies which theoretical tools exist and which gaps remain.
 - **Research Lead**: finds **direct prior work** — the closest existing contributions that must be differentiated from. Establishes how to position the project's contribution and what makes it novel.
-- **Data Scientist**: finds **existing implementations** and **computational approaches**. Identifies benchmarks, standard evaluation targets, and practical algorithms in the area.
+- **Data Analyst**: finds **existing implementations** and **computational approaches**. Identifies benchmarks, standard evaluation targets, and practical algorithms in the area.
 
 ### Round 2+: Cross-pollination
 
@@ -49,7 +49,7 @@ Roles read what the others found and fill gaps:
 - Identify the **research gap** the project fills
 - Note how prior work has been positioned and what framing would be most compelling
 
-### Data Scientist — computational landscape
+### Data Analyst — computational landscape
 - Find **existing implementations** of related methods (code, packages)
 - Identify **standard benchmarks** and evaluation protocols in the area
 - Note **computational approaches** that are established vs. novel

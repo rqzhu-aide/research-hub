@@ -13,7 +13,7 @@ Brainstorm **genuinely new ideas** — new mechanisms, frameworks, and insights 
 | | |
 |---|---|
 | **Pattern** | Parallel |
-| **Participants** | Theorist, Research Lead, Data Scientist |
+| **Participants** | Theorist, Research Lead, Data Analyst |
 | **Rounds** | 2–3 (default 2) |
 | **Output** | `ideas/methods/` |
 | **Prerequisites** | Phase 1 (Literature Review) |
@@ -26,7 +26,7 @@ Each role proposes multiple ideas from their own angle, **without reading each o
 
 - **Theorist**: new **mathematical mechanisms** — new dynamics, geometric perspectives, algebraic identities, theoretical frameworks from other fields. At least 2–3 ideas.
 - **Research Lead**: new **contributions and positioning** — what scientific value does each idea offer? How does it position against the closest prior work?
-- **Data Scientist**: **computational structures** — algorithms that could implement the mechanisms, their cost, and infrastructure needs.
+- **Data Analyst**: **computational structures** — algorithms that could implement the mechanisms, their cost, and infrastructure needs.
 
 ### Round 2: Cross-pollination
 
@@ -51,7 +51,7 @@ For each idea, state:
 - How does it **position** against the closest prior work?
 - What's the **strongest defensible claim** if the method works?
 
-### Data Scientist
+### Data Analyst
 - What **algorithms** could implement this?
 - What's the **computational cost**?
 - What **infrastructure** is needed?
@@ -67,7 +67,7 @@ ideas/
 │   ├── spectral-graph-coupling.md        ← status: recommended
 │   ├── nonreversible-composition.md      ← status: viable
 │   ├── multi-scale-rate-transfer.md      ← status: viable
-│   ├── kernel-metric-coupling.md         ← status: viable
+│   ├── kernel-metric-coupling.md         ← status: frontier
 │   └── cheeger-optimal-dn.md             ← status: retired
 │
 └── run/
@@ -110,7 +110,7 @@ $\lambda \geq \rho \cdot \sigma_2(L_G) \cdot \lambda_{\min}(K)$
 under strong log-concavity $-\nabla^2 \log p \succeq \rho I_d$.
 ```
 
-The lead selects exactly one method as `status: recommended` — the proposed primary mechanism for Phase 3.
+The lead selects exactly one method as `status: recommended` — the proposed primary mechanism for Phase 3. Other methods carry `status: viable` (solid, ready for Phase 3) or `status: frontier` (speculative, high-risk/high-reward).
 
 ## Method numbering
 

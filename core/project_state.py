@@ -1172,8 +1172,8 @@ def _migrate_slug_aliases(
             new_runs.parent.mkdir(parents=True, exist_ok=True)
             if new_runs.exists():
                 # Merge: move individual files. Items that collide (target
-                # already exists) are left behind; use rmtree on the now-empty
-                # or partially-empty dir instead of rmdir which crashes.
+                # already exists) are quarantined instead of deleted — an
+                # integrity-first system must never destroy sealed artifacts.
                 leftover: list[Path] = []
                 for item in old_runs.iterdir():
                     target = new_runs / item.name
@@ -1182,8 +1182,11 @@ def _migrate_slug_aliases(
                     else:
                         leftover.append(item)
                 if leftover:
-                    import shutil as _shutil
-                    _shutil.rmtree(old_runs, ignore_errors=True)
+                    quarantine = runs_root / f"{new_slug}.migration-conflicts"
+                    quarantine.mkdir(parents=True, exist_ok=True)
+                    for item in leftover:
+                        item.rename(quarantine / item.name)
+                    old_runs.rmdir()
                 else:
                     old_runs.rmdir()
             else:
@@ -1202,8 +1205,11 @@ def _migrate_slug_aliases(
                     else:
                         sum_leftover.append(item)
                 if sum_leftover:
-                    import shutil as _shutil
-                    _shutil.rmtree(old_sum, ignore_errors=True)
+                    quarantine = summaries_root / f"{new_slug}.migration-conflicts"
+                    quarantine.mkdir(parents=True, exist_ok=True)
+                    for item in sum_leftover:
+                        item.rename(quarantine / item.name)
+                    old_sum.rmdir()
                 else:
                     old_sum.rmdir()
             else:
@@ -2548,18 +2554,28 @@ def _phase_six_submission_specs(
     if phase_slug != PAPER_WRITING_PHASE or manifest is None:
         return {}
     paper_review = manifest.get("paper_review")
-    if not isinstance(paper_review, Mapping) or paper_review.get("kind") != "full":
+    if not isinstance(paper_review, Mapping):
         return {}
+    kind = paper_review.get("kind")
     root = Path(project_dir).resolve()
     try:
         output_root = Path(str(manifest.get("output_root", ""))).resolve()
         output_root.relative_to(root)
     except ValueError as exc:
         raise StateValidationError("Phase 05 output directory escaped the project") from exc
-    expected = {
-        name: (output_root / filename, allow_empty)
-        for name, (filename, allow_empty) in PHASE_SIX_SUBMISSION_ARTIFACTS.items()
-    }
+    # R5: assembly runs require manuscript.md; full runs require the
+    # post-review pair; review-only runs require nothing.
+    if kind == "assembly":
+        expected = {
+            "assembly_manuscript": (output_root / "manuscript.md", False),
+        }
+    elif kind == "full":
+        expected = {
+            name: (output_root / filename, allow_empty)
+            for name, (filename, allow_empty) in PHASE_SIX_SUBMISSION_ARTIFACTS.items()
+        }
+    else:
+        return {}
     if _manifest_schema_version(manifest) >= 3:
         declared = manifest.get("submission_outputs")
         if not isinstance(declared, Mapping) or set(declared) != set(expected):
