@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import signal
 import stat
@@ -21,6 +22,8 @@ from core import launch_common
 from core import project_state
 from core import launch_dispatch
 from core import launch_manifest
+
+logger = logging.getLogger("launch.process")
 
 MAX_COMMAND_OUTPUT_BYTES = 4 * 1024 * 1024
 
@@ -455,7 +458,7 @@ def _open_new_run_log(log_path: Path) -> Any:
             newline="\n",
             buffering=1,
         )
-    except BaseException:
+    except Exception:
         os.close(descriptor)
         raise
     return handle
@@ -822,7 +825,7 @@ def _stop_external_tasks(
         if warning:
             warnings.append(warning)
     for warning in warnings:
-        print(f"task cleanup warning: {warning}", file=sys.stderr)
+        logger.warning("Task cleanup pending: %s", warning)
     return warnings
 
 

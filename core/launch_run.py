@@ -19,6 +19,7 @@ import argparse
 import hashlib
 import hmac
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -38,6 +39,8 @@ from core import launch_plans
 from core import launch_process
 from core import launch_prompts
 from core import launch_supervision
+
+logger = logging.getLogger("launch.run")
 
 # Re-exports: launch_run is the single import facade for callers and tests.
 # Every name below is defined in a sibling module and re-exported here so
@@ -963,7 +966,7 @@ def _launch_run_locked(
             except Exception as cleanup_exc:
                 cleanup_warnings.append(str(cleanup_exc))
         for warning in cleanup_warnings:
-            print(f"launch cleanup remains pending: {warning}", file=sys.stderr)
+            logger.warning("Launch cleanup pending: %s", warning)
         if isinstance(exc, (launch_common.LaunchError, project_state.ProjectStateError)):
             raise
         raise launch_common.LaunchError(f"Run launch failed: {exc}") from exc
@@ -993,7 +996,7 @@ def _worker(
     project_path = Path(project_dir).resolve()
     expected_manifest = launch_common.run_manifest_path(project_path, phase_slug, run_id).resolve()
     if Path(manifest_file).resolve() != expected_manifest:
-        print("Worker manifest path does not match the run identity", file=sys.stderr)
+        logger.error("Worker manifest path does not match the run identity")
         return 1
     manifest = launch_manifest._read_manifest(project_path, phase_slug, run_id)
     process_identity = launch_process._process_identity(os.getpid())
@@ -1084,7 +1087,7 @@ def _worker(
             manifest=manifest,
         )
         for warning in warnings:
-            print(f"cleanup remains pending: {warning}", file=sys.stderr)
+            logger.warning("Cleanup pending: %s", warning)
         return 1
     except launch_common._ProcessOutputLimitExceeded as exc:
         return_code = 1
@@ -1125,9 +1128,9 @@ def _worker(
             manifest=manifest,
         )
         for warning in warnings:
-            print(f"cleanup remains pending: {warning}", file=sys.stderr)
+            logger.warning("Cleanup pending: %s", warning)
     except Exception as exc:
-        print(f"Could not record worker outcome: {exc}", file=sys.stderr)
+        logger.exception("Could not record worker outcome: %s", exc)
         return 1
     return return_code
 

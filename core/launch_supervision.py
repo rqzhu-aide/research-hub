@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +16,8 @@ from core import launch_common
 from core import project_state
 from core import launch_plans
 from core import launch_process
+
+logger = logging.getLogger("launch.supervision")
 
 def _cleanup_run_execution(
     project_dir: Path,
@@ -125,7 +128,7 @@ def reconcile_active_run(project_dir: str | Path) -> dict[str, Any] | None:
             terminate_worker=True,
         )
         for warning in warnings:
-            print(f"cleanup remains pending: {warning}", file=sys.stderr)
+            logger.warning("Cleanup pending: %s", warning)
     elif timed_out:
         _, warnings = _cleanup_run_execution(
             project_dir,
@@ -137,7 +140,7 @@ def reconcile_active_run(project_dir: str | Path) -> dict[str, Any] | None:
             terminate_worker=True,
         )
         for warning in warnings:
-            print(f"cleanup remains pending: {warning}", file=sys.stderr)
+            logger.warning("Cleanup pending: %s", warning)
     elif dead or unstarted:
         _, warnings = _cleanup_run_execution(
             project_dir,
@@ -149,7 +152,7 @@ def reconcile_active_run(project_dir: str | Path) -> dict[str, Any] | None:
             terminate_worker=False,
         )
         for warning in warnings:
-            print(f"cleanup remains pending: {warning}", file=sys.stderr)
+            logger.warning("Cleanup pending: %s", warning)
     return project_state.get_active_run(project_dir)
 
 

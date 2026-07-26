@@ -9,6 +9,7 @@ helpers in ``core``.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import re
 import shutil
@@ -25,6 +26,8 @@ from typing import BinaryIO, Iterator, List, Optional, Sequence
 import yaml
 
 from core.filesystem_utils import metadata_is_link_or_reparse
+
+logger = logging.getLogger("hub")
 
 
 HUB_DIR = Path(__file__).parent.resolve()
@@ -611,15 +614,26 @@ def get_db() -> Iterator[sqlite3.Connection]:
         conn.execute("PRAGMA journal_mode = WAL")
         yield conn
         conn.commit()
-    except BaseException:
+    except Exception:
         conn.rollback()
         raise
     finally:
         conn.close()
 
 
-def _migrate_projects_table(conn: sqlite3.Connection) -> None:
-    """Apply additive migrations supported for earlier project registries."""
+def _get_db_version(conn: sqlite3.Connection) -> int:
+    """Return the schema version recorded via ``PRAGMA user_version``."""
+
+    return conn.execute("PRAGMA user_version").fetchone()[0]
+
+
+def _migrate_to_v1(conn: sqlite3.Connection) -> None:
+    """Migration v0 → v1: add columns and defaults to the projects table.
+
+    Handles databases created before the column additions were introduced.
+    All changes are additive — no existing column is altered or dropped.
+    """
+
     columns = {
         row["name"] for row in conn.execute("PRAGMA table_info(projects)").fetchall()
     }
@@ -652,7 +666,46 @@ def _migrate_projects_table(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_projects_directory_name "
         "ON projects(directory_name)"
     )
-    conn.execute("PRAGMA user_version = 1")
+
+
+# Ordered list of schema migration functions.
+# Each function upgrades the database from version N-1 to version N.
+# Append new migrations here; never reorder or modify existing ones.
+_MIGRATIONS: list = [
+    _migrate_to_v1,  # v0 → v1
+]
+
+
+def _run_migrations(conn: sqlite3.Connection) -> None:
+    """Run pending migrations in order, tracking progress via ``PRAGMA user_version``.
+
+    On a fresh database (created by ``schema.sql`` above), the projects table
+    already has all v1 columns, so ``_migrate_to_v1`` is idempotent.  The
+    version is bumped to the highest applied level.
+    """
+
+    current_version = _get_db_version(conn)
+    target_version = len(_MIGRATIONS)
+
+    if current_version >= target_version:
+        # Already at or above the latest migration level.
+        return
+
+    # Determine whether the projects table exists yet.  Migrations should
+    # only run against an existing table; ``schema.sql`` creates it.
+    table_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='projects'"
+    ).fetchone() is not None
+
+    for version in range(current_version, target_version):
+        migration = _MIGRATIONS[version]
+        if table_exists:
+            logger.info("Running schema migration v%d → v%d", version, version + 1)
+            migration(conn)
+        conn.execute(f"PRAGMA user_version = {version + 1}")
+
+    if table_exists and current_version < target_version:
+        logger.info("Schema migrations complete (v%d → v%d)", current_version, target_version)
 
 
 def init_db(*, verbose: bool = True) -> Path:
@@ -669,9 +722,9 @@ def init_db(*, verbose: bool = True) -> Path:
         with get_db() as conn:
             # BEGIN IMMEDIATE serializes additive migrations across web workers.
             conn.executescript(f"BEGIN IMMEDIATE;\n{schema}")
-            _migrate_projects_table(conn)
+            _run_migrations(conn)
     if verbose:
-        print(f"[hub] Database initialized at {get_db_path()}")
+        logger.info("Database initialized at %s", get_db_path())
     return get_db_path()
 
 
@@ -783,7 +836,7 @@ def _create_project_tree(
             encoding="utf-8",
             newline="\n",
         )
-    except BaseException:
+    except Exception:
         if created_root:
             shutil.rmtree(project_dir, ignore_errors=True)
         raise
@@ -857,7 +910,7 @@ def _create_project_locked(
                     for phase in get_phases_config(cfg)
                 },
             )
-    except BaseException:
+    except Exception:
         if project_tree_created and project_dir is not None and project_dir.exists():
             try:
                 shutil.rmtree(project_dir)
@@ -870,8 +923,8 @@ def _create_project_locked(
                 pass
         raise
 
-    print(f"[hub] Created project #{project_id}: {clean_name}")
-    print(f"      Folder: {project_dir}")
+    logger.info("Created project #%s: %s", project_id, clean_name)
+    logger.info("Folder: %s", project_dir)
     return project_id
 
 
@@ -958,6 +1011,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
     try:
         raise SystemExit(main())
     except ConfigurationError as exc:

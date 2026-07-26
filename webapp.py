@@ -10,6 +10,7 @@ import html
 import io
 import ipaddress
 import json
+import logging
 import os
 import secrets
 import stat
@@ -2049,6 +2050,7 @@ def profile_memory(name: str) -> str:
 
 
 def main() -> int:
+    logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
     port = int(os.environ.get("RESEARCH_HUB_PORT", "5055"))
     debug = os.environ.get("RESEARCH_HUB_DEBUG", "").lower() in {"1", "true", "yes"}
     display_host = f"[{_BIND_HOST}]" if ":" in _BIND_HOST else _BIND_HOST
