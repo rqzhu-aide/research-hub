@@ -4066,7 +4066,7 @@ def test_phase_four_run_mode_rejected_on_wrong_phase() -> None:
         "slug": "03-idea-evaluation",
         "run_modes": {"plans": ["preliminary", "comprehensive"], "default": "preliminary"},
     }
-    with pytest.raises(launch_common.LaunchError, match="only valid in Phase 04"):
+    with pytest.raises(launch_common.LaunchError, match="only valid for Phase 04 or Phase 05"):
         launch_plans._phase_for_run_mode(phase, "preliminary")
 
 

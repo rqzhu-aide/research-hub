@@ -137,21 +137,12 @@ phases:
   members:
   - paper_reviewer
   - research_lead
-  rounds:
-    min: 3
-    default: 3
-    max: 3
+  run_modes:
+    plans: ["assembly", "review_revision"]
+    default: "assembly"
   stages:
   - name: Assemble
     role: research_lead
     description: Combine theory, experiments, and literature into a coherent
       manuscript with unified notation and consistent claims.
-  - name: Review
-    role: paper_reviewer
-    description: Audit the assembled paper — soundness, clarity, significance,
-      originality. Produce ranked revision recommendations.
-  - name: Revise
-    role: research_lead
-    description: Address each review point, revise the draft, produce the final
-      manuscript with a revision log.
 

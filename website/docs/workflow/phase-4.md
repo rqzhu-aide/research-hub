@@ -1,62 +1,82 @@
 ---
 sidebar_position: 5
-title: "Phase 4: Draft Assembly"
+title: "Phase 4: Implementation & Experiments"
 slug: /workflow/phase-4
 ---
 
-# Phase 4: Draft Assembly
+# Phase 4: Implementation & Experiments
 
-Write the paper. Each role drafts their assigned sections, then the lead synthesizes everything into a formal manuscript with real experiments.
+Implement the selected method in code, run pre-specified experiments with diagnostics, and validate theoretical predictions against measured results.
 
 ## At a glance
 
 | | |
 |---|---|
 | **Pattern** | Parallel |
-| **Participants** | Theorist, Research Lead, Data Scientist |
-| **Rounds** | 2 (fixed) |
+| **Participants** | Research Lead, Theorist, Data Analyst |
+| **Run modes** | Preliminary (default), Comprehensive |
+| **Rounds** | 1–2 (mode-dependent) |
 | **Output** | `branches/<method>/draft/sections/` |
 | **Method-bound** | Yes |
-| **Prerequisites** | Phase 3 (Idea Evaluation) |
+| **Prerequisites** | Phase 3 (Theoretical Development) |
+
+## Run modes
+
+Phase 4 has two run modes, selected at launch:
+
+### Preliminary — implement & test
+
+The first implementation pass. The data analyst writes the code and runs diagnostic checks (known-answer cases, invariants, sanity tests). The theorist audits whether the diagnostics make sense. The goal is a **working, validated implementation** — not yet a full benchmark suite.
+
+- **1 round** — implement, test, validate
+- The lead specifies the experiments **before** results are known (pre-registration)
+- Diagnostic failures must be reported honestly — no hiding broken code
+
+### Comprehensive — benchmark (gated)
+
+The full experimental suite. Requires a prior approved **preliminary** run for the same method branch. The data analyst runs the full benchmark with real parameter sweeps, comparison baselines, and scaling tests. The theorist audits whether measured results match the proved rate bounds.
+
+- **2 rounds** — implement/extend + cross-audit
+- Real measured data in tables and figures — no stubs, no zeros
+- The theorist's audit is mandatory: do the experiments confirm the theory?
 
 ## How it works
 
-### Round 1: Independent section drafting
+### Round 1: Independent work
 
-Each role writes their assigned sections **independently**:
+Each role works independently:
 
-| Role | Sections |
-|------|----------|
-| **Research Lead** | Introduction (problem framing, contribution statement), Method section, Discussion |
-| **Theorist** | Theory section (main theorem with full proof), derivations, lemmas |
-| **Data Scientist** | Implementation description, experiments, numerical results |
+| Role | Responsibility |
+|------|---------------|
+| **Data Analyst** | Implement the algorithm, write diagnostic tests, run initial/comprehensive experiments |
+| **Theorist** | Prepare the theoretical predictions (rate bounds, convergence guarantees) for the auditor to check against |
+| **Research Lead** | Pre-specify the experiment plan, frame the implementation description, interpret results |
 
-### Round 2: Combine and revise
+### Round 2 (comprehensive only): Cross-audit
 
-- The lead **synthesizes** all sections into a coherent draft with consistent notation
-- Roles revise based on how their sections fit with the others
-- The data scientist **runs experiments** and produces real measured data
-- The theorist **audits** the experimental results against the proved rate bounds — does reality match theory?
+- The **theorist audits** experimental results against proved bounds — does reality match theory?
+- The **data analyst** runs the full benchmark and produces final tables/figures
+- The **lead** synthesizes the implementation description and interprets the results
 
 ## Per-role responsibilities
 
 ### Research Lead
-- **Introduction**: frame the problem, state the contribution, position against prior work
-- **Method section**: describe the method precisely with its mathematical definition
-- **Discussion**: interpret results, state limitations, suggest future work
-- **Synthesis**: combine all sections into a formal draft with consistent notation and a coherent narrative
+- **Pre-specify experiments**: define what will be tested *before* results are known (prevents p-hacking)
+- **Implementation description**: describe the algorithm and its computational cost
+- **Synthesis**: combine code, results, and theory-experiment agreement into a coherent package
+- **Interpretation**: what do the numbers mean? Do they support the paper's claims?
 
-### Theorist
-- **Theory section**: state the main theorem with its full proof (carried over from Phase 3)
-- **Derivations**: show the key mathematical steps step by step (e.g., Bakry–Émery Γ₂ derivation)
-- **Supporting results**: lemmas, propositions, corollaries
-- **Audit**: verify that experimental results match the proved bounds. If the measured spectral gap doesn't satisfy the lower bound, investigate why.
-
-### Data Scientist
-- **Implementation**: describe the algorithm and its computational cost
-- **Experiments**: run diagnostic checks first (known-answer cases, invariants), then the full benchmark
+### Data Analyst
+- **Implementation**: write working, tested code for the method
+- **Diagnostics**: run known-answer cases, invariant checks, convergence tests first
+- **Experiments**: run the pre-specified experiment plan with real parameters
 - **Results**: produce tables and figures with **real measured data**
 - **Honest reporting**: negative results must be reported with specific numbers, never omitted
+
+### Theorist
+- **Predictions**: state what the proved bounds predict for the experimental setup
+- **Audit**: verify that experimental results match the proved bounds. If the measured spectral gap doesn't satisfy the lower bound, investigate why
+- **Discrepancy report**: if code and theory disagree, flag it explicitly
 
 ## Strict requirements
 
@@ -64,52 +84,56 @@ Phase 4 has hard requirements that, if unmet, cause the run to fail:
 
 - **Working code is mandatory.** A report without actual code files is a failed run.
 - **Real diagnostic numbers are mandatory.** A stub JSON with zero values is a failed run.
-- **Experiments must be pre-specified** by the lead before results are known (to prevent p-hacking).
+- **Experiments must be pre-specified** by the lead before results are known.
 - **Negative results must be reported** honestly with specific numbers.
 - **The theorist's audit is mandatory.** If they find a discrepancy between code and theory, it must be addressed.
+
+## Gate: comprehensive requires preliminary
+
+The **comprehensive** mode requires a prior approved **preliminary** run for the same method branch. This prevents running expensive benchmarks before the basic implementation is validated.
+
+If you try to launch comprehensive without a prior approved preliminary run, the UI will block it with an explanation.
 
 ## Output: folder structure
 
 ```
 branches/
-└── spectral-graph-coupling/
-        └── draft/
-            └── sections/
-                └── run/
-                    └── 01/
-                        ├── .directives/
-                        ├── round-01/
-                        │   ├── theorist.md         ← theory and proofs section
-                        │   ├── data_scientist.md   ← implementation + experiments
-                        │   └── research_lead.md    ← intro, method, discussion
-                        └── round-02/
-                            └── ...                 ← combined + revised + audited
+└── <method-stable-id>/
+    └── draft/
+        └── sections/
+            └── run/
+                └── 01/
+                    ├── .directives/
+                    ├── round-01/
+                    │   ├── data_scientist.md    ← implementation + diagnostics
+                    │   ├── theorist.md           ← predictions for audit
+                    │   └── research_lead.md      ← experiment plan + interpretation
+                    └── round-02/                 ← comprehensive: full benchmark + audit
+                        └── ...
 ```
-
-The final synthesized draft is referenced in the HTML summary.
 
 ## Reruns
 
 ### Rerun protocol
 
-1. **Audit**: read every prior section for this method. Identify what's correct, incomplete, wrong, or missing — both in the writing and in the experiments.
-2. **Fix**: correct errors, tighten claims, improve clarity in the existing material.
-3. **Add**: extend with additional experiments, baselines, or analysis the prior run lacked. Incorporate updated literature if Phase 1 was rerun.
+1. **Audit**: read every prior output for this method. Identify what's correct, incomplete, wrong, or missing — both in the code and in the experiments.
+2. **Fix**: correct errors, tighten claims, improve the implementation.
+3. **Add**: extend with additional experiments, baselines, or analysis the prior run lacked. Incorporate updated theory if Phase 3 was rerun.
 4. **Never replace**: prior run directories stay sealed. The new run writes to a new run number.
 
 ### What triggers a Phase 4 rerun?
 
 - The experiments were **incomplete** or the diagnostics failed
 - Phase 3 was rerun with **new or sharper** theorems
-- The draft needs **additional sections** or comparisons
-- A review identified **writing issues** that need a full redraft
+- The implementation needs **additional baselines** or comparisons
+- A review identified **issues** that need re-implementation
 
 ## What Phase 4 produces for Phase 5
 
 Phase 4's approved summary tells Phase 5:
-- The **complete draft** with all sections
+- The **working implementation** and code
 - The **experimental results** (tables, figures, numbers)
 - The **theory-experiment agreement** assessment
-- Any **known weaknesses** the reviewer should focus on
+- Any **known weaknesses** to address during paper assembly
 
-Phase 5 then independently audits the complete draft.
+Phase 5 then assembles the paper from these results.

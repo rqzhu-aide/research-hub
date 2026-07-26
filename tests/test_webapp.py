@@ -3328,7 +3328,7 @@ def test_run_modes_config_validation_only_on_phase_four(
     soul_root.mkdir(parents=True, exist_ok=True)
     (soul_root / "research_lead.md").write_text("# soul\n", encoding="utf-8")
     monkeypatch.setattr(hub_module, "CONFIG_PATH", config_path)
-    with pytest.raises(hub_module.ConfigurationError, match="run_modes is only valid for Phase 04"):
+    with pytest.raises(hub_module.ConfigurationError, match="run_modes is only valid for Phase 04 or Phase 05"):
         hub_module.load_config()
 
 

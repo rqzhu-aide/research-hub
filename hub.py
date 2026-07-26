@@ -434,9 +434,13 @@ def validate_config(cfg: object, *, config_root: Optional[Path] = None) -> dict:
 
         run_modes = phase.get("run_modes")
         if run_modes is not None:
-            if slug != "04-draft-assembly":
+            valid_run_mode_phases = {
+                "04-draft-assembly": (["preliminary", "comprehensive"],),
+                "05-review-revision": (["assembly", "review_revision"],),
+            }
+            if slug not in valid_run_mode_phases:
                 raise ConfigurationError(
-                    f"{field}.run_modes is only valid for Phase 04"
+                    f"{field}.run_modes is only valid for Phase 04 or Phase 05"
                 )
             if (
                 not isinstance(run_modes, dict)
@@ -445,17 +449,22 @@ def validate_config(cfg: object, *, config_root: Optional[Path] = None) -> dict:
                 raise ConfigurationError(
                     f"{field}.run_modes must contain exactly plans and default"
                 )
-            expected_mode_plans = ["preliminary", "comprehensive"]
+            expected_mode_plans = valid_run_mode_phases[slug][0]
             plans_value = run_modes.get("plans")
             if plans_value != expected_mode_plans:
+                if slug == "04-draft-assembly":
+                    raise ConfigurationError(
+                        f"{field}.run_modes.plans must contain preliminary and "
+                        "comprehensive in that order"
+                    )
                 raise ConfigurationError(
-                    f"{field}.run_modes.plans must contain preliminary and "
-                    "comprehensive in that order"
+                    f"{field}.run_modes.plans must contain assembly and "
+                    "review_revision in that order"
                 )
             default_mode = run_modes.get("default")
-            if default_mode not in ("preliminary", "comprehensive"):
+            if default_mode not in expected_mode_plans:
                 raise ConfigurationError(
-                    f"{field}.run_modes.default must be preliminary or comprehensive"
+                    f"{field}.run_modes.default must be one of the declared plans"
                 )
 
         protocol_checkpoint = phase.get("protocol_checkpoint", False)

@@ -13,20 +13,20 @@ Research Hub organizes a research project into **five sequential phases**. Each 
 ```mermaid
 flowchart LR
     P1["**Phase 1**<br/>Literature Review<br/><br/>Survey prior work<br/>Identify gaps"] --> P2["**Phase 2**<br/>Method Development<br/><br/>Propose new methods<br/>Select one"]
-    P2 --> P3["**Phase 3**<br/>Idea Evaluation<br/><br/>Prove theorems<br/>Establish bounds"]
-    P3 --> P4["**Phase 4**<br/>Draft Assembly<br/><br/>Write the paper<br/>Run experiments"]
-    P4 --> P5["**Phase 5**<br/>Review & Revision<br/><br/>Independent audit<br/>Final revision"]
+    P2 --> P3["**Phase 3**<br/>Theoretical Development<br/><br/>Prove theorems<br/>Establish bounds"]
+    P3 --> P4["**Phase 4**<br/>Implementation & Experiments<br/><br/>Implement in code<br/>Run benchmarks"]
+    P4 --> P5["**Phase 5**<br/>Paper Assembly & Review<br/><br/>Assemble manuscript<br/>Independent review"]
 ```
 
 ## Phase summary
 
-| Phase | Pattern | Participants | Rounds | Output folder |
-|-------|---------|-------------|--------|---------------|
-| [1. Literature Review](./phase-1) | Parallel | theorist, research_lead, data_scientist | 1–5 | `references/` |
-| [2. Method Development](./phase-2) | Parallel | theorist, research_lead, data_scientist | 2–3 | `ideas/methods/` |
-| [3. Idea Evaluation](./phase-3) | Debate | theorist, research_lead, data_scientist | 2–3 | `branches/<method>/evaluations/` |
-| [4. Draft Assembly](./phase-4) | Parallel | theorist, research_lead, data_scientist | 2 | `branches/<method>/draft/sections/` |
-| [5. Review & Revision](./phase-5) | Sequential | paper_reviewer → research_lead | 2 stages | `draft/revised/` |
+| Phase | Pattern | Participants | Modes | Output folder |
+|-------|---------|-------------|-------|---------------|
+| [1. Literature Review](./phase-1) | Parallel | theorist, research_lead, data_scientist | — | `references/` |
+| [2. Method Development](./phase-2) | Parallel | theorist, research_lead, data_scientist | — | `ideas/methods/` |
+| [3. Theoretical Development](./phase-3) | Debate | theorist, research_lead, data_scientist | — | `branches/<method>/evaluations/` |
+| [4. Implementation & Experiments](./phase-4) | Parallel | theorist, research_lead, data_scientist | preliminary, comprehensive | `branches/<method>/draft/sections/` |
+| [5. Paper Assembly & Review](./phase-5) | Sequential | paper_reviewer, research_lead | assembly, review_revision | `branches/<method>/draft/revised/` |
 
 ## How phases connect
 
@@ -48,9 +48,16 @@ This means:
 - **Round 2+**: **challenge and revise** — roles critique each other's claims, concede when persuaded, or hold with reasoning. The goal is convergence toward defensible claims.
 
 ### Sequential (Phase 5)
-- Stages run **one at a time**, each owned by a single role
-- Stage 1 (paper reviewer): audit the draft
-- Stage 2 (research lead): revise based on the review
+- Phase 5 has **two run modes**: assembly (1 round) and review-revision (2 rounds)
+- **Assembly**: the lead combines all upstream artifacts into one manuscript
+- **Review-revision** (gated by assembly): reviewer audits, then lead revises — runs one at a time
+- Review-revision can iterate on the same assembly without re-assembling
+
+### Run modes (Phases 4 & 5)
+- Phases 4 and 5 declare **run modes** — user-selected variants with different round counts and goals
+- Phase 4: preliminary (implement & test) → comprehensive (full benchmark, gated by preliminary)
+- Phase 5: assembly (combine manuscript) → review-revision (audit & revise, gated by assembly)
+- The gating prevents skipping ahead: you can't benchmark unvalidated code or review an unassembled paper
 
 ---
 

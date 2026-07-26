@@ -48,7 +48,10 @@ from core.launch_run import (
     THEORY_PLAN_STANDARD_WITH_AUDIT,
     RUN_MODE_PRELIMINARY,
     RUN_MODE_COMPREHENSIVE,
+    RUN_MODE_ASSEMBLY,
+    RUN_MODE_REVIEW_REVISION,
     RUN_MODES,
+    PAPER_RUN_MODES,
     cancel_active_run,
     exact_rerun_options,
     launch_plan_version,
@@ -1209,9 +1212,12 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
 
         run_modes_available = phase_supports_run_modes(phase)
         if run_modes_available:
-            run_mode = run_mode or RUN_MODE_PRELIMINARY
-            if run_mode not in {RUN_MODE_PRELIMINARY, RUN_MODE_COMPREHENSIVE}:
-                raise ValueError("Select one of the available Phase 04 run modes")
+            cfg_modes = phase.get("run_modes", {})
+            cfg_default = str(cfg_modes.get("default", "")) if isinstance(cfg_modes, dict) else ""
+            run_mode = run_mode or cfg_default
+            all_modes = RUN_MODES | PAPER_RUN_MODES
+            if run_mode not in all_modes:
+                raise ValueError("Select one of the available run modes")
         elif run_mode:
             raise ValueError("This phase does not declare run modes")
 
@@ -1277,7 +1283,12 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
                 THEORY_PLAN_AUDIT_ONLY: 1,
             }[theory_plan]
         elif run_modes_available:
-            rounds = {RUN_MODE_PRELIMINARY: 1, RUN_MODE_COMPREHENSIVE: 2}[run_mode]
+            rounds = {
+                RUN_MODE_PRELIMINARY: 1,
+                RUN_MODE_COMPREHENSIVE: 2,
+                RUN_MODE_ASSEMBLY: 1,
+                RUN_MODE_REVIEW_REVISION: 2,
+            }[run_mode]
         elif phase["pattern"] == "sequential":
             rounds = len(phase["stages"])
         else:

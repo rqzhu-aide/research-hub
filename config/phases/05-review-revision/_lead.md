@@ -1,85 +1,87 @@
-# Lead Instructions: Review & Revision
+# Lead Instructions: Paper Assembly & Review
 
-Coordinate a two-stage review-and-revise cycle. The paper reviewer audits the
-Phase 4 draft; you then revise it into the final manuscript.
+Coordinate the assembly and revision of the manuscript. The run mode determines
+your workflow.
 
 ## Step 1: Read prior context
 Read:
 - `setting.md`
-- the approved Phase 04 summary and the **complete combined draft** (in the
-  method-specific folder)
-- the approved Phase 01–03 summaries (literature, method brainstorm, evaluation)
-- the paper reviewer's review (once stage 1 completes)
+- the approved Phase 04 summary and the **complete experimental results** (in
+  the method-specific folder)
+- the approved Phase 01–03 summaries (literature, method definition, evaluations)
+- the paper reviewer's review (for review-revision mode)
 
-## Step 2: Stage 1 — dispatch the review
-Send the complete draft to the **paper reviewer**. The reviewer uses the
-`stat-paper-reviewer` skill to produce a structured review covering:
+## Step 2: Determine the run mode
 
-- **Soundness**: are claims well-supported? Are proofs correct? Are baselines fair?
-- **Clarity**: is the paper well-written? Could an expert reproduce it?
-- **Significance**: does this matter to the community?
-- **Originality**: new insights, not just incremental combination?
+**If this is an assembly run:** proceed to Step 3A.
+**If this is a review-revision run:** proceed to Step 3B.
 
-The reviewer provides:
-- ranked weaknesses (most critical first)
-- specific revision recommendations
-- missing references or comparisons
-- an overall assessment and score
+## Step 3A: Assembly — combine all upstream artifacts
 
-Wait for the reviewer's report before proceeding to stage 2.
+Your sole task is to combine the separate Phase 1–4 artifacts into one coherent
+manuscript. Use the `stat-paper-writing` skill (provisioned to your profile).
 
-## Step 3: Stage 2 — revise the draft
-Read the reviewer's report. Then revise the draft:
+Combine:
+1. **Introduction** — motivate the problem, state the contribution, position
+   against the Phase 01 literature.
+2. **Method** — use the Phase 02 method definition (the precise definition of
+   what was proposed).
+3. **Theory** — use the Phase 03 proved theorems with full proofs.
+4. **Experiments** — use the Phase 04 implementation, diagnostics, and
+   benchmark results (tables, figures).
+5. **Discussion** — synthesize open questions and connections to broader
+   literature.
 
+Reconcile notation, ensure claim consistency, and merge all references into one
+bibliography.
+
+## Step 3B: Review-revision — audit then revise
+
+**Stage 1:** Send the assembled manuscript to the **paper reviewer**. Wait for
+the review. The reviewer uses the `stat-paper-reviewer` skill.
+
+**Stage 2:** Read the reviewer's report. Then revise the draft:
 1. **Address each review point**: for every weakness or recommendation, either
    fix it in the manuscript or state why it is not addressed (with reasoning).
    Do not silently ignore review points.
-2. **Use the `stat-paper-writing` skill** (provisioned to your profile) to
-   maintain paper conventions during revision.
+2. **Use the `stat-paper-writing` skill** to maintain paper conventions during
+   revision.
 3. **Write a revision log**: for each change, state what was changed, where, and
-   why. This makes the revision auditable.
+   why.
 4. **Preserve scientific honesty**: if the reviewer identifies an overclaim,
-   narrow it. If a proof has a gap, fix it or flag it. Do not soften valid
-   criticism to make the paper "look better."
-5. **Produce the final manuscript**: the revised draft is the deliverable. It
-   should be a complete, coherent paper.
+   narrow it. If a proof has a gap, fix it or flag it.
 
 ## Step 4: Final synthesis
 Write the HTML summary to the exact path provided. Report:
-- the reviewer's key findings (top weaknesses, overall assessment);
-- what was revised and why;
-- what was NOT revised and why;
-- the final draft's readiness for submission;
+- the run mode and what was produced;
+- for assembly: the structure of the assembled manuscript, any issues found
+  during notation reconciliation, and whether the evidence supports the claims;
+- for review-revision: the reviewer's key findings, what was revised and why,
+  what was NOT revised and why, and the final draft's readiness;
 - any remaining open questions.
 
 **Readiness assessment and recommendation.** Evaluate explicitly:
 
-a. **Is the manuscript ready for submission?** Does it meet the standard for a
-   complete research paper: clear contribution, rigorous proofs, validated
-   experiments, honest limitations? If yes, recommend approving.
+a. **Is the manuscript ready for submission?** (assembly: is the draft complete
+   enough to review? review-revision: does it meet the standard for a complete
+   research paper?)
 
-b. **Does the manuscript need further revision?** If the reviewer identified
-   weaknesses that were not fully addressed, or if new issues emerged during
-   revision, recommend another revision cycle with specific focus areas.
+b. **Does the manuscript need further revision?** (run another review-revision
+   cycle with specific focus areas)
 
-c. **Should a previous phase be rerun?** If the review reveals that the theory
-   is incomplete (return to Phase 03), the experiments are insufficient (return
-   to Phase 04), or the literature positioning is wrong (return to Phase 01),
-   recommend rerunning that phase with a specific focus.
+c. **Should a previous phase be rerun?** (return to Phase 03/04/01)
 
-d. **Is the method fundamentally flawed?** If the review reveals that the
-   method's claims cannot be supported by the evidence, recommend returning to
-   Phase 02 to select a different method. State why with specific evidence.
+d. **Is the method fundamentally flawed?** (return to Phase 02)
 
 State the recommendation clearly as one of: **approve**, **revise further**,
 **return to Phase N**, or **dead end — select different method**. Justify with
-specific evidence from the review and revision.
+specific evidence.
 
 ## Requirements
-- Do not skip review points. Every weakness or recommendation must be addressed
-  — fixed, or explicitly deferred with reasoning.
-- The revision log is mandatory. The user must be able to see what changed and why.
-- Preserve the method-specific folder structure from Phase 4. The final draft
-  goes in the same folder as the draft and review.
+- For assembly: all five upstream sources (Phases 1–4) must be incorporated.
+- For review-revision: every review point must be addressed — fixed, or
+  explicitly deferred with reasoning. The revision log is mandatory.
+- Preserve the method-specific folder structure. The output goes in the same
+  method branch folder.
 - The paper reviewer's assessment is independent. Do not influence it before the
-  review. You revise based on the review; you do not edit the review.
+  review.

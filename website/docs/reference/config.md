@@ -87,23 +87,44 @@ agents:
       name: "Audit the final theoretical analysis independently"
 ```
 
-### Sequential phase
+### Parallel phase with run modes (Phase 4)
+
+```yaml
+- slug: "04-draft-assembly"
+  name: "Implementation & Experiments"
+  description: "Implement the method in code, run pre-specified experiments with
+    diagnostics, and validate theoretical predictions against measured results"
+  pattern: parallel
+  method_binding: true
+  run_modes:
+    plans: ["preliminary", "comprehensive"]
+    default: "preliminary"
+  gated_by: ["03-idea-evaluation"]
+  folder: "draft/sections/"
+  members: [research_lead, theorist, data_scientist]
+  rounds: {min: 1, default: 2, max: 2}
+```
+
+### Sequential phase with run modes (Phase 5)
 
 ```yaml
 - slug: "05-review-revision"
-  name: "Review & Revision"
+  name: "Paper Assembly & Review"
+  description: "Assemble the paper from theory and experiments, then independent
+    paper review and revision into final manuscript"
   pattern: sequential
+  method_binding: true
+  run_modes:
+    plans: ["assembly", "review_revision"]
+    default: "assembly"
   gated_by: ["04-draft-assembly"]
   folder: "draft/revised/"
   members: [paper_reviewer, research_lead]
-  rounds: {min: 2, default: 2, max: 2}
   stages:
-  - role: paper_reviewer
-    name: "Review"
-    description: "Audit the complete draft."
-  - role: research_lead
-    name: "Revise"
-    description: "Address each review point and produce the final manuscript."
+  - name: Assemble
+    role: research_lead
+    description: "Combine theory, experiments, and literature into a coherent
+      manuscript with unified notation and consistent claims."
 ```
 
 ## Phase fields
@@ -117,6 +138,7 @@ agents:
 | `members` | Participating role IDs |
 | `rounds` | User-selectable round count: `{min, default, max}` |
 | `stages` | For sequential phases: ordered list of `{role, name, description}` |
+| `run_modes` | User-selectable run variants: `{plans: [...], default: ...}` (Phases 4 & 5) |
 
 ## Optional feature declarations
 
@@ -125,6 +147,7 @@ agents:
 | **Theory plans** | `proof_audit:` on Phase 03 | Three run plans: standard, standard+audit, audit-only |
 | **Protocol checkpoint** | `protocol_checkpoint: true` | Seals a protocol document before result-stage work |
 | **Method binding** | `method_binding: true` | Freezes method identity per run; routes output to branches |
+| **Run modes** | `run_modes:` on Phase 04 or 05 | Two user-selectable modes per phase; the second mode is gated by an approved run of the first |
 
 ## Prerequisite graph
 

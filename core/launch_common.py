@@ -130,6 +130,16 @@ RUN_MODES = frozenset({
     RUN_MODE_COMPREHENSIVE,
 })
 
+# Phase 05 run modes — assembly (assemble manuscript) vs review-revision (review + revise).
+RUN_MODE_ASSEMBLY = "assembly"
+
+RUN_MODE_REVIEW_REVISION = "review_revision"
+
+PAPER_RUN_MODES = frozenset({
+    RUN_MODE_ASSEMBLY,
+    RUN_MODE_REVIEW_REVISION,
+})
+
 
 class LaunchError(RuntimeError):
     """A run could not be prepared or launched safely."""

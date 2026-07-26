@@ -99,31 +99,48 @@ def _configured_run_modes(
 ) -> tuple[list[str], str] | tuple[None, None]:
     """Return (plans, default_mode) declared on the phase, or (None, None).
 
-    Phase 04 run_modes is an opt-in block. When absent the phase runs as a
-    single-shape run with no mode selector.
+    Phase 04 run_modes is an opt-in block (preliminary/comprehensive).
+    Phase 05 run_modes is an opt-in block (assembly/review_revision).
+    When absent the phase runs as a single-shape run with no mode selector.
     """
 
     declared = phase.get("run_modes")
     if not isinstance(declared, Mapping):
         if declared is None:
             return None, None
-        raise launch_common.LaunchError("Phase 04 run_modes must be a mapping")
+        raise launch_common.LaunchError("Phase run_modes must be a mapping")
     plans = declared.get("plans")
     default_mode = declared.get("default")
-    if not isinstance(plans, list) or plans != ["preliminary", "comprehensive"]:
+    slug = str(phase.get("slug", ""))
+    if slug == launch_common.DRAFT_ASSEMBLY_PHASE:
+        if not isinstance(plans, list) or plans != ["preliminary", "comprehensive"]:
+            raise launch_common.LaunchError(
+                "Phase 04 run_modes.plans must declare preliminary and comprehensive "
+                "in that order"
+            )
+        if default_mode not in ("preliminary", "comprehensive"):
+            raise launch_common.LaunchError(
+                "Phase 04 run_modes.default must be preliminary or comprehensive"
+            )
+    elif slug == launch_common.PAPER_WRITING_PHASE:
+        if not isinstance(plans, list) or plans != ["assembly", "review_revision"]:
+            raise launch_common.LaunchError(
+                "Phase 05 run_modes.plans must declare assembly and review_revision "
+                "in that order"
+            )
+        if default_mode not in ("assembly", "review_revision"):
+            raise launch_common.LaunchError(
+                "Phase 05 run_modes.default must be assembly or review_revision"
+            )
+    else:
         raise launch_common.LaunchError(
-            "Phase 04 run_modes.plans must declare preliminary and comprehensive "
-            "in that order"
-        )
-    if default_mode not in ("preliminary", "comprehensive"):
-        raise launch_common.LaunchError(
-            "Phase 04 run_modes.default must be preliminary or comprehensive"
+            "run_modes is only valid for Phase 04 or Phase 05"
         )
     return list(plans), str(default_mode)
 
 
 def phase_supports_run_modes(phase: Mapping[str, Any]) -> bool:
-    """True when the phase configuration declares Phase 04 run modes."""
+    """True when the phase configuration declares run modes (Phase 04 or 05)."""
 
     plans, _ = _configured_run_modes(phase)
     return plans is not None
@@ -132,32 +149,63 @@ def phase_supports_run_modes(phase: Mapping[str, Any]) -> bool:
 def _phase_for_run_mode(
     phase: Mapping[str, Any], mode: str
 ) -> dict[str, Any]:
-    """Return the Phase 04 configuration shaped for the selected run mode.
+    """Return the phase configuration shaped for the selected run mode.
 
-    Both modes share the same members and folder; the mode adjusts the
-    effective rounds policy and stamps the run_plan so downstream prompt
-    assembly and the manifest record which shape the user picked:
-
-    - preliminary (1 round): implement the method, run diagnostic sanity
-      checks, confirm the implementation works. No benchmarking yet.
-    - comprehensive (2 rounds): benchmark the implemented method against
-      existing baselines across the settings needed for the paper draft.
-      Requires a prior approved preliminary run in the same branch.
+    Phase 04 modes (preliminary/comprehensive) adjust the rounds policy.
+    Phase 05 modes (assembly/review_revision) adjust stages and rounds.
+    The shaped dict carries ``run_plan`` so downstream prompt assembly and the
+    manifest record which shape the user picked.
     """
 
-    if str(phase.get("slug")) != launch_common.DRAFT_ASSEMBLY_PHASE:
-        raise launch_common.LaunchError("Run modes are only valid in Phase 04")
+    slug = str(phase.get("slug", ""))
     plans, default_mode = _configured_run_modes(phase)
     if plans is None:
         raise launch_common.LaunchError("This phase does not declare run modes")
-    if mode not in launch_common.RUN_MODES:
-        raise launch_common.LaunchError(f"Unknown Phase 04 run mode: {mode!r}")
+
+    if slug == launch_common.DRAFT_ASSEMBLY_PHASE:
+        if mode not in launch_common.RUN_MODES:
+            raise launch_common.LaunchError(f"Unknown Phase 04 run mode: {mode!r}")
+        shaped = dict(phase)
+        shaped["run_plan"] = mode
+        if mode == launch_common.RUN_MODE_PRELIMINARY:
+            shaped["rounds"] = {"min": 1, "default": 1, "max": 1}
+        else:  # comprehensive
+            shaped["rounds"] = {"min": 2, "default": 2, "max": 2}
+        return shaped
+
+    # Phase 05 — assembly vs review_revision
+    if mode not in launch_common.PAPER_RUN_MODES:
+        raise launch_common.LaunchError(f"Unknown Phase 05 run mode: {mode!r}")
 
     shaped = dict(phase)
     shaped["run_plan"] = mode
-    if mode == launch_common.RUN_MODE_PRELIMINARY:
+    if mode == launch_common.RUN_MODE_ASSEMBLY:
+        # Assembly: single research_lead stage
+        shaped["members"] = ["research_lead"]
+        shaped["stages"] = [dict(phase["stages"][0])]
         shaped["rounds"] = {"min": 1, "default": 1, "max": 1}
-    else:  # comprehensive
+    else:  # review_revision
+        # Review + Revise: paper_reviewer audits, then research_lead revises
+        shaped["members"] = ["paper_reviewer", "research_lead"]
+        shaped["stages"] = [
+            {
+                "role": "paper_reviewer",
+                "name": "Review the assembled manuscript",
+                "description": (
+                    "Audit the assembled manuscript independently — soundness, "
+                    "clarity, significance, originality. Produce ranked revision "
+                    "recommendations."
+                ),
+            },
+            {
+                "role": "research_lead",
+                "name": "Revise the manuscript",
+                "description": (
+                    "Address each review point, revise the draft, produce the final "
+                    "manuscript with a revision log."
+                ),
+            },
+        ]
         shaped["rounds"] = {"min": 2, "default": 2, "max": 2}
     return shaped
 
@@ -208,6 +256,59 @@ def _comprehensive_gate_satisfied(
         if not isinstance(frozen_phase, Mapping):
             continue
         if str(frozen_phase.get("run_plan", "")) != launch_common.RUN_MODE_PRELIMINARY:
+            continue
+        method_selection = manifest.get("method_selection")
+        if not isinstance(method_selection, Mapping):
+            continue
+        if str(method_selection.get("stable_id", "")) == str(branch_stable_id):
+            return True
+    return False
+
+
+def _review_revision_gate_satisfied(
+    project_dir: Path,
+    branch_stable_id: str,
+) -> bool:
+    """True when an approved assembly Phase 05 run exists for this branch.
+
+    Scans prior Phase 05 runs by reading each run's sealed manifest to verify:
+      - its manifest's phase.run_plan == "assembly"
+      - its manifest's method_selection.stable_id == branch_stable_id
+      - its run status == "approved"
+    """
+
+    root = Path(project_dir).resolve()
+    runs = project_state.get_runs(root, launch_common.PAPER_WRITING_PHASE)
+    for run in runs:
+        if str(run.get("status", "")) != "approved":
+            continue
+        raw_manifest_path = run.get("manifest_path")
+        expected_hash = str(run.get("manifest_sha256") or "").lower()
+        if not raw_manifest_path or not expected_hash:
+            continue
+        try:
+            manifest_path = Path(str(raw_manifest_path)).resolve(strict=True)
+            manifest_root = (
+                project_state.state_dir(root) / "runs" / launch_common.PAPER_WRITING_PHASE
+            ).resolve()
+            manifest_path.relative_to(manifest_root)
+            payload = project_state.bounded_file_bytes(
+                manifest_path,
+                maximum=project_state.MAX_CONTROL_FILE_BYTES,
+                label="run manifest",
+            )
+            import hashlib
+            if hashlib.sha256(payload).hexdigest() != expected_hash:
+                continue
+            manifest = json.loads(payload.decode("utf-8"))
+        except (OSError, TypeError, ValueError, UnicodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(manifest, Mapping):
+            continue
+        frozen_phase = manifest.get("phase")
+        if not isinstance(frozen_phase, Mapping):
+            continue
+        if str(frozen_phase.get("run_plan", "")) != launch_common.RUN_MODE_ASSEMBLY:
             continue
         method_selection = manifest.get("method_selection")
         if not isinstance(method_selection, Mapping):
@@ -1415,15 +1516,31 @@ def exact_rerun_options(
             ).lower()
         return result
 
+    if phase_slug == launch_common.DRAFT_ASSEMBLY_PHASE:
+        plan = str(frozen_phase.get("run_plan", "")).strip()
+        if not plan:
+            # A Phase 04 run from before run_modes shipped records no plan;
+            # preserving it is a plain rerun.
+            return {"kind": "standard"}
+        if plan not in launch_common.RUN_MODES:
+            raise launch_common.LaunchError("The prior Phase 04 run mode cannot be reproduced")
+        return {"kind": "run_mode", "run_mode": plan}
+
     if phase_slug == launch_common.PAPER_WRITING_PHASE:
+        plan = str(frozen_phase.get("run_plan", "")).strip()
+        if plan in launch_common.PAPER_RUN_MODES:
+            return {"kind": "run_mode", "run_mode": plan}
+        # Legacy Phase 05 runs from before run_modes shipped
         paper_review = manifest.get("paper_review")
         if not isinstance(paper_review, Mapping):
-            raise launch_common.LaunchError("The prior Phase 06 run has no verified plan metadata")
+            if plan:
+                raise launch_common.LaunchError("The prior Phase 05 run plan cannot be reproduced")
+            return {"kind": "standard"}
         kind = str(paper_review.get("kind", ""))
         if kind == "full":
             return {"kind": "paper_full"}
         if kind != "review_only":
-            raise launch_common.LaunchError("The prior Phase 06 run plan cannot be reproduced")
+            raise launch_common.LaunchError("The prior Phase 05 run plan cannot be reproduced")
         try:
             source_path, source_digest, _source_baseline = _resolve_paper_review_source(
                 root,
@@ -1438,17 +1555,7 @@ def exact_rerun_options(
             "review_target_sha256": source_digest,
         }
 
-    if phase_slug == launch_common.DRAFT_ASSEMBLY_PHASE:
-        plan = str(frozen_phase.get("run_plan", "")).strip()
-        if not plan:
-            # A Phase 04 run from before run_modes shipped records no plan;
-            # preserving it is a plain rerun.
-            return {"kind": "standard"}
-        if plan not in launch_common.RUN_MODES:
-            raise launch_common.LaunchError("The prior Phase 04 run mode cannot be reproduced")
-        return {"kind": "run_mode", "run_mode": plan}
-
-    raise launch_common.LaunchError("Exact plan preservation is only available for Phase 03, Phase 04, and Phase 06")
+    raise launch_common.LaunchError("Exact plan preservation is only available for Phase 03, Phase 04, and Phase 05")
 
 
 def theory_audit_source_options(project_dir: str | Path) -> list[dict[str, Any]]:

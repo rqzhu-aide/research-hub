@@ -71,7 +71,10 @@ from core.launch_common import (
     THEORY_PLAN_STANDARD_WITH_AUDIT,
     RUN_MODE_PRELIMINARY,
     RUN_MODE_COMPREHENSIVE,
+    RUN_MODE_ASSEMBLY,
+    RUN_MODE_REVIEW_REVISION,
     RUN_MODES,
+    PAPER_RUN_MODES,
     DRAFT_ASSEMBLY_PHASE,
     _ProcessOutputLimitExceeded,
     _bounded_bytes,
@@ -154,6 +157,7 @@ from core.launch_plans import (
     phase_supports_theory_plans,
     phase_supports_run_modes,
     theory_audit_source_options,
+    _review_revision_gate_satisfied,
 )
 from core.launch_process import (
     MAX_COMMAND_OUTPUT_BYTES,
@@ -497,8 +501,9 @@ def _launch_run_locked(
         if not selected_run_mode:
             plans, default_mode = launch_plans._configured_run_modes(configured_phase)
             selected_run_mode = default_mode
-        if selected_run_mode not in launch_common.RUN_MODES:
-            raise launch_common.LaunchError(f"Unknown Phase 04 run mode: {selected_run_mode!r}")
+        all_modes = launch_common.RUN_MODES | launch_common.PAPER_RUN_MODES
+        if selected_run_mode not in all_modes:
+            raise launch_common.LaunchError(f"Unknown run mode: {selected_run_mode!r}")
         phase = launch_plans._phase_for_run_mode(phase, selected_run_mode)
     elif selected_run_mode:
         raise launch_common.LaunchError("This phase does not declare run modes")
@@ -622,6 +627,19 @@ def _launch_run_locked(
                 "run for this method branch. Launch a preliminary run first to "
                 "confirm the implementation works, then approve it before "
                 "benchmarking."
+            )
+    if (
+        phase_slug == launch_common.PAPER_WRITING_PHASE
+        and selected_run_mode == launch_common.RUN_MODE_REVIEW_REVISION
+        and run_specific_method_id
+    ):
+        if not launch_plans._review_revision_gate_satisfied(
+            project_dir, run_specific_method_id
+        ):
+            raise launch_common.LaunchError(
+                "A review-revision Phase 05 run requires a prior approved assembly "
+                "run for this method branch. Launch an assembly run first to "
+                "produce the manuscript, then approve it before reviewing and revising."
             )
     try:
         run_id = project_state.reserve_run(

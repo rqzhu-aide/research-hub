@@ -1365,6 +1365,56 @@ to produce the comparison results needed for the paper draft:
 Do not re-implement the method from scratch. The preliminary run's code is the
 starting point. If you find bugs, fix them and rerun the affected experiments.
 """
+    elif (
+        phase_slug == launch_common.PAPER_WRITING_PHASE
+        and run_mode
+        and run_mode in launch_common.PAPER_RUN_MODES
+    ):
+        if run_mode == launch_common.RUN_MODE_ASSEMBLY:
+            run_mode_text = """## User-selected assembly run
+
+This is an ASSEMBLY run. Your sole task is to combine the separate Phase 1–4
+artifacts into one coherent manuscript. This is the convergence point — the
+first and only stage where the whole research thread becomes a single paper.
+
+1. **Introduction** — motivate the problem, state the contribution, position
+   against the Phase 01 literature.
+2. **Method** — use the Phase 02 method definition (the precise definition of
+   what was proposed).
+3. **Theory** — use the Phase 03 proved theorems with full proofs. Do not
+   re-derive; use the theorist's actual output.
+4. **Experiments** — use the Phase 04 implementation, diagnostics, and
+   benchmark results (tables, figures). Use the analyst's actual output.
+5. **Discussion** — synthesize open questions from Phases 3–4 and connections
+   to broader literature.
+
+Reconcile notation, ensure claim consistency (intro claims must match what the
+theory proves and what the experiments show), and merge all references into one
+bibliography. Use the `stat-paper-writing` skill for paper conventions.
+
+The user will review the assembled manuscript and then launch a
+review-revision run.
+"""
+        else:  # review_revision
+            run_mode_text = """## User-selected review-revision run
+
+This is a REVIEW-REVISION run. A prior assembly run already produced a complete
+manuscript in this branch — read it. Your task has two stages:
+
+**Stage 1 (paper_reviewer):** Audit the assembled manuscript independently.
+Use the `stat-paper-reviewer` skill. Evaluate soundness, clarity, significance,
+and originality. Produce ranked weaknesses (fatal/major/minor), specific
+revision recommendations, missing references, scores, and an overall assessment.
+
+**Stage 2 (research_lead):** Address every review point. Use the
+`stat-paper-writing` skill during revision. For each weakness: fix it, defer it
+with explicit reasoning, or push back with reasoning. Produce the final revised
+manuscript plus a mandatory revision log documenting every change.
+
+Do not re-assemble the manuscript from scratch. The assembly run's output is the
+starting point. If the review reveals the manuscript needs major structural
+changes, flag that a new assembly run may be needed.
+"""
 
     return f"""# Research lead assignment: {phase_name}
 
@@ -1383,7 +1433,7 @@ user. Your result must make the user's next decision easy to understand.
 - Rounds or stages authorized by the user: {rounds}
 - Kanban board: `{board_slug}`
 - User direction: {user_feedback if user_feedback else '(none)'}
-{f'- Run mode: {run_mode}' if phase_slug == launch_common.DRAFT_ASSEMBLY_PHASE and run_mode else ''}
+{f'- Run mode: {run_mode}' if run_mode else ''}
 
 {prerequisite_text}
 
