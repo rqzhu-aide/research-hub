@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
+from core.filesystem_utils import metadata_is_link_or_reparse
+
 
 # Repository root is the parent of the core/ package directory.
 HUB_DIR = Path(__file__).resolve().parent.parent
@@ -235,19 +237,9 @@ def _sha256_file(
 
 
 def _metadata_is_link_or_reparse(metadata: os.stat_result) -> bool:
-    """Recognize POSIX links and Windows reparse points."""
+    """Backward-compatible alias for :func:`core.filesystem_utils.metadata_is_link_or_reparse`."""
 
-    if stat.S_ISLNK(metadata.st_mode):
-        return True
-    reparse_flag = getattr(
-        stat,
-        "FILE_ATTRIBUTE_REPARSE_POINT",
-        0x400 if os.name == "nt" else 0,
-    )
-    return bool(
-        reparse_flag
-        and getattr(metadata, "st_file_attributes", 0) & reparse_flag
-    )
+    return metadata_is_link_or_reparse(metadata)
 
 
 def _path_uses_symlink_below(path: Path, boundary: Path) -> bool:

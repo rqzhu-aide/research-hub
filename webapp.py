@@ -2048,9 +2048,14 @@ def profile_memory(name: str) -> str:
     )
 
 
-if __name__ == "__main__":
+def main() -> int:
     port = int(os.environ.get("RESEARCH_HUB_PORT", "5055"))
     debug = os.environ.get("RESEARCH_HUB_DEBUG", "").lower() in {"1", "true", "yes"}
     display_host = f"[{_BIND_HOST}]" if ":" in _BIND_HOST else _BIND_HOST
     print(f"[webapp] Research Hub Web UI: http://{display_host}:{port}")
     app.run(host=_BIND_HOST, port=port, debug=debug)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

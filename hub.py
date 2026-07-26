@@ -24,6 +24,8 @@ from typing import BinaryIO, Iterator, List, Optional, Sequence
 
 import yaml
 
+from core.filesystem_utils import metadata_is_link_or_reparse
+
 
 HUB_DIR = Path(__file__).parent.resolve()
 CONFIG_PATH = HUB_DIR / "config.yaml"
@@ -54,19 +56,9 @@ class ConfigurationError(ValueError):
 
 
 def _metadata_is_link_or_reparse(metadata: os.stat_result) -> bool:
-    """Recognize POSIX links and Windows reparse points."""
+    """Backward-compatible alias for :func:`core.filesystem_utils.metadata_is_link_or_reparse`."""
 
-    if stat.S_ISLNK(metadata.st_mode):
-        return True
-    reparse_flag = getattr(
-        stat,
-        "FILE_ATTRIBUTE_REPARSE_POINT",
-        0x400 if os.name == "nt" else 0,
-    )
-    return bool(
-        reparse_flag
-        and getattr(metadata, "st_file_attributes", 0) & reparse_flag
-    )
+    return metadata_is_link_or_reparse(metadata)
 
 
 def _verify_open_lock_file(handle: BinaryIO, path: Path, *, label: str) -> None:

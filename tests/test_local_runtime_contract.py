@@ -102,4 +102,4 @@ def test_repository_declares_editable_package_install() -> None:
     assert "[build-system]" in pyproject
     assert "[project]" in pyproject
     assert "packages = [\"core\"]" in pyproject
-    assert "pip install -e" in readme
+    assert "setup.sh" in readme

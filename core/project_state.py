@@ -28,6 +28,8 @@ from typing import Any, Iterator, Mapping, Sequence
 
 import yaml
 
+from core.filesystem_utils import metadata_is_link_or_reparse
+
 
 SCHEMA_VERSION = 6
 
@@ -190,19 +192,9 @@ def lock_file(project_dir: str | Path) -> Path:
 
 
 def _metadata_is_link_or_reparse(metadata: os.stat_result) -> bool:
-    """Recognize POSIX links and Windows reparse points."""
+    """Backward-compatible alias for :func:`core.filesystem_utils.metadata_is_link_or_reparse`."""
 
-    if stat.S_ISLNK(metadata.st_mode):
-        return True
-    reparse_flag = getattr(
-        stat,
-        "FILE_ATTRIBUTE_REPARSE_POINT",
-        0x400 if os.name == "nt" else 0,
-    )
-    return bool(
-        reparse_flag
-        and getattr(metadata, "st_file_attributes", 0) & reparse_flag
-    )
+    return metadata_is_link_or_reparse(metadata)
 
 
 def _path_uses_link_below(path: Path, boundary: Path) -> bool:

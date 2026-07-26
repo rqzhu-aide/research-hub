@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any, Iterator, Mapping, Sequence
 from urllib.parse import urlsplit
 
+from core.filesystem_utils import metadata_is_link_or_reparse
+
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = APP_ROOT / "bundled_skills" / "manifest.json"
@@ -247,13 +249,9 @@ def profile_home(
 
 
 def _metadata_is_link_or_reparse(metadata: os.stat_result) -> bool:
-    if stat.S_ISLNK(metadata.st_mode):
-        return True
-    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
-    return bool(
-        reparse_flag
-        and getattr(metadata, "st_file_attributes", 0) & reparse_flag
-    )
+    """Backward-compatible alias for :func:`core.filesystem_utils.metadata_is_link_or_reparse`."""
+
+    return metadata_is_link_or_reparse(metadata)
 
 
 def _safe_lstat(path: Path, *, label: str) -> os.stat_result:
