@@ -1328,6 +1328,23 @@ def prepare_phase_data(
                 "source_run_id": method_run_id,
                 "decision_sha256": str(decision.get("sha256", "")),
             }
+            # Enrich with the human-readable label from the method menu
+            try:
+                menu = method_menu.load_method_menu(project_dir)
+            except Exception:
+                menu = None
+            if menu and isinstance(menu.get("entries"), list):
+                match = next(
+                    (
+                        entry for entry in menu["entries"]
+                        if isinstance(entry, Mapping)
+                        and str(entry.get("stable_id", ""))
+                        == approved_method_selection["stable_id"]
+                    ),
+                    None,
+                )
+                if isinstance(match, Mapping) and str(match.get("label", "")).strip():
+                    approved_method_selection["label"] = str(match["label"])
     phase_state = state.get("phases", {}).get(
         phase_slug,
         {"status": "pending", "runs": [], "approved_run": None, "stale": False},

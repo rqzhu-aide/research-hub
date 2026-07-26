@@ -608,6 +608,72 @@ summary::-webkit-details-marker { display: none; }
   display: grid; gap: 12px;
 }
 
+/* ── Active method branch panel (Phases 3-5) ── */
+.branch-info-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+}
+.branch-info-panel-warning {
+  border-color: var(--review);
+  background: var(--review-soft, rgba(245, 158, 11, 0.08));
+}
+.branch-info-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.branch-info-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+.branch-info-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.branch-info-label {
+  font-size: .68rem;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.branch-info-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.branch-info-id {
+  font-size: .72rem;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+}
+.branch-info-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: .78rem;
+  color: var(--muted);
+  flex: 0 0 auto;
+  text-align: right;
+}
+.branch-info-hint svg { opacity: .6; flex: 0 0 auto; }
+.branch-info-hint strong { color: var(--accent-bright); font-weight: 600; }
+
+@media (max-width: 640px) {
+  .branch-info-panel { flex-direction: column; align-items: flex-start; }
+  .branch-info-hint { text-align: left; }
+}
+
 /* ── Context chips (compact) ── */
 .context-chips-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .context-chips-label { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }

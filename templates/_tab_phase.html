@@ -289,6 +289,37 @@
   <input type="hidden" name="phase_plan_version" value="{{ pd.phase_plan_version | default('') }}">
   <input type="hidden" name="prerequisite_report_version" value="{{ pd.prerequisite_report_version }}">
 
+  {# ── Active method branch panel (Phases 3-5): shows which branch is locked in ── #}
+  {% if method_bound_phase and pc.slug != '02-method-development' and approved_method %}
+  <div class="branch-info-panel">
+    <div class="branch-info-left">
+      <span class="branch-info-icon" aria-hidden="true">⎇</span>
+      <div class="branch-info-text">
+        <span class="branch-info-label">Active method branch</span>
+        <span class="branch-info-name">{{ approved_method.label or approved_method.stable_id }}</span>
+        <span class="branch-info-id">{{ approved_method.stable_id }} · v{{ approved_method.version }}</span>
+      </div>
+    </div>
+    <span class="branch-info-hint">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      Change this in <strong>New Method</strong> (Phase 2)
+    </span>
+  </div>
+  {% elif method_bound_phase and pc.slug != '02-method-development' and not approved_method %}
+  <div class="branch-info-panel branch-info-panel-warning">
+    <div class="branch-info-left">
+      <span class="branch-info-icon" aria-hidden="true">⎇</span>
+      <div class="branch-info-text">
+        <span class="branch-info-label">No method branch selected</span>
+        <span class="branch-info-name">Waiting for Phase 2 approval</span>
+      </div>
+    </div>
+    <span class="branch-info-hint">
+      A method branch must be approved in <strong>New Method</strong> before this phase can run.
+    </span>
+  </div>
+  {% endif %}
+
   {# ── Cross-phase context chips ── #}
   {% if cross_ctx %}
   <div class="context-chips-row">
