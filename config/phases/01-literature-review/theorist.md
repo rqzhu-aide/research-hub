@@ -51,6 +51,15 @@ defined in the team norms.
 7. **Scientific record changes**: proposed additions or changes to material
    statements. Do not reproduce the full accepted scientific record.
 
+**Reference library.** For every paper you classify in your result table,
+write a per-reference summary file to `references/papers/{source}-{id}.md`
+(e.g. `arxiv-2102.00544.md`). Use the format specified in the lead's reference
+library instructions: YAML frontmatter (arxiv_id, title, authors, year, venue,
+relation, found_in_run, found_by_role, also_found_in) + one-line summary +
+relevance to this project + key results/tools + classification. If a file
+already exists from a prior run, append this run's number to `also_found_in`
+and amend the notes — do not overwrite. This is mandatory, not optional.
+
 ## Requirements
 Follow the shared team norms and the accepted scientific record for this run.
 Cite exact results and state the role of each assumption. Continue targeted

@@ -35,11 +35,21 @@ Read:
 - the trusted current approved Phase 02 baseline for a rerun, or the stale
   Phase 02 baseline as comparison evidence only
 - the approved Phase 01 summary provided for this run, when available
+- `references/literature-summary.md` — the consolidated literature summary
+  from Phase 01. Read this first for orientation: it explains what prior work
+  exists, what's been classified, and what gaps remain.
+- `references/papers/` — the per-reference summary files. When considering a
+  new method idea, check these files to see exactly which prior papers are
+  relevant and how they relate to the project. Do not propose a method that
+  merely redoes classified prior work.
 - `references/` and prior `ideas/` runs
 
 State the target and obstacle in plain language. Frame the creative space: what
 is the project trying to achieve, and what landscape of possibilities does the
 literature open up? Encourage the team to think beyond incremental improvements.
+Every proposed method must be explicitly positioned against the relevant
+references in the library — state which papers it builds on, which it differs
+from, and what gap it fills.
 
 ## Step 2: Round 1 — Brainstorm
 Give each role a distinct creative direction. Require every proposal set to

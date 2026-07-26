@@ -35,6 +35,11 @@ Read:
 - the team norms and the accepted scientific record imported only from a
   current summary approved by the user, when available
 - prior `references/literature-review/run/` outputs
+- `references/papers/` — the per-reference summary files (one `.md` per cited
+  paper, built by prior runs). These are the project's structured reference
+  library. Read them to understand what has already been found and classified.
+- `references/literature-summary.md` — the consolidated literature summary
+  (updated each run). Read it first for orientation.
 - `draft/`, `ideas/`, and `numerical/` when present
 
 Decide whether this is an initial survey or focused literature update. State the
@@ -63,6 +68,10 @@ The instructions for each role must specify:
    citation chaining, software searches, and a stopping rule.
 7. a **Scientific record changes** section containing only proposed additions
    or changes to material statements.
+8. **Reference library maintenance.** Each role must write a per-reference
+   summary file for every new paper it classifies, and update existing files
+   when it re-confirms or extends a prior finding. Details in the
+   **Reference library** section below.
 
 Require each role to quote or cite the exact theorem, formula, algorithm, or
 repository used to classify a source. Papers with similar keywords alone do not
@@ -88,9 +97,74 @@ conclusions that depend on missing work as Not assessable, and continue the
 configured rounds. A missing or unreadable artifact is a technical run failure,
 not a scientific Failed report.
 
+## Reference library
+
+The project maintains a structured reference library at `references/papers/`,
+with one `.md` file per cited paper, and a consolidated summary at
+`references/literature-summary.md`. This library persists across runs and is
+read by downstream phases (especially Phase 02 Method Development).
+
+### Per-reference files (`references/papers/{source}-{id}.md`)
+Every role that classifies a new paper writes a file using this format:
+
+```markdown
+---
+arxiv_id: "2509.09162"          # or github_repo, pmlr_vol, etc.
+title: "Full paper title"
+authors: ["Author1", "Author2"]
+year: 2025
+venue: "arXiv preprint"          # or conference/journal name
+relation: "direct prior work"    # direct prior work | theoretical foundation | related method | existing implementation
+found_in_run: "06"               # this run number
+found_by_role: "research_lead"   # this role
+also_found_in: []                # later runs that re-confirm (append only)
+---
+
+# arXiv:2509.09162 — Short Title
+
+## One-line summary
+One sentence.
+
+## Relevance to this project
+2-4 sentences.
+
+## Key results / tools
+- Specific theorems, algorithms, or data.
+
+## Classification
+- **Relation**: direct prior work
+- **Overlap**: precise overlap
+- **Difference**: what our method does differently
+```
+
+Rules:
+- Filename: `{source}-{id}.md` with dots → hyphens (e.g. `arxiv-2509.09162.md`).
+- If a file already exists from a prior run, **do not overwrite it** — append
+  this run's number to `also_found_in` and amend the notes if you have new
+  information. The `found_in_run` and `found_by_role` fields are immutable.
+- Only create files for papers you have actually read and classified — not
+  every search hit.
+
+### Consolidated summary (`references/literature-summary.md`)
+The lead updates this file in Step 4. It is a 3–5 page synthesis of the entire
+reference library, organized by relation type, with one-line entries linking to
+the per-reference files. It is **cumulative** — a rerun adds to it, it does not
+replace it.
+
 ## Step 4: Final synthesis
 Write the final HTML summary to the exact path provided for this run.
 Do not overwrite an earlier run summary.
+
+**Also update `references/literature-summary.md`** — the consolidated reference
+library summary. This is a required deliverable alongside the HTML summary. The
+file is cumulative: read the existing version (if any), integrate new references
+from this run, and rewrite it to reflect the complete current library. Organize
+by relation type (direct prior work, theoretical foundations, related methods,
+existing implementations), with one-line entries linking to the per-reference
+files in `references/papers/`. Target 3–5 pages. Include a "Key findings"
+section summarizing the latest run's conclusions and a "Coverage gaps" section
+for what remains unexplored.
+
 Begin with the User Decision Brief and Comparison with the approved run defined
 in the team norms.
 Immediately afterward, state the phase outcome as Complete, Partial, or Failed.

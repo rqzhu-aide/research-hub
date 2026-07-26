@@ -26,6 +26,22 @@ A candidate idea should have:
 4. **A clear target and obstacle** — what scientific quantity or decision
    matters, and why do existing approaches fail to resolve it?
 
+## Use the literature reference library
+Before and during brainstorming, consult the structured reference library built
+by Phase 01:
+
+- **`references/literature-summary.md`** — read this first. It is a 3–5 page
+  synthesis of all classified prior work, organized by relation type, with key
+  findings and coverage gaps.
+- **`references/papers/`** — one `.md` per cited paper, with title, authors,
+  relation to this project, key results, and classification. When you have a
+  candidate idea, check the relevant reference files to confirm it is genuinely
+  new and to articulate its unique position precisely.
+
+Every proposed method must state which reference(s) it builds on, which it
+differs from, and what gap it fills. An idea that merely redoes classified prior
+work is not a contribution. The reference library makes this check concrete.
+
 ## When this phase may be run
 Requires a current Phase 01 summary approved by the user. If that summary is
 unavailable, the web UI identifies the missing prior evidence, but the user may
