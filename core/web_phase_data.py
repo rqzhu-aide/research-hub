@@ -719,7 +719,7 @@ def _source_descriptor(
             return None
         if source_round < 1:
             return None
-    elif phase_slug == "06-paper-writing":
+    elif phase_slug == "05-review-revision":
         candidate = manifest.get("paper_review")
         if not isinstance(candidate, Mapping) or candidate.get("kind") != "review_only":
             return None
@@ -793,7 +793,7 @@ def _phase_six_post_review_target(
 ) -> dict[str, str] | None:
     """Return an exact selectable post-review manuscript from a sealed run."""
 
-    if phase_slug != "06-paper-writing":
+    if phase_slug != "05-review-revision":
         return None
     status = str(run.get("status", ""))
     decision_record = run.get("decision_record")
@@ -963,7 +963,7 @@ def _run_view(
         and plan_pattern == "sequential"
     ):
         plan_variant = "Standard theory"
-    elif phase_slug == "06-paper-writing" and plan_stages:
+    elif phase_slug == "05-review-revision" and plan_stages:
         plan_variant = "Full manuscript writing and independent review"
     elif has_frozen_plan:
         plan_variant = "Standard phase plan"
@@ -1376,7 +1376,7 @@ def prepare_phase_data(
         and not active_here
         and phase_slug in {
             "03-idea-evaluation",
-            "06-paper-writing",
+            "05-review-revision",
         }
         and displayed_latest.get("frozen_plan", {}).get("available")
     ):
@@ -1458,7 +1458,7 @@ def prepare_phase_data(
                 or phase_cfg.get("available_run_plans") is not None
             )
             else "Full manuscript writing and independent review"
-            if phase_slug == "06-paper-writing"
+            if phase_slug == "05-review-revision"
             else "Standard phase plan"
         ),
         "pattern": str(phase_cfg.get("pattern", "")),

@@ -1319,7 +1319,7 @@ def test_phase_six_reviewer_brief_seals_exact_review_manuscript(
     manuscript.write_text("# Paper\n\nExact reviewed text.\n", encoding="utf-8")
     digest = hashlib.sha256(manuscript.read_bytes()).hexdigest()
     manifest = {
-        "phase_slug": "06-paper-writing",
+        "phase_slug": "05-review-revision",
         "output_root": str(output_root),
     }
 
@@ -1338,7 +1338,7 @@ def test_phase_six_reviewer_brief_seals_exact_review_manuscript(
 
 def test_phase_six_reviewer_requires_review_manuscript(tmp_path: Path) -> None:
     manifest = {
-        "phase_slug": "06-paper-writing",
+        "phase_slug": "05-review-revision",
         "output_root": str(tmp_path / "draft" / "run" / "01"),
     }
 
@@ -2467,7 +2467,7 @@ def test_lead_prompt_embeds_frozen_research_lead_soul(tmp_path: Path) -> None:
         "summaries": [],
     }
     phase = {
-        "slug": "06-paper-writing",
+        "slug": "05-review-revision",
         "name": "Paper Writing",
         "pattern": "sequential",
         "folder": "draft",
@@ -2492,7 +2492,7 @@ def test_lead_prompt_embeds_frozen_research_lead_soul(tmp_path: Path) -> None:
         "",
         {"blockers": []},
         snapshots,
-        project / "phase-summaries" / "06-paper-writing" / "run-id.html",
+        project / "phase-summaries" / "05-review-revision" / "run-id.html",
     )
 
     assert "Lead with the research question." in prompt

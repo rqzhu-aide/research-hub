@@ -670,7 +670,7 @@ def test_ready_launch_form_contains_both_current_decision_tokens(
 def test_paper_page_prepares_distinct_full_and_review_only_plan_tokens(
     web_env: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    paper_slug = "06-paper-writing"
+    paper_slug = "05-review-revision"
     paper_phase = {
         "slug": paper_slug,
         "name": "Paper Writing",
@@ -929,7 +929,7 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
         ],
     }
     phase_six = {
-        "slug": "06-paper-writing",
+        "slug": "05-review-revision",
         "name": "Paper Writing",
         "description": "Write and review the paper.",
         "pattern": "sequential",
@@ -1054,11 +1054,11 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
     launched.reset_mock(return_value=True)
     launched.return_value = {"run_number": 3, "rounds_requested": 2}
     review_response = client.post(
-        f"/project/{PROJECT_ID}/phase/06-paper-writing/start",
+        f"/project/{PROJECT_ID}/phase/05-review-revision/start",
         data={
             "csrf_token": token,
             "project_identity": identity,
-            **_launch_tokens(web_env, "06-paper-writing"),
+            **_launch_tokens(web_env, "05-review-revision"),
             "review_target": "draft/run/01/manuscript-post-review.md",
             "review_target_sha256": "a" * 64,
         },
@@ -1068,7 +1068,7 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
     assert review_call.args[:5] == (
         project_dir,
         PROJECT_ID,
-        "06-paper-writing",
+        "05-review-revision",
         "",
         2,
     )
@@ -1310,7 +1310,7 @@ def test_quick_rerun_recovers_special_plan_only_from_prior_run(
     client = web_env["client"]
     project_dir = web_env["project_dir"].resolve()
     theory_slug = "03-idea-evaluation"
-    paper_slug = "06-paper-writing"
+    paper_slug = "05-review-revision"
     web_env["config"]["phases"].extend(
         [
             {
@@ -1450,12 +1450,12 @@ def test_phase_six_history_exposes_only_bounded_manifest_owned_review_targets(
     target.parent.mkdir(parents=True)
     target.write_text("post-review manuscript", encoding="utf-8")
     manifest = {
-        "phase_slug": "06-paper-writing",
+        "phase_slug": "05-review-revision",
         "run_id": "paper-run",
         "output_root": str(output_root),
         "paper_review": {"kind": "full"},
         "phase": {
-            "slug": "06-paper-writing",
+            "slug": "05-review-revision",
             "pattern": "sequential",
             "folder": "draft/",
             "members": ["research_lead", "paper_reviewer"],
@@ -1472,7 +1472,7 @@ def test_phase_six_history_exposes_only_bounded_manifest_owned_review_targets(
         "run_id": "paper-run",
         "status": "approved",
         "submitted_at": "2026-07-20T00:00:00Z",
-        "final_summary": "phase-summaries/06-paper-writing/paper-run.html",
+        "final_summary": "phase-summaries/05-review-revision/paper-run.html",
         "decision_record": {"data": {"proposed_baseline": "Complete baseline"}},
         "rounds_requested": 3,
         "rounds": [],
@@ -1488,7 +1488,7 @@ def test_phase_six_history_exposes_only_bounded_manifest_owned_review_targets(
     }
 
     selected = web_phase_data._phase_six_post_review_target(
-        project, "06-paper-writing", run, {"ok": True}
+        project, "05-review-revision", run, {"ok": True}
     )
     assert selected == {
         "path": "draft/run/01/manuscript-post-review.md",
@@ -1502,7 +1502,7 @@ def test_phase_six_history_exposes_only_bounded_manifest_owned_review_targets(
         "run_integrity_report",
         lambda *_args, **_kwargs: {"ok": True, "reason": ""},
     )
-    view = web_phase_data._run_view(project, "06-paper-writing", run, 1)
+    view = web_phase_data._run_view(project, "05-review-revision", run, 1)
     assert view["stages_requested"] == 3
     assert len(view["plan_stages"]) == 3
     assert view["plan_variant"] == "Full manuscript writing and independent review"
@@ -1518,7 +1518,7 @@ def test_phase_six_history_exposes_only_bounded_manifest_owned_review_targets(
 
     monkeypatch.setattr(web_phase_data, "MAX_REVIEW_TARGET_BYTES", 4)
     assert web_phase_data._phase_six_post_review_target(
-        project, "06-paper-writing", run, {"ok": True}
+        project, "05-review-revision", run, {"ok": True}
     ) is None
 
 
@@ -1545,7 +1545,7 @@ def test_derivative_runs_expose_the_complete_sealed_source_identity(
         }
     }
     paper = web_phase_data._source_descriptor(
-        project, "06-paper-writing", paper_manifest
+        project, "05-review-revision", paper_manifest
     )
     assert paper == {
         "kind": "manuscript_review",
@@ -1586,7 +1586,7 @@ def test_legacy_derivative_runs_keep_their_sealed_source_identity(
 
     paper = web_phase_data._source_descriptor(
         project,
-        "06-paper-writing",
+        "05-review-revision",
         {
             "paper_review": {
                 "schema_version": 1,

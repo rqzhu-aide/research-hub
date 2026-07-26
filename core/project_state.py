@@ -31,7 +31,7 @@ import yaml
 
 SCHEMA_VERSION = 6
 
-PAPER_WRITING_PHASE = "06-paper-writing"
+PAPER_WRITING_PHASE = "05-review-revision"
 DRAFT_ASSEMBLY_PHASE = "04-draft-assembly"
 METHOD_DEVELOPMENT_PHASE = "02-method-development"
 
@@ -42,6 +42,7 @@ SLUG_ALIASES: dict[str, str] = {
     "03-theoretical-justification": "03-idea-evaluation",
     "04-numerical-validation": "04-draft-assembly",
     "05-data-analysis": "05-review-revision",
+    "06-paper-writing": "05-review-revision",
 }
 PHASE_SIX_SUBMISSION_ARTIFACTS = {
     "post_review_manuscript": ("manuscript-post-review.md", False),

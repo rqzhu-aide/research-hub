@@ -81,7 +81,7 @@ SOURCE_BASELINE_STATUS_BY_RUN_STATUS = {
 }
 
 
-PAPER_WRITING_PHASE = "06-paper-writing"
+PAPER_WRITING_PHASE = "05-review-revision"
 
 
 IDEA_EVALUATION_PHASE = "03-idea-evaluation"
