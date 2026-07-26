@@ -41,6 +41,14 @@ const config: Config = {
     ],
   ],
 
+  // IBM Plex Sans + Mono — matches the Research Hub app typography
+  stylesheets: [
+    {
+      href: 'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap',
+      rel: 'stylesheet',
+    },
+  ],
+
   themeConfig: {
     colorMode: {
       respectPrefersColorScheme: true,

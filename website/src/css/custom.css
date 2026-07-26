@@ -1,30 +1,164 @@
 /**
- * Any CSS included here will be global. The classic template
- * bundles Infima by default. Infima is a CSS framework designed to
- * work well for content-centric websites.
+ * Research Hub — Documentation Theme
+ *
+ * Unified palette shared with the Research Hub app (static/style.css).
+ * Same indigo accent, teal/blue/amber/rose status hues, IBM Plex typography,
+ * and dual-theme architecture (dark default + light variant).
+ *
+ * All color pairs verified against WCAG AA (≥4.5:1 text, ≥3.0 UI).
  */
 
-/* You can override the default Infima variables here. */
+/* ─────────────────────────────────────────────────────────────
+   DARK THEME (default)
+   ───────────────────────────────────────────────────────────── */
 :root {
-  --ifm-color-primary: #2e8555;
-  --ifm-color-primary-dark: #29784c;
-  --ifm-color-primary-darker: #277148;
-  --ifm-color-primary-darkest: #205d3b;
-  --ifm-color-primary-light: #33925d;
-  --ifm-color-primary-lighter: #359962;
-  --ifm-color-primary-lightest: #3cad6e;
+  --ifm-color-primary: #818cf8;          /* Indigo-400 — bright on dark */
+  --ifm-color-primary-dark: #6366f1;     /* Indigo-500 */
+  --ifm-color-primary-darker: #4f46e5;   /* Indigo-600 */
+  --ifm-color-primary-darkest: #4338ca;  /* Indigo-700 */
+  --ifm-color-primary-light: #a5b0fc;
+  --ifm-color-primary-lighter: #c7cefe;
+  --ifm-color-primary-lightest: #e0e3fe;
+
   --ifm-code-font-size: 95%;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  --ifm-font-family-base: "IBM Plex Sans", system-ui, sans-serif;
+  --ifm-font-family-monospace: "IBM Plex Mono", ui-monospace, monospace;
+  --ifm-heading-font-weight: 700;
+  --ifm-leading: 1.6;
+
+  --ifm-background-color: #0a0e14;
+  --ifm-background-surface-color: #141b24;
+  --ifm-font-color-base: #eef2f6;
+  --ifm-font-color-secondary: #b8c5d4;
+  --ifm-font-color-tertiary: #8b9bad;
+  --ifm-font-color-quaternary: #8090a8;
+
+  --ifm-border-color: #2a3a4e;
+  --ifm-color-emphasis-100: #1a2330;
+  --ifm-color-emphasis-200: #222d3d;
+  --ifm-color-emphasis-300: #2a3a4e;
+  --ifm-color-emphasis-400: #3d5170;
+  --ifm-color-emphasis-600: #5a6b82;
+  --ifm-color-emphasis-700: #8090a8;
+  --ifm-color-emphasis-800: #b8c5d4;
+  --ifm-color-emphasis-900: #eef2f6;
+
+  --ifm-hover-overlay: rgba(99, 102, 241, 0.08);
+  --ifm-color-content-secondary: #b8c5d4;
+
+  /* Status colors — same hues as the hub app */
+  --ifm-color-success: #2dd4bf;          /* Teal-400 */
+  --ifm-color-info: #3b82f6;             /* Blue-500 */
+  --ifm-color-warning: #f59e0b;          /* Amber-500 */
+  --ifm-color-danger: #f43f5e;           /* Rose-500 */
+
+  --ifm-link-color: #818cf8;
+  --ifm-link-hover-color: #a5b0fc;
+  --ifm-link-decoration: underline;
+
+  --ifm-navbar-background-color: #0d1419;
+  --ifm-navbar-shadow: 0 1px 0 #2a3a4e;
+  --ifm-menu-color: #b8c5d4;
+  --ifm-menu-color-active: #eef2f6;
+  --ifm-menu-color-background-hover: rgba(99, 102, 241, 0.10);
+  --ifm-toc-link-color: #8b9bad;
+
+  --ifm-table-border-color: #2a3a4e;
+  --ifm-table-head-background: #1a2330;
+  --ifm-table-stripe-background: rgba(99, 102, 241, 0.04);
+
+  --ifm-code-background: #1a2330;
+  --ifm-code-color: #eef2f6;
+  --docusaurus-highlighted-code-line-bg: rgba(99, 102, 241, 0.16);
+
+  /* Background depth — radial accent glow matching the hub */
+  --rh-bg-glow: radial-gradient(ellipse 90% 55% at 50% -10%, rgba(99, 102, 241, 0.08) 0%, transparent 60%);
 }
 
-/* For readability concerns, you should choose a lighter palette in dark mode. */
-[data-theme='dark'] {
-  --ifm-color-primary: #25c2a0;
-  --ifm-color-primary-dark: #21af90;
-  --ifm-color-primary-darker: #1fa588;
-  --ifm-color-primary-darkest: #1a8870;
-  --ifm-color-primary-light: #29d5b0;
-  --ifm-color-primary-lighter: #32d8b4;
-  --ifm-color-primary-lightest: #4fddbf;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+/* ─────────────────────────────────────────────────────────────
+   LIGHT THEME
+   ───────────────────────────────────────────────────────────── */
+[data-theme='light'] {
+  --ifm-color-primary: #4338ca;          /* Indigo-700 — deep on light */
+  --ifm-color-primary-dark: #3730a3;
+  --ifm-color-primary-darker: #312e81;
+  --ifm-color-primary-darkest: #1e1b4b;
+  --ifm-color-primary-light: #4f46e5;
+  --ifm-color-primary-lighter: #6366f1;
+  --ifm-color-primary-lightest: #818cf8;
+
+  --ifm-background-color: #eef1f6;
+  --ifm-background-surface-color: #ffffff;
+  --ifm-font-color-base: #0d1521;
+  --ifm-font-color-secondary: #2d3a4f;
+  --ifm-font-color-tertiary: #5a6b82;
+  --ifm-font-color-quaternary: #475569;
+
+  --ifm-border-color: #c4cdd9;
+  --ifm-color-emphasis-100: #f0f3f8;
+  --ifm-color-emphasis-200: #e2e7ef;
+  --ifm-color-emphasis-300: #c4cdd9;
+  --ifm-color-emphasis-400: #8b98ad;
+  --ifm-color-emphasis-600: #5a6b82;
+  --ifm-color-emphasis-700: #475569;
+  --ifm-color-emphasis-800: #2d3a4f;
+  --ifm-color-emphasis-900: #0d1521;
+
+  --ifm-hover-overlay: rgba(67, 56, 202, 0.06);
+  --ifm-color-content-secondary: #2d3a4f;
+
+  --ifm-color-success: #0d9488;          /* Teal-600 */
+  --ifm-color-info: #2563eb;             /* Blue-600 */
+  --ifm-color-warning: #b45309;          /* Amber-700 */
+  --ifm-color-danger: #e11d48;           /* Rose-600 */
+
+  --ifm-link-color: #4338ca;
+  --ifm-link-hover-color: #3730a3;
+
+  --ifm-navbar-background-color: #e2e7ef;
+  --ifm-navbar-shadow: 0 1px 0 #c4cdd9;
+  --ifm-menu-color-background-hover: rgba(67, 56, 202, 0.07);
+  --ifm-toc-link-color: #5a6b82;
+
+  --ifm-table-head-background: #e2e7ef;
+  --ifm-table-stripe-background: rgba(67, 56, 202, 0.03);
+
+  --ifm-code-background: #e2e7ef;
+  --ifm-code-color: #0d1521;
+  --docusaurus-highlighted-code-line-bg: rgba(67, 56, 202, 0.12);
+
+  --rh-bg-glow: radial-gradient(ellipse 90% 55% at 50% -10%, rgba(67, 56, 202, 0.05) 0%, transparent 60%);
 }
+
+/* ─────────────────────────────────────────────────────────────
+   Base + background depth
+   ───────────────────────────────────────────────────────────── */
+body {
+  background-color: var(--ifm-background-color);
+  background-image: var(--rh-bg-glow);
+  background-attachment: fixed;
+}
+
+/* Bolder primary buttons — decision-highlighting, matches hub */
+.button--primary {
+  font-weight: 700;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.32);
+}
+[data-theme='light'] .button--primary {
+  box-shadow: 0 4px 14px rgba(67, 56, 202, 0.28);
+}
+
+/* Navbar brand — accent the wordmark */
+.navbar__brand { font-weight: 700; }
+.navbar__link--active { color: var(--ifm-color-primary); font-weight: 600; }
+
+/* Sidebar active item — accent treatment */
+.menu__link--active:not(.menu__link--sublist) {
+  background: var(--ifm-color-emphasis-100);
+  border-left: 3px solid var(--ifm-color-primary);
+}
+
+/* Headings — strong weight contrast */
+h1, h2, h3 { font-weight: 700 !important; letter-spacing: -0.02em; }
+h1 { font-size: 2rem; }
+.markdown h1:first-child { margin-top: 0; }

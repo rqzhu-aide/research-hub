@@ -18,10 +18,10 @@
   --font-sans: "IBM Plex Sans", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   /* Status hues are consistent across themes for recognition */
-  --status-hue-approved: 166;  /* teal */
-  --status-hue-running: 213;   /* blue */
+  --status-hue-approved: 173;  /* teal */
+  --status-hue-running: 217;   /* blue */
   --status-hue-review: 38;     /* amber */
-  --status-hue-danger: 354;    /* red */
+  --status-hue-danger: 349;    /* rose */
 }
 
 /* ── DARK THEME (default) ── */
@@ -38,27 +38,27 @@
   --text: #eef2f6;
   --text-soft: #b8c5d4;
   --muted: #8b9bad;
-  --faint: #6b7a8e;
-  --accent: #7c83ff;
-  --accent-bright: #9ba0ff;
-  --accent-soft: rgba(124, 131, 255, 0.14);
-  --accent-line: rgba(124, 131, 255, 0.40);
-  --approved: #34d399;
-  --approved-soft: rgba(52, 211, 153, 0.12);
-  --running: #60a5fa;
-  --running-soft: rgba(96, 165, 250, 0.12);
-  --review: #fbbf24;
-  --review-soft: rgba(251, 191, 36, 0.13);
-  --danger: #f87171;
-  --danger-soft: rgba(248, 113, 113, 0.12);
+  --faint: #8090a8;
+  --accent: #6366f1;          /* Indigo-500 — electric */
+  --accent-bright: #818cf8;   /* Indigo-400 — text-safe */
+  --accent-soft: rgba(99, 102, 241, 0.14);
+  --accent-line: rgba(99, 102, 241, 0.42);
+  --approved: #2dd4bf;        /* Teal-400 */
+  --approved-soft: rgba(45, 212, 191, 0.12);
+  --running: #3b82f6;         /* Blue-500 */
+  --running-soft: rgba(59, 130, 246, 0.12);
+  --review: #f59e0b;          /* Amber-500 */
+  --review-soft: rgba(245, 158, 11, 0.13);
+  --danger: #f43f5e;          /* Rose-500 */
+  --danger-soft: rgba(244, 63, 94, 0.12);
   --shadow: 0 16px 40px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.2);
-  --focus: 0 0 0 3px rgba(124, 131, 255, 0.35);
+  --focus: 0 0 0 3px rgba(99, 102, 241, 0.40);
   /* Subtle background depth — radial accent glow */
-  --bg-glow: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(124, 131, 255, 0.06) 0%, transparent 60%);
+  --bg-glow: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(99, 102, 241, 0.08) 0%, transparent 60%);
   /* Primary action button — high visibility for research decisions */
   --btn-primary-bg: linear-gradient(135deg, var(--accent) 0%, var(--accent-bright) 100%);
   --btn-primary-text: #0a0e14;
-  --btn-primary-shadow: 0 4px 14px rgba(124, 131, 255, 0.35);
+  --btn-primary-shadow: 0 4px 14px rgba(99, 102, 241, 0.42);
 }
 
 /* ── LIGHT THEME ── */
@@ -75,24 +75,24 @@
   --text-soft: #2d3a4f;
   --muted: #5a6b82;
   --faint: #475569;
-  --accent: #3730a3;
-  --accent-bright: #4338ca;
-  --accent-soft: rgba(55, 48, 163, 0.07);
-  --accent-line: rgba(67, 56, 202, 0.30);
-  --approved: #047857;
-  --approved-soft: rgba(4, 120, 87, 0.10);
-  --running: #1d4ed8;
-  --running-soft: rgba(29, 78, 216, 0.09);
-  --review: #92400e;
-  --review-soft: rgba(146, 64, 14, 0.10);
-  --danger: #b91c1c;
-  --danger-soft: rgba(185, 28, 28, 0.09);
+  --accent: #4338ca;          /* Indigo-700 */
+  --accent-bright: #4f46e5;   /* Indigo-600 */
+  --accent-soft: rgba(67, 56, 202, 0.07);
+  --accent-line: rgba(67, 56, 202, 0.32);
+  --approved: #0d9488;        /* Teal-600 */
+  --approved-soft: rgba(13, 148, 136, 0.10);
+  --running: #2563eb;         /* Blue-600 */
+  --running-soft: rgba(37, 99, 235, 0.09);
+  --review: #b45309;          /* Amber-700 */
+  --review-soft: rgba(180, 83, 9, 0.10);
+  --danger: #e11d48;          /* Rose-600 */
+  --danger-soft: rgba(225, 29, 72, 0.09);
   --shadow: 0 12px 32px rgba(13, 21, 33, 0.10), 0 2px 6px rgba(13, 21, 33, 0.06);
-  --focus: 0 0 0 3px rgba(67, 56, 202, 0.22);
-  --bg-glow: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(67, 56, 202, 0.04) 0%, transparent 60%);
+  --focus: 0 0 0 3px rgba(67, 56, 202, 0.26);
+  --bg-glow: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(67, 56, 202, 0.05) 0%, transparent 60%);
   --btn-primary-bg: linear-gradient(135deg, var(--accent) 0%, var(--accent-bright) 100%);
   --btn-primary-text: #ffffff;
-  --btn-primary-shadow: 0 4px 14px rgba(55, 48, 163, 0.30);
+  --btn-primary-shadow: 0 4px 14px rgba(67, 56, 202, 0.35);
 }
 
 * { box-sizing: border-box; }
@@ -430,8 +430,8 @@ summary::-webkit-details-marker { display: none; }
 /* Always-visible scrollbar for the brief panel (Chromium/WebKit) */
 .desc-view::-webkit-scrollbar { width: 10px; }
 .desc-view::-webkit-scrollbar-track { background: rgba(255,255,255,.05); border-radius: 5px; }
-.desc-view::-webkit-scrollbar-thumb { background: rgba(133, 137, 255, .55); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
-.desc-view::-webkit-scrollbar-thumb:hover { background: var(--accent, #8589ff); background-clip: padding-box; }
+.desc-view::-webkit-scrollbar-thumb { background: rgba(129, 140, 248, .55); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+.desc-view::-webkit-scrollbar-thumb:hover { background: var(--accent, #818cf8); background-clip: padding-box; }
 .settings-editor { width: 100%; min-height: 420px; resize: vertical; }
 
 .ledger-panel { padding: 0; overflow: hidden; }
