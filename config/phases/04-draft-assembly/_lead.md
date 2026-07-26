@@ -12,6 +12,23 @@ Read:
 - the approved Phase 01 summary (literature, for baselines)
 - prior `draft/sections/` runs
 
+**This is a rerun.** When prior `draft/sections/run/` outputs exist for the
+selected method, treat this run as an **audit and refinement** of that prior
+material, not a clean restart:
+
+1. **Audit first.** Read every prior round output for this method. For each
+   existing section, identify: what's correct, what's incomplete, what's
+   wrong, what's missing. Write the audit findings into the report.
+2. **Fix in place.** Correct errors, fill gaps, and tighten claims in the
+   existing material. Do not discard correct prior work — build on it.
+3. **Add new material.** Extend with additional experiments, baselines,
+   targets, or analysis that the prior run lacked (e.g., incorporate the
+   updated literature library at `references/papers/`, test larger N, add
+   comparisons the prior run missed).
+4. **Never replace.** Prior outputs are sealed history. Write new rounds into
+   the new run directory; the prior run's files stay intact. The final summary
+   must reference both the prior and new material, noting what changed.
+
 ## Step 2: Round 1 — pre-specify and implement
 Dispatch tasks:
 
