@@ -346,7 +346,12 @@ summary::-webkit-details-marker { display: none; }
   transition: color var(--fast), background-color var(--fast), border-color var(--fast);
 }
 .tab:hover { background: var(--surface); color: var(--text); }
-.tab.is-current, .tab[aria-current="page"] { border-bottom-color: var(--accent); color: var(--text); }
+.tab.is-current, .tab[aria-current="page"] {
+  border-bottom-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+  font-weight: 600;
+}
 .tab .status-running, .tab .status-submitting { animation: pulse 1.5s ease-in-out infinite; }
 
 .panel {
