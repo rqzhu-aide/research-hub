@@ -123,9 +123,9 @@
           <tr>
             <th>Idea</th>
             <th>Note</th>
-            <th class="score-col" title="Mathematical risk">Risk</th>
-            <th class="score-col" title="Acceleration potential">Potential</th>
-            <th class="score-col" title="Tractability">Tract.</th>
+            <th class="score-col" data-type="risk" title="Mathematical risk">Risk</th>
+            <th class="score-col" data-type="potential" title="Acceleration potential">Potential</th>
+            <th class="score-col" data-type="tractability" title="Tractability">Tract.</th>
             <th class="phase-col" title="Theory">P3</th>
             <th class="phase-col" title="Experiments">P4</th>
             <th class="phase-col" title="Paper">P5</th>
@@ -137,9 +137,9 @@
           <tr>
             <td>{{ row.name }}</td>
             <td class="note-col">{{ row.note }}</td>
-            <td class="score-col"><span class="score-badge score-{{ row.risk | lower | replace(' ', '-') }}">{{ row.risk }}</span></td>
-            <td class="score-col"><span class="score-badge score-{{ row.potential | lower | replace(' ', '-') }}">{{ row.potential }}</span></td>
-            <td class="score-col"><span class="score-badge score-{{ row.tractability | lower | replace(' ', '-') }}">{{ row.tractability }}</span></td>
+            <td class="score-col" data-type="risk"><span class="score-badge score-{{ row.risk | lower | replace(' ', '-') }}">{{ row.risk }}</span></td>
+            <td class="score-col" data-type="potential"><span class="score-badge score-{{ row.potential | lower | replace(' ', '-') }}">{{ row.potential }}</span></td>
+            <td class="score-col" data-type="tractability"><span class="score-badge score-{{ row.tractability | lower | replace(' ', '-') }}">{{ row.tractability }}</span></td>
             <td class="phase-col"><span class="phase-light phase-{{ row.p3 | default('') }}" title="{{ 'Has records' if row.p3 == 'done' else 'No records' }}"></span></td>
             <td class="phase-col"><span class="phase-light phase-{{ row.p4 | default('') }}" title="{{ 'Has records' if row.p4 == 'done' else 'No records' }}"></span></td>
             <td class="phase-col"><span class="phase-light phase-{{ row.p5 | default('') }}" title="{{ 'Has records' if row.p5 == 'done' else 'No records' }}"></span></td>

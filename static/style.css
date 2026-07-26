@@ -516,7 +516,34 @@ summary::-webkit-details-marker { display: none; }
 .method-ranking-table tbody tr:hover { background: var(--accent-soft); }
 .method-ranking-table .score-col { text-align: center; white-space: nowrap; }
 .method-ranking-table .phase-col { text-align: center; width: 28px; }
-.score-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: .65rem; font-weight: 600; text-transform: capitalize; }
+.score-badge { display: inline-block; padding: 2px 8px; border-radius: var(--radius-sm); font-size: .65rem; font-weight: 700; text-transform: capitalize; letter-spacing: .02em; }
+
+/* ── Score badge colors — context-aware per column ──
+   Risk column: Low=good(green), High=bad(red) — inverted semantic
+   Potential column: Low=bad(grey), High=good(green) — normal semantic
+   Tractability column: same as potential
+   
+   Since CSS can't know the column, we use a [data-score-type] attribute
+   on the cell to invert risk colors. */
+.score-col[data-type="risk"] .score-low { background: var(--approved-soft); color: var(--approved); }
+.score-col[data-type="risk"] .score-medium,
+.score-col[data-type="risk"] .score-moderate { background: var(--review-soft); color: var(--review); }
+.score-col[data-type="risk"] .score-high { background: var(--danger-soft); color: var(--danger); }
+.score-col[data-type="risk"] .score-very-high { background: var(--danger); color: var(--canvas); }
+
+.score-col[data-type="potential"] .score-low,
+.score-col[data-type="tractability"] .score-low { background: var(--surface-hover); color: var(--faint); }
+.score-col[data-type="potential"] .score-medium,
+.score-col[data-type="tractability"] .score-medium,
+.score-col[data-type="potential"] .score-moderate,
+.score-col[data-type="tractability"] .score-moderate { background: var(--review-soft); color: var(--review); }
+.score-col[data-type="potential"] .score-high,
+.score-col[data-type="tractability"] .score-high { background: var(--approved-soft); color: var(--approved); }
+.score-col[data-type="potential"] .score-very-high,
+.score-col[data-type="tractability"] .score-very-high { background: var(--approved); color: var(--canvas); }
+
+/* Empty score badges (no rating) */
+.score-badge.score- { display: none; }
 .method-ranking-table .actions-col { text-align: center; white-space: nowrap; width: 80px; }
 .method-ranking-table .actions-col .btn-xs { margin: 0 2px; }
 .phase-light { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
@@ -549,7 +576,11 @@ summary::-webkit-details-marker { display: none; }
 }
 .method-detail-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .method-detail-label { font-weight: 700; font-size: .95rem; color: var(--text); }
-.method-status-tag { padding: 2px 8px; border-radius: var(--radius-sm); font-size: .68rem; font-weight: 600; text-transform: capitalize; }
+.method-status-tag { padding: 2px 8px; border-radius: var(--radius-sm); font-size: .68rem; font-weight: 700; text-transform: capitalize; }
+.method-status-recommended { background: var(--approved); color: var(--canvas); }
+.method-status-viable { background: var(--running-soft); color: var(--running); }
+.method-status-frontier { background: var(--review-soft); color: var(--review); }
+.method-status-retired { background: var(--surface-hover); color: var(--faint); text-decoration: line-through; }
 .method-version { color: var(--muted); font-size: .72rem; font-family: "IBM Plex Mono", monospace; }
 .method-detail-body { font-size: .84rem; color: var(--text-soft); line-height: 1.7; white-space: normal; }
 .method-detail-body.markdown-body { white-space: normal; }
