@@ -68,16 +68,16 @@ const config: Config = {
           title: 'Documentation',
           items: [
             {
-              label: 'Introduction',
-              to: '/docs/intro',
+              label: 'Setup Guide',
+              to: '/docs/setup',
             },
             {
-              label: 'Research Workflow',
-              to: '/docs/workflow/overview',
+              label: 'Creating a Project',
+              to: '/docs/project-setup',
             },
             {
-              label: 'Configuration',
-              to: '/docs/config/hub-agents',
+              label: 'Pipeline Overview',
+              to: '/docs/workflow/pipeline',
             },
           ],
         },
