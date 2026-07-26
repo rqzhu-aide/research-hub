@@ -702,6 +702,16 @@
   restoreDraftsAfterError();
   formatTimes();
 
+  // ── Theme toggle (light/dark) ──
+  document.querySelectorAll("[data-theme-toggle]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const current = document.documentElement.getAttribute("data-theme") || "dark";
+      const next = current === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      localStorage.setItem("rh-theme", next);
+    });
+  });
+
   // ── Live elapsed-time indicator for active runs ──
   // Shows "12m 34s" next to "Started ..." so a user watching a long
   // numerical-validation run knows it's progressing, not stuck.

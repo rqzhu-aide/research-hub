@@ -1,35 +1,98 @@
+/* ═══════════════════════════════════════════════════════════════
+   Research Hub — Design System
+   ═══════════════════════════════════════════════════════════════
+   Typography: IBM Plex Sans (body) + IBM Plex Mono (data/code)
+   Two themes: dark (default) + light — switch via [data-theme]
+   Status colors: approved (teal), running (blue), review (amber),
+                  danger (red), accent (indigo)
+   ═══════════════════════════════════════════════════════════════ */
+
 :root {
   color-scheme: dark;
-  --canvas: #070a0e;
-  --sidebar: #0c1117;
-  --surface: #111820;
-  --surface-raised: #17202a;
-  --surface-hover: #1d2834;
-  --line: #2d3947;
-  --line-strong: #435265;
-  --text: #f2f6f8;
-  --text-soft: #c7d0d8;
-  --muted: #a2afbc;
-  --faint: #8392a1;
-  --accent: #8589ff;
-  --accent-bright: #a8aaff;
-  --accent-soft: rgba(133, 137, 255, 0.14);
-  --accent-line: rgba(133, 137, 255, 0.45);
-  --approved: #66d8c2;
-  --approved-soft: rgba(102, 216, 194, 0.12);
-  --running: #70baff;
-  --running-soft: rgba(112, 186, 255, 0.12);
-  --review: #f4c46d;
-  --review-soft: rgba(244, 196, 109, 0.13);
-  --danger: #ff8189;
-  --danger-soft: rgba(255, 129, 137, 0.12);
+  /* ── Shared tokens (theme-independent) ── */
   --radius-sm: 4px;
   --radius: 7px;
   --radius-lg: 11px;
-  --shadow: 0 18px 45px rgba(0, 0, 0, 0.22);
-  --focus: 0 0 0 3px rgba(133, 137, 255, 0.28);
   --fast: 130ms ease;
   --medium: 220ms ease;
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  /* Status hues are consistent across themes for recognition */
+  --status-hue-approved: 166;  /* teal */
+  --status-hue-running: 213;   /* blue */
+  --status-hue-review: 38;     /* amber */
+  --status-hue-danger: 354;    /* red */
+}
+
+/* ── DARK THEME (default) ── */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #0a0e14;
+  --sidebar: #0d1419;
+  --surface: #141b24;
+  --surface-raised: #1a2330;
+  --surface-hover: #222d3d;
+  --line: #2a3a4e;
+  --line-strong: #3d5170;
+  --text: #eef2f6;
+  --text-soft: #b8c5d4;
+  --muted: #8b9bad;
+  --faint: #6b7a8e;
+  --accent: #7c83ff;
+  --accent-bright: #9ba0ff;
+  --accent-soft: rgba(124, 131, 255, 0.14);
+  --accent-line: rgba(124, 131, 255, 0.40);
+  --approved: #34d399;
+  --approved-soft: rgba(52, 211, 153, 0.12);
+  --running: #60a5fa;
+  --running-soft: rgba(96, 165, 250, 0.12);
+  --review: #fbbf24;
+  --review-soft: rgba(251, 191, 36, 0.13);
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.12);
+  --shadow: 0 16px 40px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.2);
+  --focus: 0 0 0 3px rgba(124, 131, 255, 0.35);
+  /* Subtle background depth — radial accent glow */
+  --bg-glow: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(124, 131, 255, 0.06) 0%, transparent 60%);
+  /* Primary action button — high visibility for research decisions */
+  --btn-primary-bg: linear-gradient(135deg, var(--accent) 0%, var(--accent-bright) 100%);
+  --btn-primary-text: #0a0e14;
+  --btn-primary-shadow: 0 4px 14px rgba(124, 131, 255, 0.35);
+}
+
+/* ── LIGHT THEME ── */
+[data-theme="light"] {
+  color-scheme: light;
+  --canvas: #eef1f6;
+  --sidebar: #e2e7ef;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-hover: #f0f3f8;
+  --line: #c4cdd9;
+  --line-strong: #8b98ad;
+  --text: #0d1521;
+  --text-soft: #2d3a4f;
+  --muted: #5a6b82;
+  --faint: #475569;
+  --accent: #3730a3;
+  --accent-bright: #4338ca;
+  --accent-soft: rgba(55, 48, 163, 0.07);
+  --accent-line: rgba(67, 56, 202, 0.30);
+  --approved: #047857;
+  --approved-soft: rgba(4, 120, 87, 0.10);
+  --running: #1d4ed8;
+  --running-soft: rgba(29, 78, 216, 0.09);
+  --review: #92400e;
+  --review-soft: rgba(146, 64, 14, 0.10);
+  --danger: #b91c1c;
+  --danger-soft: rgba(185, 28, 28, 0.09);
+  --shadow: 0 12px 32px rgba(13, 21, 33, 0.10), 0 2px 6px rgba(13, 21, 33, 0.06);
+  --focus: 0 0 0 3px rgba(67, 56, 202, 0.22);
+  --bg-glow: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(67, 56, 202, 0.04) 0%, transparent 60%);
+  --btn-primary-bg: linear-gradient(135deg, var(--accent) 0%, var(--accent-bright) 100%);
+  --btn-primary-text: #ffffff;
+  --btn-primary-shadow: 0 4px 14px rgba(55, 48, 163, 0.30);
 }
 
 * { box-sizing: border-box; }
@@ -38,25 +101,29 @@ body {
   min-height: 100vh;
   margin: 0;
   background: var(--canvas);
+  background-image: var(--bg-glow);
+  background-attachment: fixed;
   color: var(--text);
-  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.55;
   text-rendering: optimizeLegibility;
+  transition: background-color var(--medium), color var(--medium);
 }
 
 button, input, textarea, select { font: inherit; }
 button, summary { -webkit-tap-highlight-color: transparent; }
 a { color: var(--accent-bright); text-decoration-thickness: 1px; text-underline-offset: 3px; }
-a:hover { color: #c3c4ff; }
+a:hover { color: var(--accent); }
 img, svg { display: block; max-width: 100%; }
-code, pre, .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+code, pre, .mono { font-family: var(--font-mono); }
 code { overflow-wrap: anywhere; }
 h1, h2, h3, p { margin-top: 0; }
-h1, h2, h3 { color: var(--text); font-weight: 600; letter-spacing: -0.025em; }
-h1 { font-size: clamp(1.65rem, 3vw, 2.2rem); line-height: 1.15; }
-h2 { font-size: 1rem; line-height: 1.3; }
-h3 { font-size: .9rem; }
+h1, h2, h3 { color: var(--text); letter-spacing: -0.025em; }
+h1 { font-weight: 700; font-size: clamp(1.65rem, 3vw, 2.2rem); line-height: 1.15; }
+h2 { font-weight: 700; font-size: 1.15rem; line-height: 1.3; }
+h3 { font-weight: 600; font-size: .95rem; }
+.section-kicker { font-weight: 600; font-size: .68rem; letter-spacing: .12em; text-transform: uppercase; }
 fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 summary { list-style: none; }
 summary::-webkit-details-marker { display: none; }
@@ -149,9 +216,13 @@ summary::-webkit-details-marker { display: none; }
 .sidebar-close { display: none; border: 0; background: none; color: var(--muted); cursor: pointer; }
 
 .project-list { flex: 1; overflow-y: auto; padding: 18px 10px; }
-.nav-section-label, .section-kicker, .eyebrow {
+.nav-section-label, .eyebrow {
   margin: 0 0 8px;
   color: var(--faint);
+}
+.section-kicker {
+  margin: 0 0 8px;
+  color: var(--accent-bright);
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: .68rem;
   font-weight: 600;
@@ -186,20 +257,22 @@ summary::-webkit-details-marker { display: none; }
 .status-marker, .tab-status {
   display: inline-block;
   flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  border: 1px solid currentColor;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid currentColor;
   border-radius: 50%;
   background: currentColor;
   color: var(--faint);
 }
+/* Status-specific glow for decision-critical states */
+.status-approved, .state-approved { color: var(--approved); box-shadow: 0 0 6px var(--approved-soft); }
+.status-awaiting_review, .status-completed,
+.state-awaiting_review, .state-completed { color: var(--review); box-shadow: 0 0 6px var(--review-soft); }
+.status-running, .status-starting, .status-submitting,
+.state-running, .state-starting, .state-submitting { color: var(--running); animation: pulse 1.5s ease-in-out infinite; }
+.status-stopping, .state-stopping { color: var(--review); }
 .status-pending, .status-recorded, .status-superseded { color: var(--faint); }
 .state-active, .state-pending, .state-recorded, .state-superseded { color: var(--faint); }
-.status-starting, .status-running, .status-submitting,
-.state-starting, .state-running, .state-submitting { color: var(--running); }
-.status-stopping, .state-stopping { color: var(--review); }
-.status-awaiting_review, .status-completed, .state-awaiting_review, .state-completed { color: var(--review); }
-.status-approved, .state-approved { color: var(--approved); }
 .status-stale, .status-revision_requested, .status-needs_revision,
 .state-stale, .state-revision_requested, .state-needs_revision { color: var(--review); }
 .status-failed, .status-cancelled, .state-failed, .state-cancelled { color: var(--danger); }
@@ -311,8 +384,9 @@ summary::-webkit-details-marker { display: none; }
 .btn:hover { border-color: var(--accent-line); background: var(--surface-hover); color: var(--text); }
 .btn:active { transform: translateY(1px); }
 .btn:disabled, .btn.is-disabled { cursor: not-allowed; opacity: .52; }
-.btn-primary { border-color: #777cf2; background: #7378eb; color: #fff; box-shadow: 0 8px 20px rgba(88, 92, 210, .2); }
-.btn-primary:hover { border-color: #9da0ff; background: #8387f5; color: #fff; }
+.btn-primary { border: none; background: var(--btn-primary-bg); color: var(--btn-primary-text); font-weight: 700; box-shadow: var(--btn-primary-shadow); }
+.btn-primary:hover { filter: brightness(1.08); box-shadow: 0 6px 20px var(--accent-line); }
+[data-theme="light"] .btn-primary:hover { filter: brightness(1.12); }
 .btn-warning { border-color: rgba(244, 196, 109, .48); background: var(--review-soft); color: var(--review); }
 .btn-danger { border-color: rgba(255, 129, 137, .45); background: var(--danger-soft); color: var(--danger); }
 .btn-quiet { background: transparent; }
@@ -888,3 +962,28 @@ progress::-moz-progress-bar { background: var(--running); }
 
 /* Run progress polling region */
 .run-progress-region { margin-bottom: 14px; }
+
+/* ═══════════════════════════════════════════════════════════════
+   Theme Toggle
+   ═══════════════════════════════════════════════════════════════ */
+.theme-toggle-row { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; padding: 0;
+  border: 1px solid var(--line-strong); border-radius: var(--radius);
+  background: var(--surface); color: var(--text-soft);
+  cursor: pointer; transition: all var(--fast);
+}
+.theme-toggle:hover { border-color: var(--accent-line); color: var(--accent-bright); background: var(--accent-soft); }
+.theme-toggle svg { width: 18px; height: 18px; }
+.theme-toggle .sun-icon { display: none; }
+.theme-toggle .moon-icon { display: block; }
+[data-theme="light"] .theme-toggle .sun-icon { display: block; }
+[data-theme="light"] .theme-toggle .moon-icon { display: none; }
+
+/* Smooth theme transition on all elements */
+*, *::before, *::after {
+  transition: background-color var(--medium), border-color var(--medium), color var(--medium);
+}
+/* Exclude elements that already have transitions to avoid jank */
+.btn, .tab, a, .overview-phase-card, .theme-toggle { transition: all var(--fast); }
