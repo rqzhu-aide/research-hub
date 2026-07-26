@@ -925,6 +925,8 @@ def _migrate_sealed_decision_record(root: Path, run: dict[str, Any]) -> None:
     path = (root / relative).resolve()
     try:
         path.relative_to(root)
+        if path.stat().st_size > MAX_CONTROL_FILE_BYTES:
+            return
         payload = path.read_bytes()
         data = json.loads(payload.decode("utf-8"))
     except (OSError, ValueError, UnicodeError, json.JSONDecodeError):
@@ -951,9 +953,21 @@ def _migrate_sealed_decision_record(root: Path, run: dict[str, Any]) -> None:
         return
     new_payload = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
     path.write_bytes(new_payload)
-    record["sha256"] = hashlib.sha256(new_payload).hexdigest()
+    new_hash = hashlib.sha256(new_payload).hexdigest()
+    old_hash = str(record.get("sha256", ""))
+    record["sha256"] = new_hash
     record["size"] = len(new_payload)
     record["data"] = normalized
+
+    # F9 fix: keep the approval-baseline acknowledgement consistent with the
+    # migrated record. approve_run stored the pre-migration digest here; after
+    # migration the audit trail would otherwise reference a stale hash.
+    ack = run.get("approval_baseline_acknowledgement")
+    if isinstance(ack, dict):
+        ack_digest = str(ack.get("decision_record_sha256", ""))
+        if ack_digest and ack_digest == old_hash:
+            ack["decision_record_sha256"] = new_hash
+            ack["decision_record_rehashed_at_migration"] = _now_iso()
 
 def _migrate_sealed_protocol_checkpoint(root: Path, run: dict[str, Any]) -> None:
     """Repair a sealed protocol checkpoint whose identity names a legacy slug."""
@@ -967,6 +981,8 @@ def _migrate_sealed_protocol_checkpoint(root: Path, run: dict[str, Any]) -> None
     path = (root / relative).resolve()
     try:
         path.relative_to(root)
+        if path.stat().st_size > MAX_CONTROL_FILE_BYTES:
+            return
         payload = path.read_bytes()
         data = json.loads(payload.decode("utf-8"))
     except (OSError, ValueError, UnicodeError, json.JSONDecodeError):
@@ -1062,10 +1078,33 @@ def _migrate_slug_aliases(
         # have legacy names from a previous incomplete migration.
         pass
     else:
-        # 1. Rename phase dict keys
+        # 1. Rename phase dict keys — merge instead of overwrite.
+        #    Multiple legacy slugs can map to the same new slug (e.g. both
+        #    05-data-analysis and 06-paper-writing → 05-review-revision).
+        #    Blind assignment would silently destroy one phase's history.
         for old_slug, new_slug in SLUG_ALIASES.items():
-            if old_slug in phases and old_slug != new_slug:
-                phases[new_slug] = phases.pop(old_slug)
+            if old_slug not in phases or old_slug == new_slug:
+                continue
+            old_phase = phases.pop(old_slug)
+            if new_slug not in phases:
+                phases[new_slug] = old_phase
+            elif isinstance(phases[new_slug], dict) and isinstance(old_phase, dict):
+                # Merge: concatenate runs lists, preserving both histories.
+                existing_runs = phases[new_slug].get("runs", [])
+                if not isinstance(existing_runs, list):
+                    existing_runs = []
+                merged_runs = list(old_phase.get("runs", [])) + existing_runs
+                phases[new_slug].setdefault("runs", [])
+                phases[new_slug]["runs"] = merged_runs
+                # Preserve the legacy phase's metadata if the target is empty.
+                for key, value in old_phase.items():
+                    if key == "runs":
+                        continue
+                    if key not in phases[new_slug] or not phases[new_slug][key]:
+                        phases[new_slug][key] = value
+            else:
+                # Type mismatch — keep the existing, log a warning.
+                phases[new_slug] = old_phase
 
     # 2. Rewrite dependencies
     deps = data.get("dependencies", {})
@@ -1132,12 +1171,21 @@ def _migrate_slug_aliases(
         if old_runs.is_dir():
             new_runs.parent.mkdir(parents=True, exist_ok=True)
             if new_runs.exists():
-                # Merge: move individual files
+                # Merge: move individual files. Items that collide (target
+                # already exists) are left behind; use rmtree on the now-empty
+                # or partially-empty dir instead of rmdir which crashes.
+                leftover: list[Path] = []
                 for item in old_runs.iterdir():
                     target = new_runs / item.name
                     if not target.exists():
                         item.rename(target)
-                old_runs.rmdir()
+                    else:
+                        leftover.append(item)
+                if leftover:
+                    import shutil as _shutil
+                    _shutil.rmtree(old_runs, ignore_errors=True)
+                else:
+                    old_runs.rmdir()
             else:
                 old_runs.rename(new_runs)
         # Move phase-summaries/<old>/ → phase-summaries/<new>/
@@ -1146,11 +1194,18 @@ def _migrate_slug_aliases(
         if old_sum.is_dir():
             new_sum.parent.mkdir(parents=True, exist_ok=True)
             if new_sum.exists():
+                sum_leftover: list[Path] = []
                 for item in old_sum.iterdir():
                     target = new_sum / item.name
                     if not target.exists():
                         item.rename(target)
-                old_sum.rmdir()
+                    else:
+                        sum_leftover.append(item)
+                if sum_leftover:
+                    import shutil as _shutil
+                    _shutil.rmtree(old_sum, ignore_errors=True)
+                else:
+                    old_sum.rmdir()
             else:
                 old_sum.rename(new_sum)
 
@@ -1173,6 +1228,11 @@ def _migrate_slug_aliases(
             if not manifest_file.is_file():
                 continue
             try:
+                # Bounded read — manifest files are control files, capped at
+                # MAX_CONTROL_FILE_BYTES to match the module's read discipline.
+                file_size = manifest_file.stat().st_size
+                if file_size > MAX_CONTROL_FILE_BYTES:
+                    continue
                 payload = manifest_file.read_bytes()
                 manifest = json.loads(payload.decode("utf-8"))
             except (OSError, UnicodeError, json.JSONDecodeError):
@@ -1877,6 +1937,23 @@ def _validate_recorded_task_briefs(
                 )
 
 
+def _manifest_schema_version(manifest: Mapping[str, Any] | None) -> int:
+    """Safely extract ``schema_version`` from a manifest.
+
+    Returns 1 (the legacy default) for ``None`` manifests (legacy direct runs)
+    and for manifests whose ``schema_version`` is missing or non-numeric.
+    This guards against ``ValueError`` from user-editable state files that
+    could set ``schema_version: "abc"``.
+    """
+
+    if manifest is None:
+        return 1
+    try:
+        return int(manifest.get("schema_version", 1))
+    except (TypeError, ValueError):
+        return 1
+
+
 def _validate_recorded_manifest(
     project_dir: str | Path,
     phase_slug: str,
@@ -2466,7 +2543,7 @@ def _phase_six_submission_specs(
     run: Mapping[str, Any],
     manifest: Mapping[str, Any] | None,
 ) -> dict[str, tuple[Path, bool]]:
-    """Return exact required Phase 6 products and whether each may be empty."""
+    """Return exact required Phase 05 products and whether each may be empty."""
 
     if phase_slug != PAPER_WRITING_PHASE or manifest is None:
         return {}
@@ -2478,30 +2555,30 @@ def _phase_six_submission_specs(
         output_root = Path(str(manifest.get("output_root", ""))).resolve()
         output_root.relative_to(root)
     except ValueError as exc:
-        raise StateValidationError("Phase 6 output directory escaped the project") from exc
+        raise StateValidationError("Phase 05 output directory escaped the project") from exc
     expected = {
         name: (output_root / filename, allow_empty)
         for name, (filename, allow_empty) in PHASE_SIX_SUBMISSION_ARTIFACTS.items()
     }
-    if int(manifest.get("schema_version", 1)) >= 3:
+    if _manifest_schema_version(manifest) >= 3:
         declared = manifest.get("submission_outputs")
         if not isinstance(declared, Mapping) or set(declared) != set(expected):
             raise StateValidationError(
-                "Phase 6 manifest does not declare its exact submission artifacts"
+                "Phase 05 manifest does not declare its exact submission artifacts"
             )
         for name, (expected_path, allow_empty) in expected.items():
             record = declared.get(name)
             if not isinstance(record, Mapping):
                 raise StateValidationError(
-                    f"Phase 6 submission output {name} must be a mapping"
+                    f"Phase 05 submission output {name} must be a mapping"
                 )
             if Path(str(record.get("path", ""))).resolve() != expected_path.resolve():
                 raise StateValidationError(
-                    f"Phase 6 submission output {name} does not match the run plan"
+                    f"Phase 05 submission output {name} does not match the run plan"
                 )
             if record.get("allow_empty") is not allow_empty:
                 raise StateValidationError(
-                    f"Phase 6 submission output {name} has an invalid empty-file policy"
+                    f"Phase 05 submission output {name} has an invalid empty-file policy"
                 )
     return expected
 
@@ -2547,7 +2624,7 @@ def _validate_recorded_submission_artifacts(
         missing = sorted(set(specs) - set(records))
         detail = ", ".join(missing) if missing else "unexpected artifact records"
         raise StateValidationError(
-            f"Phase 6 submission artifacts are incomplete: {detail}"
+            f"Phase 05 submission artifacts are incomplete: {detail}"
         )
     root = Path(project_dir).resolve()
     for name, record in records.items():
@@ -2563,7 +2640,7 @@ def _validate_recorded_submission_artifacts(
             expected_path = specs[name][0].resolve()
             if candidate.resolve() != expected_path:
                 raise StateValidationError(
-                    f"submission artifact path does not match the Phase 6 plan: {name}"
+                    f"submission artifact path does not match the Phase 05 plan: {name}"
                 )
         digest, size = _hash_bounded_file(
             candidate,
@@ -3017,7 +3094,7 @@ def _read_decision_record_file(
 def _manifest_decision_path(
     project_dir: str | Path, manifest: Mapping[str, Any] | None
 ) -> Path | None:
-    if manifest is None or int(manifest.get("schema_version", 1)) < 4:
+    if manifest is None or _manifest_schema_version(manifest) < 4:
         return None
     declared = manifest.get("decision_path")
     summary = manifest.get("summary_path")
@@ -3262,7 +3339,7 @@ def _validate_run_integrity(
         and paper_review.get("kind") in {"full", "review_only"}
         and not run.get("review_target")
     ):
-        raise StateValidationError("Phase 6 run has no sealed review manuscript")
+        raise StateValidationError("Phase 05 run has no sealed review manuscript")
     _validate_recorded_review_target(project_dir, run)
     _validate_recorded_submission_artifacts(
         project_dir, phase_slug, run, manifest
@@ -4142,7 +4219,8 @@ def record_task(
             )
         elif phase_slug == DRAFT_ASSEMBLY_PHASE:
             manifest = _validate_recorded_manifest(project_dir, phase_slug, run)
-            if int(manifest.get("schema_version", 1)) >= 7:
+            # F7 fix: manifest may be None for legacy direct runs.
+            if manifest is not None and _manifest_schema_version(manifest) >= 7:
                 expected_workspace = (
                     Path(str(manifest.get("output_root", "")))
                     / f"round-{round_n:02d}"
@@ -4278,7 +4356,7 @@ def stage_run_submission(
             and paper_review.get("kind") in {"full", "review_only"}
             and not run.get("review_target")
         ):
-            raise StateValidationError("Phase 6 run has no sealed review manuscript")
+            raise StateValidationError("Phase 05 run has no sealed review manuscript")
         _validate_recorded_review_target(project_dir, run)
         specs = _phase_six_submission_specs(
             project_dir, phase_slug, run, manifest
@@ -4464,6 +4542,13 @@ def approve_run(
             raise StateConflict("this legacy run has no structured scientific baseline")
 
         supplied_dependencies = dependencies if dependencies is not None else gating
+        # F8 fix: capture the pre-approval dependency graph for stale
+        # propagation BEFORE any replacement. The reverse graph used for
+        # staleness must reflect the edges that existed when downstream phases
+        # were approved, not the post-mutation map.
+        pre_approval_dependencies = _normalize_dependencies(
+            data.get("dependencies", {})
+        )
         if supplied_dependencies is not None:
             normalized_dependencies = _normalize_dependencies(supplied_dependencies)
             data["dependencies"] = normalized_dependencies
@@ -4534,8 +4619,11 @@ def approve_run(
         phase["stale_reason"] = None
         phase["stale_by_run"] = None
 
+        # Build the reverse dependency graph from the PRE-approval edges.
+        # A phase that depended on the approved phase under the old graph but
+        # not the new one must still be staled.
         reverse: dict[str, list[str]] = {}
-        for dependent, prerequisites in normalized_dependencies.items():
+        for dependent, prerequisites in pre_approval_dependencies.items():
             for prerequisite in prerequisites:
                 reverse.setdefault(prerequisite, []).append(dependent)
         descendants: list[str] = []

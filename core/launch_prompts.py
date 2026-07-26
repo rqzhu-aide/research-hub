@@ -548,9 +548,15 @@ def _task_instructions(
     run_number: int,
     rounds: int,
     board_slug: str = "",
+    output_root: Path | None = None,
 ) -> str:
     phase_slug = str(phase["slug"])
-    output_root = project_dir / str(phase.get("folder", "")) / "run" / f"{run_number:02d}"
+    # Use the branch-aware output root when provided (sealed in the manifest);
+    # fall back to flat path only for legacy manifests that lack output_root.
+    if output_root is not None:
+        output_root = Path(output_root)
+    else:
+        output_root = project_dir / str(phase.get("folder", "")) / "run" / f"{run_number:02d}"
     def commands(round_n: int, roles: Sequence[str], label: str) -> str:
         directive_file = output_root / ".directives" / f"round-{round_n:02d}.md"
         agents_csv = ",".join(roles)
@@ -911,7 +917,7 @@ edit the target or any evidence file.
 def _paper_review_manuscript_snapshot(
     manifest: Mapping[str, Any],
 ) -> tuple[Path, str, str]:
-    """Read one stable snapshot of the Phase 06 review manuscript."""
+    """Read one stable snapshot of the Phase 05 review manuscript."""
 
     raw_output_root = Path(str(manifest["output_root"]))
     path = launch_plans._paper_manuscript_paths(raw_output_root)["review"]
@@ -922,24 +928,24 @@ def _paper_review_manuscript_snapshot(
         else raw_output_root.is_symlink() or path.is_symlink()
     )
     if uses_link:
-        raise launch_common.LaunchError("The Phase 06 review manuscript must not use symbolic links")
+        raise launch_common.LaunchError("The Phase 05 review manuscript must not use symbolic links")
     try:
         path = path.resolve(strict=True)
     except OSError as exc:
         raise launch_common.LaunchError(
-            f"The Phase 06 review manuscript is missing: {path}"
+            f"The Phase 05 review manuscript is missing: {path}"
         ) from exc
     digest_before = launch_common._sha256_file(path)
     manuscript = launch_common._read_utf8_bounded(
         path,
-        label="Phase 06 review manuscript",
+        label="Phase 05 review manuscript",
         max_bytes=launch_common.MAX_REVIEW_MANUSCRIPT_BYTES,
     )
     digest = hashlib.sha256(manuscript.encode("utf-8")).hexdigest()
     digest_after = launch_common._sha256_file(path)
     if digest_before != digest or digest_after != digest:
         raise launch_common.LaunchError(
-            "The Phase 06 review manuscript changed while the reviewer task "
+            "The Phase 05 review manuscript changed while the reviewer task "
             "was being sealed"
         )
     return path, manuscript, digest
@@ -952,7 +958,7 @@ def _paper_review_manuscript_block(
     round_n: int | None = None,
     snapshot: tuple[Path, str, str] | None = None,
 ) -> str:
-    """Seal the exact Phase 06 manuscript into the reviewer task brief."""
+    """Seal the exact Phase 05 manuscript into the reviewer task brief."""
 
     if (
         str(manifest.get("phase_slug")) != launch_common.PAPER_WRITING_PHASE
@@ -1086,6 +1092,7 @@ def _build_lead_prompt(
     proof_audit_source: Mapping[str, Any] | None = None,
     method_selection: Mapping[str, Any] | None = None,
     run_mode: str = "",
+    output_root: Path | None = None,
 ) -> str:
     phase_slug = str(phase["slug"])
     phase_name = str(phase.get("name", phase_slug))
@@ -1213,15 +1220,21 @@ def _build_lead_prompt(
     task_plan = _task_instructions(
         project_dir, phase, run_id, run_number, rounds,
         board_slug=board_slug,
+        output_root=output_root,
     )
     manuscript_paths_text = ""
     if phase_slug == launch_common.PAPER_WRITING_PHASE:
-        paths = launch_plans._paper_manuscript_paths(
-            project_dir
+        # Use the branch-aware output root when available; fall back to flat
+        # path for legacy manifests.
+        manuscript_base = (
+            Path(output_root)
+            if output_root is not None
+            else project_dir
             / str(phase.get("folder", ""))
             / "run"
             / f"{run_number:02d}"
         )
+        paths = launch_plans._paper_manuscript_paths(manuscript_base)
         if paper_review and paper_review.get("kind") == "review_only":
             source_baseline_text = _source_baseline_lead_block(
                 paper_review.get("source_baseline")
@@ -1256,7 +1269,7 @@ must use the post-review path. If no edit is warranted, copy the review
 manuscript byte for byte to the post-review path and write an empty diff; the
 identical copy retains the reviewed status. A changed post-review manuscript
 must remain labeled not independently reviewed until the user launches another
-Phase 06 run that reviews it.
+Phase 05 run that reviews it.
 """
     proof_audit_text = ""
     if phase_slug == launch_common.IDEA_EVALUATION_PHASE and phase.get("proof_audit"):

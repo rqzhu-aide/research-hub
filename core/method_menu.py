@@ -9,6 +9,9 @@ the run-start form; the chosen branch freezes the run's exact method identity.
 
 from __future__ import annotations
 
+import os
+import re
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +26,13 @@ _STATUS_RANK = {status: rank for rank, status in enumerate(VALID_STATUSES)}
 _REQUIRED_KEYS = ("stable_id", "version", "label", "status")
 
 _FRONTMATTER_DELIMITER = "---"
+
+# Whitelist for stable_id: alphanumeric, dots, hyphens, underscores.
+# Must start with an alphanumeric character (no leading dot/hyphen).
+# This is the same character class used for method identity validation
+# in launch_manifest._method_identity, but with the leading-char constraint
+# tightened to prevent path-traversal vectors.
+_STABLE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 class BranchNotFound(KeyError):
@@ -161,10 +171,27 @@ def retire_branch(project_dir: str | Path, stable_id: str) -> dict[str, Any]:
     Raises:
         BranchNotFound: no menu file for ``stable_id``.
         BranchAlreadyRetired: the branch is already retired.
+        ValueError: ``stable_id`` contains characters outside the whitelist
+            or the resolved path escapes the method-menu directory.
     """
     stable_id = str(stable_id).strip()
+    if not _STABLE_ID_RE.match(stable_id):
+        raise ValueError(
+            f"stable_id must match {_STABLE_ID_RE.pattern!r}; got {stable_id!r}"
+        )
     root = Path(project_dir).resolve()
-    path = root / METHOD_MENU_DIR / f"{stable_id}.md"
+    menu_root = (root / METHOD_MENU_DIR).resolve()
+    path = (menu_root / f"{stable_id}.md").resolve()
+
+    # Containment check: the resolved path must live inside the menu dir.
+    # This blocks symlink escapes even if the filename passes the whitelist.
+    try:
+        path.relative_to(menu_root)
+    except ValueError:
+        raise ValueError(
+            f"stable_id {stable_id!r} resolves outside the method-menu directory"
+        )
+
     if not path.is_file():
         raise BranchNotFound(stable_id)
     text = path.read_text(encoding="utf-8")
@@ -195,6 +222,21 @@ def retire_branch(project_dir: str | Path, stable_id: str) -> dict[str, Any]:
         # Insert a status line before the closing delimiter.
         lines.insert(end, "status: retired\n")
 
-    path.write_text("".join(lines), encoding="utf-8")
+    # Atomic write: write to a temp file in the same directory, then rename.
+    new_text = "".join(lines)
+    fd, tmp = tempfile.mkstemp(dir=str(menu_root), suffix=".md.tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(new_text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
     entry = parse_method_file(path, root)
     return entry

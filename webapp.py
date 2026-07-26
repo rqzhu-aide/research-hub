@@ -465,7 +465,8 @@ def security_headers(response: Response) -> Response:
             "Content-Security-Policy",
             "default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; "
             "form-action 'self'; img-src 'self' data:; connect-src 'self'; "
-            "script-src 'self'; style-src 'self'; font-src 'self'",
+            "script-src 'self' 'sha256-5YJDrcIcWxlyWbyYQg2Mj0OrTye0DhUIh6Iycew9Jeo='; "
+            "style-src 'self'; font-src 'self'",
         )
     return response
 
@@ -1270,7 +1271,7 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
             )
         if review_target:
             if phase_slug != PAPER_WRITING_PHASE:
-                raise ValueError("An exact manuscript review target is only valid in Phase 06")
+                raise ValueError("An exact manuscript review target is only valid in Phase 05")
             if len(review_target) > 4_096:
                 raise ValueError("The selected manuscript path is too long")
             rounds = 2
@@ -1362,13 +1363,13 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
                 review_target=review_target,
                 review_target_sha256=review_target_sha256,
             )
-        if theory_plans_available:
+        elif theory_plans_available:
             launch_options["theory_plan"] = theory_plan
             if theory_plan == THEORY_PLAN_AUDIT_ONLY:
                 launch_options["proof_audit_source_run_id"] = (
                     proof_audit_source_run_id
                 )
-        if run_modes_available:
+        elif run_modes_available:
             launch_options["run_mode"] = run_mode
         result = launch_run(
             project_dir,

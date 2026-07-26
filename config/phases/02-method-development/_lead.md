@@ -177,10 +177,10 @@ if both conditions hold:**
    potential, differentiation), OR the re-evaluation concludes it does not
    contribute meaningfully to the project.
 2. **Never run downstream**: the method has no records in Phase 03, 04, or 05
-   (check `evaluations/`, `draft/sections/`, `draft/revised/` for the method's
-   stable_id). A method that has already been evaluated or implemented in a
-   later phase is never retired — it has produced artifacts and is part of the
-   project's history.
+   (check the method's `branches/<stable_id>/` folder for evaluation,
+   implementation, or manuscript artifacts). A method that has already been
+   evaluated or implemented in a later phase is never retired — it has
+   produced artifacts and is part of the project's history.
 
 When retiring, set `status: retired` in the method file's frontmatter and add
 a `## Retirement reason` section to the body stating which criteria it failed

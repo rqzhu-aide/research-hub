@@ -124,7 +124,7 @@ Edit `config.yaml`:
 hub:
   name: "My Research Hub"
   workspace_dir: "~/research"        # where projects are stored
-  run_timeout_minutes: 120            # max runtime per phase run
+  run_timeout_minutes: 240            # max runtime per phase run
   allow_unattended_tools: true        # required for background launches
 
 agents:
@@ -155,7 +155,7 @@ agents:
 | Setting | What it does | Default |
 |---------|-------------|---------|
 | `hub.workspace_dir` | Where project files are stored | `~/research` |
-| `hub.run_timeout_minutes` | Maximum runtime before force-stop | `120` |
+| `hub.run_timeout_minutes` | Maximum runtime before force-stop | `240` |
 | `hub.allow_unattended_tools` | Lets background Hermes runs use tools without prompts | `true` |
 | `agents[].profile` | The Hermes profile name for each role | — |
 
@@ -194,8 +194,10 @@ After setup, your filesystem looks like:
         ├── setting.md               ← research brief
         ├── references/              ← Phase 1 output
         ├── ideas/                   ← Phase 2 output
-        ├── branches/<method>/       ← Phase 3/4 output (per-method)
-        └── draft/revised/           ← Phase 5 output
+        ├── branches/<method>/       ← Phase 3/4/5 output (per-method)
+        │   ├── evaluations/         ← Phase 3
+        │   ├── draft/sections/      ← Phase 4
+        │   └── draft/revised/       ← Phase 5
 ```
 
 The Research Hub code lives wherever you cloned it (e.g., `~/product/research-hub/`) — separate from the workspace.

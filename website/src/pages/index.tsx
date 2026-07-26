@@ -15,9 +15,9 @@ import styles from './index.module.css';
 const phases = [
   { num: '1', name: 'Literature Review', desc: 'Survey prior work, identify the gaps your project addresses.', href: '/docs/workflow/phase-1' },
   { num: '2', name: 'Method Development', desc: 'Brainstorm genuinely new mechanisms and frameworks.', href: '/docs/workflow/phase-2' },
-  { num: '3', name: 'Idea Evaluation', desc: 'Prove theorems, establish rate bounds, stress-test the theory.', href: '/docs/workflow/phase-3' },
-  { num: '4', name: 'Draft Assembly', desc: 'Write the paper — every role drafts their sections.', href: '/docs/workflow/phase-4' },
-  { num: '5', name: 'Review & Revision', desc: 'Independent audit, then final revision to a manuscript.', href: '/docs/workflow/phase-5' },
+  { num: '3', name: 'Theoretical Development', desc: 'Prove theorems, establish rate bounds, stress-test the theory.', href: '/docs/workflow/phase-3' },
+  { num: '4', name: 'Implementation & Experiments', desc: 'Implement the method in code, run experiments, validate predictions.', href: '/docs/workflow/phase-4' },
+  { num: '5', name: 'Paper Assembly & Review', desc: 'Assemble the manuscript, then independent review and revision.', href: '/docs/workflow/phase-5' },
 ];
 
 const principles = [

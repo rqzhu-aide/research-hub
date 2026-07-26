@@ -461,7 +461,7 @@ END FROZEN ROLE SOUL
 
 ## Frozen reviewer protocol
 
-The Phase 06 reviewer protocol is sealed into this brief with SHA-256
+The Phase 05 reviewer protocol is sealed into this brief with SHA-256
 `{reviewer_playbook_digest}`. In this substage, follow only its Initial
 Independent Reading requirements.
 

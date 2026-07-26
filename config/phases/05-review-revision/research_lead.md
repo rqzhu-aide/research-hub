@@ -10,7 +10,7 @@ paper conventions during revision.
 
 ## What to do
 1. Read the paper reviewer's complete review.
-2. Read the Phase 4 combined draft.
+2. Read the Phase 05 assembly-run manuscript.
 3. For each review point (weakness, recommendation, question):
    - **Fix it** in the manuscript if it is valid and fixable.
    - **Defer it** with explicit reasoning if it cannot be fixed in this revision

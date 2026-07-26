@@ -1174,7 +1174,7 @@ def _resolve_paper_review_source(
         raise launch_common.LaunchError("The selected review target must stay inside the project") from exc
     if candidate.name != "manuscript-post-review.md":
         raise launch_common.LaunchError(
-            "A review-only Phase 06 run requires a manuscript-post-review.md target"
+            "A review-only Phase 05 run requires a manuscript-post-review.md target"
         )
     sealed_digest = ""
     source_baseline: dict[str, Any] | None = None
@@ -1222,7 +1222,7 @@ def _resolve_paper_review_source(
     if not sealed_digest or source_baseline is None:
         raise launch_common.LaunchError(
             "The selected manuscript is not a sealed post-review output of a "
-            "recorded Phase 06 run"
+            "recorded Phase 05 run"
         )
     launch_common._read_utf8_bounded(
         candidate,

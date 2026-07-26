@@ -40,7 +40,7 @@ Read:
   library. Read them to understand what has already been found and classified.
 - `references/literature-summary.md` — the consolidated literature summary
   (updated each run). Read it first for orientation.
-- `draft/`, `ideas/`, and `numerical/` when present
+- `ideas/` and `branches/` when present
 
 Decide whether this is an initial survey or focused literature update. State the
 current candidate:

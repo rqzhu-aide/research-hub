@@ -405,7 +405,7 @@ def _validate_manifest_snapshot_schema(manifest: Mapping[str, Any]) -> None:
                     )
                 if Path(str(record.get("path", ""))).resolve() != expected_path.resolve():
                     raise launch_common.LaunchError(
-                        f"Submission output {name} does not match the Phase 6 plan"
+                        f"Submission output {name} does not match the Phase 05 plan"
                     )
                 if record.get("allow_empty") is not allow_empty:
                     raise launch_common.LaunchError(

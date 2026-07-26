@@ -20,8 +20,10 @@ dev = [
     "pytest>=8.0",
 ]
 
-[project.scripts]
-research-hub = "webapp:main"
+# F1 fix: the app locates config/templates relative to __file__, so it must
+# run from the checkout (python webapp.py). The [project.scripts] entry point
+# was removed because the wheel would ship only [tool.setuptools] packages
+# (core/) without webapp.py, hub.py, templates/, static/, or config.yaml.
 
 [tool.setuptools]
 packages = ["core"]

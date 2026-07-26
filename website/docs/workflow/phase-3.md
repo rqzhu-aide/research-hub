@@ -1,10 +1,10 @@
 ---
 sidebar_position: 4
-title: "Phase 3: Idea Evaluation"
+title: "Phase 3: Theoretical Development"
 slug: /workflow/phase-3
 ---
 
-# Phase 3: Idea Evaluation
+# Phase 3: Theoretical Development
 
 Take the selected method from Phase 2 and **develop its theory rigorously**: prove theorems, establish rate bounds, assess computational feasibility, and position the contribution.
 

@@ -21,9 +21,9 @@ Research Hub uses **four specialized roles**, each backed by a separate Hermes p
 
 | | Phase 1 | Phase 2 | Phase 3 | Phase 4 | Phase 5 |
 |---|---|---|---|---|---|
-| **Research Lead** | Position contribution, find closest prior work | Propose new contributions; coordinate method menu; select recommended method | Identify contribution structure, position against literature, structure paper narrative | Write intro/method/discussion; synthesize full draft | Address review points, produce final manuscript |
-| **Theorist** | Find theoretical foundations, prior math frameworks | Propose new mathematical mechanisms (2–3+ ideas) | Derive and prove theorems, establish rate bounds, full proofs | Write theory and proofs sections; audit experiments vs. bounds | — |
-| **Data Scientist** | Find existing implementations, benchmarks | Propose computational structures, algorithms, infrastructure | Assess computational feasibility, numerical stability, experiment design | Implement code, run experiments, produce real data | — |
+|| **Research Lead** | Position contribution, find closest prior work | Propose new contributions; coordinate method menu; select recommended method | Identify contribution structure, position against literature, structure paper narrative | Implement code, run experiments, synthesize results | Address review points, produce final manuscript |
+|| **Theorist** | Find theoretical foundations, prior math frameworks | Propose new mathematical mechanisms (2–3+ ideas) | Derive and prove theorems, establish rate bounds, full proofs | Validate experiments against theoretical bounds; audit numerical results | — |
+|| **Data Scientist** | Find existing implementations, benchmarks | Propose computational structures, algorithms, infrastructure | Assess computational feasibility, numerical stability, experiment design | Implement code, run experiments, produce real data | — |
 | **Paper Reviewer** | — | — | — | — | Audit draft for soundness, clarity, significance, originality |
 
 ## How roles interact

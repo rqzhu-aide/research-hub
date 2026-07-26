@@ -14,7 +14,7 @@ This page covers the full `config.yaml` schema for advanced configuration.
 hub:
   name: "My Research Hub"           # display name
   workspace_dir: "~/research"        # where projects are stored
-  run_timeout_minutes: 120           # max runtime per phase run
+  run_timeout_minutes: 240           # max runtime per phase run
   allow_unattended_tools: true       # required for background launches
 ```
 
@@ -22,7 +22,7 @@ hub:
 |-------|-------------|---------|
 | `name` | Display name for your hub | — |
 | `workspace_dir` | Where project files are stored | `~/research` |
-| `run_timeout_minutes` | Maximum runtime before force-stop | `120` |
+| `run_timeout_minutes` | Maximum runtime before force-stop | `240` |
 | `allow_unattended_tools` | Lets background Hermes runs use tools without prompts | `true` |
 
 ## Agent mapping
@@ -69,22 +69,17 @@ agents:
   rounds: {min: 2, default: 2, max: 3}
 ```
 
-### Debate phase
+### Debate phase (Phase 3)
 
 ```yaml
 - slug: "03-idea-evaluation"
-  name: "Idea Evaluation"
+  name: "Theoretical Development"
   pattern: debate
   gated_by: ["02-method-development"]
   folder: "evaluations/"
   members: [theorist, research_lead, data_scientist]
   rounds: {min: 2, default: 2, max: 3}
   method_binding: true
-  proof_audit:
-    plans: [standard, standard_with_audit, audit_only]
-    stage:
-      role: paper_reviewer
-      name: "Audit the final theoretical analysis independently"
 ```
 
 ### Parallel phase with run modes (Phase 4)
@@ -144,7 +139,6 @@ agents:
 
 | Feature | Declaration | Effect |
 |---------|-------------|--------|
-| **Theory plans** | `proof_audit:` on Phase 03 | Three run plans: standard, standard+audit, audit-only |
 | **Protocol checkpoint** | `protocol_checkpoint: true` | Seals a protocol document before result-stage work |
 | **Method binding** | `method_binding: true` | Freezes method identity per run; routes output to branches |
 | **Run modes** | `run_modes:` on Phase 04 or 05 | Two user-selectable modes per phase; the second mode is gated by an approved run of the first |

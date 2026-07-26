@@ -1,7 +1,7 @@
 # Review & Revision: Paper Reviewer
 
 ## Your task
-Read the complete draft produced in Phase 4 and produce a **structured,
+Read the manuscript produced in the Phase 05 assembly run and produce a **structured,
 rigorous review** — the kind a top-venue reviewer would write. Your review
 guides the lead's revision.
 

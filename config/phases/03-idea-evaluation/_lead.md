@@ -10,13 +10,13 @@ Read:
 - `setting.md`
 - the approved Phase 02 summary (method definitions and idea set)
 - the approved Phase 01 summary (literature context)
-- prior `evaluations/` runs
+- prior runs for the selected method (under `branches/<stable_id>/`)
 
 Identify the method to develop. If the user named one in the run-start form, use
 it. If not, select based on Phase 2 outcomes and state the choice clearly.
 
-**This is a rerun.** When prior `evaluations/run/` outputs exist for the
-selected method, treat this run as an **audit and refinement** of that prior
+**This is a rerun.** When prior outputs exist for the
+selected method (under `branches/<stable_id>/run/`), treat this run as an **audit and refinement** of that prior
 material, not a clean restart:
 
 1. **Audit first.** Read every prior round output for this method. For each

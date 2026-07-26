@@ -465,7 +465,7 @@ def _launch_run_locked(
     selected_theory_plan = str(theory_plan).strip()
     if review_target is not None:
         if phase_slug != launch_common.PAPER_WRITING_PHASE:
-            raise launch_common.LaunchError("An exact manuscript review target is only valid in Phase 06")
+            raise launch_common.LaunchError("An exact manuscript review target is only valid in Phase 05")
         review_source = launch_plans._resolve_paper_review_source(
             project_dir, review_target, review_target_sha256
         )
@@ -500,6 +500,14 @@ def _launch_run_locked(
     elif proof_audit or selected_theory_plan or proof_audit_source_run_id:
         raise launch_common.LaunchError("This phase does not declare theory run plans")
     selected_run_mode = str(run_mode).strip()
+    # F3 fix: review-target and run-mode are mutually exclusive. The webapp
+    # may supply both, but review_target means "review-only" and run_mode means
+    # "assembly/revision" — combining them silently destroys the review plan.
+    if review_source is not None and selected_run_mode:
+        raise launch_common.LaunchError(
+            "A manuscript review target cannot be combined with a run mode; "
+            "review-target launches are always review-only"
+        )
     if launch_plans.phase_supports_run_modes(configured_phase):
         if not selected_run_mode:
             plans, default_mode = launch_plans._configured_run_modes(configured_phase)
@@ -514,7 +522,13 @@ def _launch_run_locked(
         hermes_root = profile_skills.resolve_hermes_root()
     except (profile_skills.ProfileSkillsError, OSError, ValueError) as exc:
         raise launch_common.LaunchError("Hermes profile locations could not be resolved safely") from exc
-    plan_phase = phase if review_source is not None else configured_phase
+    # F15 fix: fingerprint the SHAPED phase, not the configured one.
+    # Preliminary vs comprehensive (different rounds) must yield different
+    # phase_plan_version tokens, so the "reviewed plan" binds the user to
+    # the variant they actually saw.  Previously, all non-review-target
+    # runs used configured_phase, making the fingerprint blind to the
+    # variant selected.
+    plan_phase = phase
     initial_recommended_skills = launch_plans._recommended_skills_snapshot(
         config,
         phase_slug,
@@ -617,33 +631,9 @@ def _launch_run_locked(
     run_id: str | None = None
     process: subprocess.Popen[str] | None = None
     manifest_file: Path | None = None
-    if (
-        phase_slug == launch_common.DRAFT_ASSEMBLY_PHASE
-        and selected_run_mode == launch_common.RUN_MODE_COMPREHENSIVE
-        and run_specific_method_id
-    ):
-        if not launch_plans._comprehensive_gate_satisfied(
-            project_dir, run_specific_method_id
-        ):
-            raise launch_common.LaunchError(
-                "A comprehensive Phase 04 run requires a prior approved preliminary "
-                "run for this method branch. Launch a preliminary run first to "
-                "confirm the implementation works, then approve it before "
-                "benchmarking."
-            )
-    if (
-        phase_slug == launch_common.PAPER_WRITING_PHASE
-        and selected_run_mode == launch_common.RUN_MODE_REVIEW_REVISION
-        and run_specific_method_id
-    ):
-        if not launch_plans._review_revision_gate_satisfied(
-            project_dir, run_specific_method_id
-        ):
-            raise launch_common.LaunchError(
-                "A review-revision Phase 05 run requires a prior approved assembly "
-                "run for this method branch. Launch an assembly run first to "
-                "produce the manuscript, then approve it before reviewing and revising."
-            )
+    # F6 note: mode gates (comprehensive/review-revision) are evaluated
+    # after method_selection resolution below, keyed on the resolved
+    # branch identity rather than the run_specific_method_id form field.
     try:
         run_id = project_state.reserve_run(
             project_dir,
@@ -677,6 +667,41 @@ def _launch_run_locked(
             run_specific_method_id,
             run_specific_method_version,
         )
+        # F6 fix: mode gates evaluated AFTER method_selection resolution,
+        # keyed on the resolved branch identity. This catches both
+        # run-specific and Phase-02 decision-record-bound methods.
+        resolved_method_id = (
+            str(method_selection.get("stable_id", "")).strip()
+            if method_selection
+            else ""
+        )
+        if (
+            phase_slug == launch_common.DRAFT_ASSEMBLY_PHASE
+            and selected_run_mode == launch_common.RUN_MODE_COMPREHENSIVE
+            and resolved_method_id
+        ):
+            if not launch_plans._comprehensive_gate_satisfied(
+                project_dir, resolved_method_id
+            ):
+                raise launch_common.LaunchError(
+                    "A comprehensive Phase 04 run requires a prior approved preliminary "
+                    "run for this method branch. Launch a preliminary run first to "
+                    "confirm the implementation works, then approve it before "
+                    "benchmarking."
+                )
+        if (
+            phase_slug == launch_common.PAPER_WRITING_PHASE
+            and selected_run_mode == launch_common.RUN_MODE_REVIEW_REVISION
+            and resolved_method_id
+        ):
+            if not launch_plans._review_revision_gate_satisfied(
+                project_dir, resolved_method_id
+            ):
+                raise launch_common.LaunchError(
+                    "A review-revision Phase 05 run requires a prior approved assembly "
+                    "run for this method branch. Launch an assembly run first to "
+                    "produce the manuscript, then approve it before reviewing and revising."
+                )
         output_root = launch_plans._branch_aware_output_root(
             project_dir,
             str(phase.get("folder", "")),
@@ -776,6 +801,7 @@ def _launch_run_locked(
             frozen_theory_audit_source,
             method_selection,
             run_mode=str(phase.get("run_plan", "")),
+            output_root=output_root,
         )
         launch_common._write_text_atomic(prompt_file, prompt)
         timeout_minutes = int(config.get("hub", {}).get("run_timeout_minutes", 120))

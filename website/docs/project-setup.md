@@ -106,10 +106,10 @@ When you create a project, Research Hub sets up:
 │   │   ├── _registry.yaml     ← permanent numbering registry
 │   │   └── <method-slug>.md
 │   └── run/
-├── branches/<method-slug>/    ← Phase 3/4 output (per-method)
+├── branches/<method-slug>/    ← Phase 3/4/5 output (per-method)
 │   ├── evaluations/run/       ← Phase 3: theorems and proofs
-│   └── draft/sections/run/    ← Phase 4: paper draft sections
-└── draft/revised/             ← Phase 5 output (final manuscript)
+│   ├── draft/sections/run/    ← Phase 4: code, experiments, results
+│   └── draft/revised/run/     ← Phase 5: manuscript assembly and revision
 ```
 
 ### Editing the brief

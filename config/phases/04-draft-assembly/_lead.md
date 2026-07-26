@@ -10,10 +10,10 @@ Read:
 - the approved Phase 03 summary (proved theorems and rate bounds)
 - the approved Phase 02 summary (method definition)
 - the approved Phase 01 summary (literature, for baselines)
-- prior `draft/sections/` runs
+- prior implementation runs for the selected method (under `branches/<stable_id>/`)
 
-**This is a rerun.** When prior `draft/sections/run/` outputs exist for the
-selected method, treat this run as an **audit and refinement** of that prior
+**This is a rerun.** When prior outputs exist for the
+selected method (under `branches/<stable_id>/run/`), treat this run as an **audit and refinement** of that prior
 material, not a clean restart:
 
 1. **Audit first.** Read every prior round output for this method. For each
