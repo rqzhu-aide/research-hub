@@ -161,6 +161,27 @@ Rules:
   mathematical definition section must be substantial enough for a theorist
   to begin formal proofs from it.
 
+**Re-evaluate and retire on reruns.** When this is a rerun (prior `ideas/methods/`
+files exist), the lead must re-evaluate every existing method against the
+current criteria (novelty, tractability, acceleration potential, differentiation
+from literature). For each method, the lead decides: keep (update status if the
+assessment changed) or retire. **A method must be retired (status → `retired`)
+if both conditions hold:**
+
+1. **Not useful**: the method scores Weak or Insufficient on at least two of
+   the four evaluation dimensions (novelty, tractability, acceleration
+   potential, differentiation), OR the re-evaluation concludes it does not
+   contribute meaningfully to the project.
+2. **Never run downstream**: the method has no records in Phase 03, 04, or 05
+   (check `evaluations/`, `draft/sections/`, `draft/revised/` for the method's
+   stable_id). A method that has already been evaluated or implemented in a
+   later phase is never retired — it has produced artifacts and is part of the
+   project's history.
+
+When retiring, set `status: retired` in the method file's frontmatter and add
+a `## Retirement reason` section to the body stating which criteria it failed
+and when the retirement was decided (run ID). Do not delete the file.
+
 Include:
 - a **Scientific record changes** section with proposed additions;
 - the **Proposed scientific baseline**, which becomes accepted only after user
