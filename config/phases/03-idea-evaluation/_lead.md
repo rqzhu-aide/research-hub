@@ -15,6 +15,24 @@ Read:
 Identify the method to develop. If the user named one in the run-start form, use
 it. If not, select based on Phase 2 outcomes and state the choice clearly.
 
+**This is a rerun.** When prior `evaluations/run/` outputs exist for the
+selected method, treat this run as an **audit and refinement** of that prior
+material, not a clean restart:
+
+1. **Audit first.** Read every prior round output for this method. For each
+   existing theorem, proof, computational assessment, or narrative claim,
+   identify: what's correct, what's incomplete, what's wrong, what's missing.
+   Write the audit findings into the report.
+2. **Fix in place.** Correct errors, fill proof gaps, and tighten claims in
+   the existing material. Do not discard correct prior work — build on it.
+3. **Add new material.** Extend with additional theorems, sharper bounds,
+   deeper computational analysis, or stronger literature positioning that the
+   prior run lacked (e.g., incorporate the updated literature library at
+   `references/papers/`, exploit cross-role insights from a Phase 2 rerun).
+4. **Never replace.** Prior outputs are sealed history. Write new rounds into
+   the new run directory; the prior run's files stay intact. The final summary
+   must reference both the prior and new material, noting what changed.
+
 ## Step 2: Round 1 — independent development
 Dispatch three independent tasks:
 
