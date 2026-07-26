@@ -712,6 +712,17 @@
     });
   });
 
+  // ── Position timeline dots by their global ordinal rank ──
+  // (Inline style="left: X%" gets eaten by CSSOM on HTMX-swapped content,
+  //  so we read data-left and apply it via JS instead.)
+  function positionTimelineDots() {
+    document.querySelectorAll(".tl-dot[data-left]").forEach((dot) => {
+      dot.style.left = dot.dataset.left + "%";
+    });
+  }
+  positionTimelineDots();
+  document.body.addEventListener("htmx:afterSwap", positionTimelineDots);
+
   // ── Live elapsed-time indicator for active runs ──
   // Shows "12m 34s" next to "Started ..." so a user watching a long
   // numerical-validation run knows it's progressing, not stuck.
