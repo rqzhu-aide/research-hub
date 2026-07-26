@@ -69,6 +69,10 @@ from core.launch_common import (
     THEORY_PLAN_AUDIT_ONLY,
     THEORY_PLAN_STANDARD,
     THEORY_PLAN_STANDARD_WITH_AUDIT,
+    RUN_MODE_PRELIMINARY,
+    RUN_MODE_COMPREHENSIVE,
+    RUN_MODES,
+    DRAFT_ASSEMBLY_PHASE,
     _ProcessOutputLimitExceeded,
     _bounded_bytes,
     _contained_file_destination,
@@ -129,6 +133,7 @@ from core.launch_plans import (
     _paper_manuscript_paths,
     _phase_config,
     _phase_for_theory_plan,
+    _phase_for_run_mode,
     _phase_slugs,
     _phase_with_proof_audit,
     _resolve_paper_review_source,
@@ -147,6 +152,7 @@ from core.launch_plans import (
     launch_plan_version,
     paper_review_only_phase,
     phase_supports_theory_plans,
+    phase_supports_run_modes,
     theory_audit_source_options,
 )
 from core.launch_process import (
@@ -344,6 +350,7 @@ def launch_run(
     theory_plan: str = "",
     proof_audit_source_run_id: str = "",
     proof_audit: bool = False,
+    run_mode: str = "",
     run_specific_method_id: str = "",
     run_specific_method_version: str = "",
     expected_phase_plan_version: str = "",
@@ -410,6 +417,7 @@ def launch_run(
             theory_plan=theory_plan,
             proof_audit_source_run_id=proof_audit_source_run_id,
             proof_audit=proof_audit,
+            run_mode=run_mode,
             run_specific_method_id=run_specific_method_id,
             run_specific_method_version=run_specific_method_version,
             expected_phase_plan_version=expected_phase_plan_version,
@@ -433,6 +441,7 @@ def _launch_run_locked(
     theory_plan: str = "",
     proof_audit_source_run_id: str = "",
     proof_audit: bool = False,
+    run_mode: str = "",
     run_specific_method_id: str = "",
     run_specific_method_version: str = "",
     expected_phase_plan_version: str = "",
@@ -483,6 +492,16 @@ def _launch_run_locked(
         phase = launch_plans._phase_for_theory_plan(phase, selected_theory_plan)
     elif proof_audit or selected_theory_plan or proof_audit_source_run_id:
         raise launch_common.LaunchError("This phase does not declare theory run plans")
+    selected_run_mode = str(run_mode).strip()
+    if launch_plans.phase_supports_run_modes(configured_phase):
+        if not selected_run_mode:
+            plans, default_mode = launch_plans._configured_run_modes(configured_phase)
+            selected_run_mode = default_mode
+        if selected_run_mode not in launch_common.RUN_MODES:
+            raise launch_common.LaunchError(f"Unknown Phase 04 run mode: {selected_run_mode!r}")
+        phase = launch_plans._phase_for_run_mode(phase, selected_run_mode)
+    elif selected_run_mode:
+        raise launch_common.LaunchError("This phase does not declare run modes")
     try:
         hermes_root = profile_skills.resolve_hermes_root()
     except (profile_skills.ProfileSkillsError, OSError, ValueError) as exc:
@@ -590,6 +609,20 @@ def _launch_run_locked(
     run_id: str | None = None
     process: subprocess.Popen[str] | None = None
     manifest_file: Path | None = None
+    if (
+        phase_slug == launch_common.DRAFT_ASSEMBLY_PHASE
+        and selected_run_mode == launch_common.RUN_MODE_COMPREHENSIVE
+        and run_specific_method_id
+    ):
+        if not launch_plans._comprehensive_gate_satisfied(
+            project_dir, run_specific_method_id
+        ):
+            raise launch_common.LaunchError(
+                "A comprehensive Phase 04 run requires a prior approved preliminary "
+                "run for this method branch. Launch a preliminary run first to "
+                "confirm the implementation works, then approve it before "
+                "benchmarking."
+            )
     try:
         run_id = project_state.reserve_run(
             project_dir,
@@ -721,6 +754,7 @@ def _launch_run_locked(
             paper_review,
             frozen_theory_audit_source,
             method_selection,
+            run_mode=str(phase.get("run_plan", "")),
         )
         launch_common._write_text_atomic(prompt_file, prompt)
         timeout_minutes = int(config.get("hub", {}).get("run_timeout_minutes", 120))

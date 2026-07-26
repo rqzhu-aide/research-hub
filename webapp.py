@@ -42,9 +42,13 @@ from core import method_menu, profile_skills, project_state
 from core.launch_run import (
     PAPER_WRITING_PHASE,
     IDEA_EVALUATION_PHASE,
+    DRAFT_ASSEMBLY_PHASE,
     THEORY_PLAN_AUDIT_ONLY,
     THEORY_PLAN_STANDARD,
     THEORY_PLAN_STANDARD_WITH_AUDIT,
+    RUN_MODE_PRELIMINARY,
+    RUN_MODE_COMPREHENSIVE,
+    RUN_MODES,
     cancel_active_run,
     exact_rerun_options,
     launch_plan_version,
@@ -52,6 +56,7 @@ from core.launch_run import (
     paper_review_only_phase,
     phase_requires_method_binding,
     phase_supports_theory_plans,
+    phase_supports_run_modes,
     reconcile_active_run,
     retry_run_cleanup,
     run_log_path,
@@ -1148,6 +1153,7 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
         proof_audit_source_run_id = request.form.get(
             "proof_audit_source_run_id", ""
         ).strip()
+        run_mode = request.form.get("run_mode", "").strip()
         if preserve_frozen_plan:
             if not rerun_from:
                 raise ValueError("Select the prior run whose configuration should be repeated")
@@ -1157,6 +1163,7 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
                     review_target_sha256,
                     theory_plan,
                     proof_audit_source_run_id,
+                    run_mode,
                 )
             ):
                 raise ValueError(
@@ -1173,6 +1180,8 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
             elif exact_options["kind"] == "paper_review_only":
                 review_target = exact_options["review_target"]
                 review_target_sha256 = exact_options["review_target_sha256"]
+            elif exact_options["kind"] == "run_mode":
+                run_mode = exact_options["run_mode"]
             elif exact_options["kind"] not in {"paper_full", "standard"}:
                 raise ValueError("The prior run's recorded configuration is not supported")
         if len(proof_audit_source_run_id) > 256:
@@ -1197,6 +1206,14 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
                 )
         elif theory_plan or proof_audit_source_run_id:
             raise ValueError("This phase does not declare theory run plans")
+
+        run_modes_available = phase_supports_run_modes(phase)
+        if run_modes_available:
+            run_mode = run_mode or RUN_MODE_PRELIMINARY
+            if run_mode not in {RUN_MODE_PRELIMINARY, RUN_MODE_COMPREHENSIVE}:
+                raise ValueError("Select one of the available Phase 04 run modes")
+        elif run_mode:
+            raise ValueError("This phase does not declare run modes")
 
         run_specific_method_id = _bounded_form_value(
             "run_specific_method_id", 200
@@ -1259,6 +1276,8 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
                 THEORY_PLAN_STANDARD_WITH_AUDIT: standard_stage_count + 1,
                 THEORY_PLAN_AUDIT_ONLY: 1,
             }[theory_plan]
+        elif run_modes_available:
+            rounds = {RUN_MODE_PRELIMINARY: 1, RUN_MODE_COMPREHENSIVE: 2}[run_mode]
         elif phase["pattern"] == "sequential":
             rounds = len(phase["stages"])
         else:
@@ -1337,6 +1356,8 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
                 launch_options["proof_audit_source_run_id"] = (
                     proof_audit_source_run_id
                 )
+        if run_modes_available:
+            launch_options["run_mode"] = run_mode
         result = launch_run(
             project_dir,
             project_id,

@@ -3114,3 +3114,257 @@ def test_retire_blocked_on_non_binding_phase(
         data={"csrf_token": token, "project_identity": identity, "stable_id": "anything"},
     )
     assert response.status_code == 404
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Phase 04 run modes (preliminary vs comprehensive)
+# ──────────────────────────────────────────────────────────────────────────
+
+def _phase_four_with_run_modes() -> dict:
+    return {
+        "slug": "04-draft-assembly",
+        "name": "Implementation & Experiments",
+        "description": "Implement and test.",
+        "pattern": "parallel",
+        "method_binding": True,
+        "run_modes": {
+            "plans": ["preliminary", "comprehensive"],
+            "default": "preliminary",
+        },
+        "gated_by": [],
+        "folder": "draft/sections/",
+        "members": ["research_lead", "theorist", "data_scientist"],
+        "rounds": {"min": 1, "default": 2, "max": 2},
+    }
+
+
+def test_phase_four_run_mode_selector_renders(
+    web_env: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The run-mode dropdown appears on Phase 04 with both options, preliminary default."""
+    client = web_env["client"]
+    web_env["config"]["phases"].append(_phase_four_with_run_modes())
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+    page = client.get(f"/project/{PROJECT_ID}?tab=04-draft-assembly")
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assert 'name="run_mode"' in html
+    assert 'value="preliminary"' in html
+    assert 'value="comprehensive"' in html
+    # Preliminary should be the selected default
+    prelim_opt = html[html.index('value="preliminary"'):]
+    assert "selected" in prelim_opt[:200]
+
+
+def test_phase_four_preliminary_passes_one_round_and_run_mode(
+    web_env: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Selecting preliminary sends rounds=1 and run_mode=preliminary to launcher."""
+    client = web_env["client"]
+    web_env["config"]["phases"].append(_phase_four_with_run_modes())
+    launched = Mock(return_value={"run_number": 1, "rounds_requested": 1})
+    monkeypatch.setattr(webapp, "launch_run", launched)
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+    token = _csrf(client)
+    identity = _project_identity(web_env)
+    response = client.post(
+        f"/project/{PROJECT_ID}/phase/04-draft-assembly/start",
+        data={
+            "csrf_token": token,
+            "project_identity": identity,
+            **_launch_tokens(web_env, "04-draft-assembly"),
+            "run_mode": "preliminary",
+        },
+    )
+    assert response.status_code == 302
+    call = launched.call_args
+    assert call.args[4] == 1  # rounds
+    assert call.kwargs["run_mode"] == "preliminary"
+
+
+def test_phase_four_comprehensive_passes_two_rounds_and_run_mode(
+    web_env: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Selecting comprehensive sends rounds=2 and run_mode=comprehensive."""
+    client = web_env["client"]
+    web_env["config"]["phases"].append(_phase_four_with_run_modes())
+    launched = Mock(return_value={"run_number": 1, "rounds_requested": 2})
+    monkeypatch.setattr(webapp, "launch_run", launched)
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+    token = _csrf(client)
+    identity = _project_identity(web_env)
+    response = client.post(
+        f"/project/{PROJECT_ID}/phase/04-draft-assembly/start",
+        data={
+            "csrf_token": token,
+            "project_identity": identity,
+            **_launch_tokens(web_env, "04-draft-assembly"),
+            "run_mode": "comprehensive",
+        },
+    )
+    assert response.status_code == 302
+    call = launched.call_args
+    assert call.args[4] == 2  # rounds
+    assert call.kwargs["run_mode"] == "comprehensive"
+
+
+def test_phase_four_defaults_to_preliminary_when_unspecified(
+    web_env: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Omitting run_mode defaults to preliminary with 1 round."""
+    client = web_env["client"]
+    web_env["config"]["phases"].append(_phase_four_with_run_modes())
+    launched = Mock(return_value={"run_number": 1, "rounds_requested": 1})
+    monkeypatch.setattr(webapp, "launch_run", launched)
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+    token = _csrf(client)
+    identity = _project_identity(web_env)
+    response = client.post(
+        f"/project/{PROJECT_ID}/phase/04-draft-assembly/start",
+        data={
+            "csrf_token": token,
+            "project_identity": identity,
+            **_launch_tokens(web_env, "04-draft-assembly"),
+        },
+    )
+    assert response.status_code == 302
+    call = launched.call_args
+    assert call.args[4] == 1
+    assert call.kwargs["run_mode"] == "preliminary"
+
+
+def test_phase_four_rejects_invalid_run_mode(
+    web_env: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An invalid run_mode value is rejected — launcher never called."""
+    client = web_env["client"]
+    web_env["config"]["phases"].append(_phase_four_with_run_modes())
+    launched = Mock(return_value={"run_number": 1, "rounds_requested": 1})
+    monkeypatch.setattr(webapp, "launch_run", launched)
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+    token = _csrf(client)
+    identity = _project_identity(web_env)
+    response = client.post(
+        f"/project/{PROJECT_ID}/phase/04-draft-assembly/start",
+        data={
+            "csrf_token": token,
+            "project_identity": identity,
+            **_launch_tokens(web_env, "04-draft-assembly"),
+            "run_mode": "bogus",
+        },
+    )
+    # Validation error → redirect back with flash; launcher never called
+    launched.assert_not_called()
+
+
+def test_phase_four_run_mode_rejected_on_unconfigured_phase(
+    web_env: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Phase 04 WITHOUT run_modes config rejects a run_mode form value."""
+    client = web_env["client"]
+    phase = _phase_four_with_run_modes()
+    del phase["run_modes"]
+    web_env["config"]["phases"].append(phase)
+    launched = Mock(return_value={"run_number": 1, "rounds_requested": 1})
+    monkeypatch.setattr(webapp, "launch_run", launched)
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+    token = _csrf(client)
+    identity = _project_identity(web_env)
+    response = client.post(
+        f"/project/{PROJECT_ID}/phase/04-draft-assembly/start",
+        data={
+            "csrf_token": token,
+            "project_identity": identity,
+            **_launch_tokens(web_env, "04-draft-assembly"),
+            "run_mode": "preliminary",
+        },
+    )
+    launched.assert_not_called()
+
+
+def test_run_modes_config_validation_only_on_phase_four(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """run_modes is rejected on a phase other than 04-draft-assembly."""
+    import hub as hub_module
+    config = {
+        "hub": {"name": "T", "workspace_dir": str(tmp_path)},
+        "agents": [{"id": "research_lead", "profile": "p", "name": "L", "role": "r"}],
+        "phases": [
+            {
+                "slug": "03-idea-evaluation",
+                "name": "Theory",
+                "description": "d",
+                "pattern": "parallel",
+                "gated_by": [],
+                "folder": "f/",
+                "members": ["research_lead"],
+                "rounds": {"min": 1, "default": 1, "max": 2},
+                "run_modes": {"plans": ["preliminary", "comprehensive"], "default": "preliminary"},
+            }
+        ],
+    }
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.dump(config), encoding="utf-8")
+    # Playbook root is CONFIG_PATH.parent / "config" / "phases"
+    playbook_root = config_path.parent / "config" / "phases" / "03-idea-evaluation"
+    playbook_root.mkdir(parents=True)
+    for fname in ("_lead.md", "_phase.md", "research_lead.md"):
+        (playbook_root / fname).write_text("# x\n", encoding="utf-8")
+    # Agent soul files
+    soul_root = config_path.parent / "config" / "souls"
+    soul_root.mkdir(parents=True, exist_ok=True)
+    (soul_root / "research_lead.md").write_text("# soul\n", encoding="utf-8")
+    monkeypatch.setattr(hub_module, "CONFIG_PATH", config_path)
+    with pytest.raises(hub_module.ConfigurationError, match="run_modes is only valid for Phase 04"):
+        hub_module.load_config()
+
+
+def test_run_modes_rejects_wrong_plans_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """run_modes.plans must be exactly ['preliminary', 'comprehensive'] in that order."""
+    import hub as hub_module
+    config = {
+        "hub": {"name": "T", "workspace_dir": str(tmp_path)},
+        "agents": [{"id": "research_lead", "profile": "p", "name": "L", "role": "r"}],
+        "phases": [
+            {
+                "slug": "04-draft-assembly",
+                "name": "Experiments",
+                "description": "d",
+                "pattern": "parallel",
+                "gated_by": [],
+                "folder": "f/",
+                "members": ["research_lead"],
+                "rounds": {"min": 1, "default": 2, "max": 2},
+                "run_modes": {"plans": ["comprehensive", "preliminary"], "default": "preliminary"},
+            }
+        ],
+    }
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.dump(config), encoding="utf-8")
+    playbook_root = config_path.parent / "config" / "phases" / "04-draft-assembly"
+    playbook_root.mkdir(parents=True)
+    for fname in ("_lead.md", "_phase.md", "research_lead.md"):
+        (playbook_root / fname).write_text("# x\n", encoding="utf-8")
+    # Agent soul files
+    soul_root = config_path.parent / "config" / "souls"
+    soul_root.mkdir(parents=True, exist_ok=True)
+    (soul_root / "research_lead.md").write_text("# soul\n", encoding="utf-8")
+    monkeypatch.setattr(hub_module, "CONFIG_PATH", config_path)
+    with pytest.raises(hub_module.ConfigurationError, match="plans must contain"):
+        hub_module.load_config()
+

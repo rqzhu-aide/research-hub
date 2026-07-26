@@ -1085,6 +1085,7 @@ def _build_lead_prompt(
     paper_review: Mapping[str, Any] | None = None,
     proof_audit_source: Mapping[str, Any] | None = None,
     method_selection: Mapping[str, Any] | None = None,
+    run_mode: str = "",
 ) -> str:
     phase_slug = str(phase["slug"])
     phase_name = str(phase.get("name", phase_slug))
@@ -1318,6 +1319,53 @@ paper-reviewer task. Do not rewrite the target during the audit and do not add
 another theorist stage.
 """
 
+    run_mode_text = ""
+    if (
+        phase_slug == launch_common.DRAFT_ASSEMBLY_PHASE
+        and run_mode
+        and run_mode in launch_common.RUN_MODES
+    ):
+        if run_mode == launch_common.RUN_MODE_PRELIMINARY:
+            run_mode_text = """## User-selected preliminary run
+
+This is a PRELIMINARY implementation run. The goal is to confirm the method
+works in code, not to produce final paper-ready results. Focus narrowly:
+
+1. **Implement the method** — write working Python code that implements the
+   mathematical definition from the Phase 03 results. Not pseudocode, not a
+   description. Code that runs.
+2. **Diagnostic sanity checks only** — run simple known-answer tests that
+   confirm the implementation is correct (e.g., does the invariant measure
+   match for a Gaussian? do conservation laws hold? does the same seed produce
+   the same result?). Record the measured values in a JSON file.
+3. **Stop there.** Do NOT run the full benchmark study, do NOT compare against
+   baselines, do NOT generate publication figures. That is the comprehensive
+   run's job.
+
+The user will review whether the implementation works. If it does, they will
+launch a comprehensive run to benchmark it against existing methods.
+"""
+        else:  # comprehensive
+            run_mode_text = """## User-selected comprehensive run
+
+This is a COMPREHENSIVE benchmark run. A prior preliminary run already produced
+a working implementation in this branch — read it and build on it. The goal is
+to produce the comparison results needed for the paper draft:
+
+1. **Benchmark against existing methods** — compare the implemented method
+   against the relevant baselines across the settings that will appear in the
+   paper (convergence curves, ESS/s, rate estimation against proved bounds).
+2. **Multiple settings** — test across the parameter regimes the paper will
+   report (different dimensions, graph structures, step sizes, etc.).
+3. **Publication-quality tables and figures** — real measured numbers with
+   quantified uncertainty (MCSE, confidence intervals, replications).
+4. **Theorist audit** — do the measured rates match the proved bounds from
+   Phase 03? If theory and experiment disagree, identify why.
+
+Do not re-implement the method from scratch. The preliminary run's code is the
+starting point. If you find bugs, fix them and rerun the affected experiments.
+"""
+
     return f"""# Research lead assignment: {phase_name}
 
 The user explicitly launched this phase run. You may execute only this run.
@@ -1335,6 +1383,7 @@ user. Your result must make the user's next decision easy to understand.
 - Rounds or stages authorized by the user: {rounds}
 - Kanban board: `{board_slug}`
 - User direction: {user_feedback if user_feedback else '(none)'}
+{f'- Run mode: {run_mode}' if phase_slug == launch_common.DRAFT_ASSEMBLY_PHASE and run_mode else ''}
 
 {prerequisite_text}
 
@@ -1343,6 +1392,8 @@ user. Your result must make the user's next decision easy to understand.
 {manuscript_paths_text}
 
 {proof_audit_text}
+
+{run_mode_text}
 
 ## Frozen research lead identity and reasoning standards
 

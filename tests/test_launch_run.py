@@ -4027,3 +4027,222 @@ def test_shipped_phase04_and_phase05_bind_methods() -> None:
     assert launch_manifest.phase_requires_method_binding(
         by_slug["05-review-revision"]
     ), "Phase 05 must bind a method branch"
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Phase 04 run modes: shaping + comprehensive gate
+# ──────────────────────────────────────────────────────────────────────────
+
+def test_phase_four_preliminary_shaped_to_one_round() -> None:
+    """_phase_for_run_mode shapes preliminary to 1 round and stamps run_plan."""
+    from core import launch_plans, launch_common
+    phase = {
+        "slug": launch_common.DRAFT_ASSEMBLY_PHASE,
+        "run_modes": {"plans": ["preliminary", "comprehensive"], "default": "preliminary"},
+        "rounds": {"min": 1, "default": 2, "max": 2},
+    }
+    shaped = launch_plans._phase_for_run_mode(phase, "preliminary")
+    assert shaped["rounds"] == {"min": 1, "default": 1, "max": 1}
+    assert shaped["run_plan"] == "preliminary"
+
+
+def test_phase_four_comprehensive_shaped_to_two_rounds() -> None:
+    """_phase_for_run_mode shapes comprehensive to 2 rounds and stamps run_plan."""
+    from core import launch_plans, launch_common
+    phase = {
+        "slug": launch_common.DRAFT_ASSEMBLY_PHASE,
+        "run_modes": {"plans": ["preliminary", "comprehensive"], "default": "preliminary"},
+        "rounds": {"min": 1, "default": 2, "max": 2},
+    }
+    shaped = launch_plans._phase_for_run_mode(phase, "comprehensive")
+    assert shaped["rounds"] == {"min": 2, "default": 2, "max": 2}
+    assert shaped["run_plan"] == "comprehensive"
+
+
+def test_phase_four_run_mode_rejected_on_wrong_phase() -> None:
+    """_phase_for_run_mode raises LaunchError on a non-Phase-04 slug."""
+    from core import launch_plans, launch_common
+    phase = {
+        "slug": "03-idea-evaluation",
+        "run_modes": {"plans": ["preliminary", "comprehensive"], "default": "preliminary"},
+    }
+    with pytest.raises(launch_common.LaunchError, match="only valid in Phase 04"):
+        launch_plans._phase_for_run_mode(phase, "preliminary")
+
+
+def test_comprehensive_gate_blocks_without_approved_preliminary(tmp_path: Path) -> None:
+    """Gate returns False when no approved preliminary run exists."""
+    from core import launch_plans
+    # No runs at all → gate should be False
+    assert not launch_plans._comprehensive_gate_satisfied(tmp_path, "some-method")
+
+
+def test_comprehensive_gate_passes_with_approved_preliminary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gate returns True when an approved preliminary run with matching branch exists."""
+    from core import launch_plans, launch_common, project_state
+    import json as _json
+
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    branch_id = "spectral-graph-coupling"
+
+    # Write a sealed manifest that records run_plan=preliminary + matching method_selection
+    state_dir = project_state.state_dir(project_dir)
+    run_id = "abc123"
+    run_manifest_dir = state_dir / "runs" / launch_common.DRAFT_ASSEMBLY_PHASE / run_id
+    run_manifest_dir.mkdir(parents=True)
+    manifest = {
+        "phase_slug": launch_common.DRAFT_ASSEMBLY_PHASE,
+        "run_id": run_id,
+        "phase": {"slug": launch_common.DRAFT_ASSEMBLY_PHASE, "run_plan": "preliminary"},
+        "method_selection": {"stable_id": branch_id, "version": "1"},
+    }
+    manifest_bytes = _json.dumps(manifest).encode("utf-8")
+    manifest_path = run_manifest_dir / "manifest.json"
+    manifest_path.write_bytes(manifest_bytes)
+    manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
+
+    # Bypass state migration: return the run record directly so the gate reads our manifest
+    fake_run = {
+        "run_id": run_id,
+        "status": "approved",
+        "manifest_path": str(manifest_path),
+        "manifest_sha256": manifest_sha,
+    }
+    monkeypatch.setattr(
+        project_state,
+        "get_runs",
+        lambda _pd, _slug: [fake_run],
+    )
+
+    assert launch_plans._comprehensive_gate_satisfied(project_dir, branch_id)
+    # Different branch should NOT satisfy
+    assert not launch_plans._comprehensive_gate_satisfied(project_dir, "other-method")
+
+
+def test_comprehensive_gate_ignores_non_preliminary_approved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gate returns False if the approved run was comprehensive, not preliminary."""
+    from core import launch_plans, launch_common, project_state
+    import json as _json
+
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    branch_id = "method-x"
+
+    state_dir = project_state.state_dir(project_dir)
+    run_id = "xyz789"
+    run_manifest_dir = state_dir / "runs" / launch_common.DRAFT_ASSEMBLY_PHASE / run_id
+    run_manifest_dir.mkdir(parents=True)
+    manifest = {
+        "phase_slug": launch_common.DRAFT_ASSEMBLY_PHASE,
+        "run_id": run_id,
+        "phase": {"slug": launch_common.DRAFT_ASSEMBLY_PHASE, "run_plan": "comprehensive"},
+        "method_selection": {"stable_id": branch_id, "version": "1"},
+    }
+    manifest_bytes = _json.dumps(manifest).encode("utf-8")
+    manifest_path = run_manifest_dir / "manifest.json"
+    manifest_path.write_bytes(manifest_bytes)
+    manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
+
+    fake_run = {
+        "run_id": run_id,
+        "status": "approved",
+        "manifest_path": str(manifest_path),
+        "manifest_sha256": manifest_sha,
+    }
+    monkeypatch.setattr(
+        project_state,
+        "get_runs",
+        lambda _pd, _slug: [fake_run],
+    )
+
+    # Approved comprehensive run does NOT satisfy the preliminary gate
+    assert not launch_plans._comprehensive_gate_satisfied(project_dir, branch_id)
+
+
+def test_exact_rerun_recovers_phase_four_run_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """exact_rerun_options returns kind=run_mode for Phase 04 with a recorded plan."""
+    from core import launch_plans, launch_common, project_state
+    import json as _json
+
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    run_id = "rerun-test-1"
+
+    # Manifest path convention: state_dir/runs/<phase>/<run_id>.manifest.json
+    manifest_path = launch_common.run_manifest_path(
+        project_dir, launch_common.DRAFT_ASSEMBLY_PHASE, run_id
+    )
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "phase_slug": launch_common.DRAFT_ASSEMBLY_PHASE,
+        "run_id": run_id,
+        "phase": {"slug": launch_common.DRAFT_ASSEMBLY_PHASE, "run_plan": "comprehensive"},
+        "method_selection": {"stable_id": "m1", "version": "1"},
+    }
+    manifest_bytes = _json.dumps(manifest).encode("utf-8")
+    manifest_path.write_bytes(manifest_bytes)
+    manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
+
+    # _read_manifest verifies the run record exists with matching path + hash
+    fake_run = {
+        "run_id": run_id,
+        "manifest_path": str(manifest_path),
+        "manifest_sha256": manifest_sha,
+    }
+    monkeypatch.setattr(
+        project_state, "get_run", lambda _pd, _slug, _rid: fake_run
+    )
+
+    options = launch_plans.exact_rerun_options(
+        project_dir, launch_common.DRAFT_ASSEMBLY_PHASE, run_id
+    )
+    assert options["kind"] == "run_mode"
+    assert options["run_mode"] == "comprehensive"
+
+
+def test_exact_rerun_phase_four_without_run_mode_is_standard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Phase 04 run from before run_modes shipped preserves as a plain rerun."""
+    from core import launch_plans, launch_common, project_state
+    import json as _json
+
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    run_id = "legacy-run-1"
+
+    manifest_path = launch_common.run_manifest_path(
+        project_dir, launch_common.DRAFT_ASSEMBLY_PHASE, run_id
+    )
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    # Legacy manifest: no run_plan field
+    manifest = {
+        "phase_slug": launch_common.DRAFT_ASSEMBLY_PHASE,
+        "run_id": run_id,
+        "phase": {"slug": launch_common.DRAFT_ASSEMBLY_PHASE},
+        "method_selection": {"stable_id": "m1", "version": "1"},
+    }
+    manifest_bytes = _json.dumps(manifest).encode("utf-8")
+    manifest_path.write_bytes(manifest_bytes)
+    manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
+
+    fake_run = {
+        "run_id": run_id,
+        "manifest_path": str(manifest_path),
+        "manifest_sha256": manifest_sha,
+    }
+    monkeypatch.setattr(
+        project_state, "get_run", lambda _pd, _slug, _rid: fake_run
+    )
+
+    options = launch_plans.exact_rerun_options(
+        project_dir, launch_common.DRAFT_ASSEMBLY_PHASE, run_id
+    )
+    assert options["kind"] == "standard"

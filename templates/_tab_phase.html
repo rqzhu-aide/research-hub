@@ -351,6 +351,25 @@
   </fieldset>
   {% endif %}
 
+  {# ── Run mode (Phase 04 only): preliminary vs comprehensive ── #}
+  {% set run_modes = pc.run_modes | default({}) %}
+  {% if run_modes.plans | default([]) %}
+    {% set mode_default = run_modes.default | default('preliminary') %}
+  <fieldset class="launch-fieldset-compact">
+    <div class="method-row">
+      <span class="field-label">Run mode:</span>
+      <select class="form-input-compact" name="run_mode" data-run-mode-select="{{ pc.slug }}">
+        {% for opt in run_modes.plans %}
+        <option value="{{ opt }}"
+                {% if opt == mode_default %}selected{% endif %}>
+          {{ {'preliminary': 'Preliminary — implement & test', 'comprehensive': 'Comprehensive — benchmark'}[opt] }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+  </fieldset>
+  {% endif %}
+
   {# ── Rounds value (hidden — only surfaced inline at the button) ── #}
   {% if round_min == round_max %}
     <input type="hidden" name="rounds" value="{{ round_default }}">

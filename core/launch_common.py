@@ -121,6 +121,15 @@ THEORY_RUN_PLANS = frozenset({
     THEORY_PLAN_AUDIT_ONLY,
 })
 
+# Phase 04 run modes — preliminary (implement + test) vs comprehensive (benchmark).
+RUN_MODE_PRELIMINARY = "preliminary"
+RUN_MODE_COMPREHENSIVE = "comprehensive"
+
+RUN_MODES = frozenset({
+    RUN_MODE_PRELIMINARY,
+    RUN_MODE_COMPREHENSIVE,
+})
+
 
 class LaunchError(RuntimeError):
     """A run could not be prepared or launched safely."""

@@ -432,6 +432,32 @@ def validate_config(cfg: object, *, config_root: Optional[Path] = None) -> dict:
                     "listed in phase members"
                 )
 
+        run_modes = phase.get("run_modes")
+        if run_modes is not None:
+            if slug != "04-draft-assembly":
+                raise ConfigurationError(
+                    f"{field}.run_modes is only valid for Phase 04"
+                )
+            if (
+                not isinstance(run_modes, dict)
+                or set(run_modes) != {"plans", "default"}
+            ):
+                raise ConfigurationError(
+                    f"{field}.run_modes must contain exactly plans and default"
+                )
+            expected_mode_plans = ["preliminary", "comprehensive"]
+            plans_value = run_modes.get("plans")
+            if plans_value != expected_mode_plans:
+                raise ConfigurationError(
+                    f"{field}.run_modes.plans must contain preliminary and "
+                    "comprehensive in that order"
+                )
+            default_mode = run_modes.get("default")
+            if default_mode not in ("preliminary", "comprehensive"):
+                raise ConfigurationError(
+                    f"{field}.run_modes.default must be preliminary or comprehensive"
+                )
+
         protocol_checkpoint = phase.get("protocol_checkpoint", False)
         if not isinstance(protocol_checkpoint, bool):
             raise ConfigurationError(

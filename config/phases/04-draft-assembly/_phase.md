@@ -23,11 +23,30 @@ that the code matches the math and the results match the theory. The lead ensure
 scientific integrity.
 
 ## Study structure
-**Parallel pattern.** All three roles work independently in round 1.
+**Parallel pattern.** All three roles work independently in each round.
 
-- **Round 1**: Data analyst implements and runs initial experiments. Theorist
-  independently checks the implementation against the Phase 3 mathematical
-  definition. Lead pre-specifies the experiment protocol.
+Phase 04 has two run modes, selected at launch:
+
+### Preliminary run (1 round)
+**Goal: confirm the method works in code.** The data analyst implements the
+method from the Phase 3 mathematical definition and runs diagnostic sanity
+checks only. The theorist checks implementation correctness. The lead records
+whether the implementation is sound. **No benchmarking, no baselines, no
+publication figures** — that is the comprehensive run's job.
+
+- **Round 1**: Data analyst implements the method and runs diagnostic sanity
+  checks (known-answer tests, conservation invariants, reproducibility). Theorist
+  checks the implementation against the Phase 3 math. Lead records status.
+
+### Comprehensive run (2 rounds)
+**Goal: produce the comparison results for the paper draft.** Requires a prior
+*approved* preliminary run in the same method branch — the preliminary run's
+working implementation is the starting point, not a re-implementation.
+
+- **Round 1**: Data analyst benchmarks the implemented method against existing
+  baselines across the settings the paper will report. Theorist independently
+  checks the implementation against the Phase 3 mathematical definition. Lead
+  pre-specifies the experiment protocol.
 - **Round 2**: Data analyst runs the full benchmark study. Theorist audits
   whether the measured rates match the proved bounds. Lead synthesizes findings.
 
