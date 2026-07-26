@@ -118,6 +118,7 @@ proposed and to compare methods. Format:
 
     ---
     stable_id: spectral-graph-coupling
+    number: 1
     version: v1
     label: Spectral graph coupling
     status: recommended
@@ -153,6 +154,9 @@ Rules:
 - `status` is one of `recommended`, `viable`, `frontier`, `retired`. Exactly
   one file is `recommended`, and its `stable_id` and `version` must match the
   decision record's selected method.
+- `number` is a permanent integer assigned from the registry (see "Method
+  registry" below). Once assigned, it is never reused, even after retirement
+  or merge.
 - On reruns: add files for new ideas, update `version`/`status` in place for
   retained ideas, and never delete a file — mark it `status: retired` with the
   reason in the body instead.
@@ -209,6 +213,51 @@ identical, merge them:
 A merge is appropriate when two methods are the same mechanism described
 differently — not when they are merely related or composable. If the methods
 genuinely differ (even slightly), keep both.
+
+**Method registry — permanent numbering.** Every proposed method has a
+permanent integer number that survives retirement and merge. The registry is
+the single source of truth at `ideas/methods/_registry.yaml`. Protocol:
+
+1. **Read the registry first.** Before writing any method file this run, read
+   `ideas/methods/_registry.yaml` (create it if missing — see "initializing"
+   below). It lists every method ever proposed with its number, status, and
+   provenance.
+
+2. **Number assignment for a new method.** When a genuinely new method is
+   being added (not a revision of an existing stable_id), assign it the
+   current `next_number` from the registry, write that number into the method
+   file's frontmatter as `number:`, then increment `next_number` in the
+   registry. Add an entry to the registry's `entries` list:
+
+       - number: <n>
+         stable_id: <slug>
+         label: <human name>
+         status: viable        # or recommended/frontier
+         added_in_run: <this run id>
+
+3. **Never reuse a number.** A retired or merged method keeps its number
+   occupied. Do not renumber existing methods. Do not fill gaps. The
+   `next_number` only ever increases.
+
+4. **Update the registry on retire/merge.** When a method is retired (weak
+   criteria, no downstream) or merged (absorbed by another), update its entry
+   in the registry: set `status: retired`, and add `retired_in_run: <run id>`
+   (for a criteria retire) or `merged_into: <surviving stable_id>` (for a
+   merge). Keep its `number` unchanged.
+
+5. **Initializing the registry (first time only).** If
+   `ideas/methods/_registry.yaml` does not exist at the start of the run, the
+   lead creates it: number the existing method files in the order they appear
+   (oldest first — check `added_in_run` provenance if available, otherwise
+   alphabetical by `stable_id`), set `next_number` to one past the highest
+   assigned number, and write one entry per existing method file. After
+   initializing, only *new* methods this run take numbers from `next_number`.
+
+6. **Numbering is for the user-facing menu.** Display methods to the user as
+   "#1 Spectral graph coupling", "#5 Kernel-metric coupling", etc. The number
+   is a stable, human-friendly handle that does not change across reruns — a
+   user who remembers "method #4" always refers to the same method, even if
+   it was later retired or merged.
 
 Include:
 - a **Scientific record changes** section with proposed additions;
