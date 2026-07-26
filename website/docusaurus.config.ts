@@ -41,10 +41,11 @@ const config: Config = {
     ],
   ],
 
-  // IBM Plex Sans + Mono — matches the Research Hub app typography
+  // IBM Plex Sans + Mono + Serif — matches the Research Hub app typography
+  // (Serif used only for hero display headings — same superfamily, editorial lift)
   stylesheets: [
     {
-      href: 'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap',
+      href: 'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600&display=swap',
       rel: 'stylesheet',
     },
   ],
