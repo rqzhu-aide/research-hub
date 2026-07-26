@@ -333,13 +333,12 @@
     {% set audit_default = proof_audit.default | default('standard') %}
     {% set audit_source_options = pd.theory_audit_sources | default([]) %}
     {% set audit_source_run = (audit_source_options | first).run_id | default('') if audit_source_options else '' %}
-  <fieldset class="launch-fieldset-compact" data-theory-plan-control>
+  <fieldset class="launch-fieldset-compact">
     <div class="method-row">
       <span class="field-label">Proof plan:</span>
-      <select class="form-input-compact" name="theory_plan" data-theory-plan-display>
+      <select class="form-input-compact" name="theory_plan">
         {% for opt in audit_options %}
-        <option value="{{ opt }}" data-theory-standard-stage="{{ '' if opt == 'standard' }}"
-                data-theory-audit-stage="{{ '' if 'audit' in opt }}"
+        <option value="{{ opt }}"
                 {% if opt == audit_default %}selected{% endif %}>
           {{ {'standard': 'Standard', 'standard_with_audit': 'Standard + audit', 'audit_only': 'Audit only'}[opt] }}
         </option>

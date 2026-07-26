@@ -354,75 +354,6 @@
     document.querySelectorAll(".slug-preview").forEach((node) => { node.textContent = slug; });
   }
 
-  function updateTheoryPlan(input) {
-    const control = input.closest("[data-theory-plan-control]");
-    if (!control || !input.checked) return;
-    const plan = input.closest(".fixed-plan-choice");
-    const countLabel = plan?.querySelector("[data-stage-count]");
-    const baseStageCount = Number.parseInt(
-      countLabel?.dataset.baseStageCount || "3", 10
-    );
-    const count = input.value === "audit_only" ? 1
-      : input.value === "standard_with_audit" ? baseStageCount + 1 : baseStageCount;
-    if (countLabel) {
-      countLabel.textContent = input.value === "audit_only"
-        ? "1 fixed audit stage"
-        : input.value === "standard_with_audit"
-          ? `${count} fixed stages, including independent proof audit`
-          : `${count} fixed theory stages`;
-    }
-    const phaseRoot = input.closest("#project-tabs") || document;
-    const display = phaseRoot.querySelector("[data-theory-plan-display]");
-    if (display) {
-      const summary = display.querySelector("[data-theory-plan-summary]");
-      if (summary) {
-        summary.textContent = input.value === "audit_only"
-          ? "Independent audit of one sealed existing theory artifact, 1 stage"
-          : input.value === "standard_with_audit"
-            ? `Standard theory plus independent proof audit, ${count} stages`
-            : `Standard theory, ${count} stages`;
-      }
-      display.querySelectorAll("[data-theory-member]").forEach((member) => {
-        const isReviewer = member.dataset.theoryMember === "paper_reviewer";
-        member.hidden = input.value === "audit_only" ? !isReviewer
-          : input.value === "standard" ? isReviewer : false;
-      });
-      display.querySelectorAll("[data-theory-standard-stage]").forEach((stage) => {
-        stage.hidden = input.value === "audit_only";
-      });
-      const auditStage = display.querySelector("[data-theory-audit-stage]");
-      if (auditStage) auditStage.hidden = input.value === "standard";
-      const auditIndex = display.querySelector("[data-theory-audit-index]");
-      if (auditIndex) {
-        auditIndex.textContent = input.value === "audit_only"
-          ? "1" : String(baseStageCount + 1);
-      }
-    }
-    const sourceRow = control.querySelector("[data-theory-audit-source]");
-    const scopeRow = control.querySelector("[data-theory-audit-scope]");
-    const sourceSelect = sourceRow?.querySelector("select");
-    const needsSource = input.value === "audit_only";
-    if (sourceRow) sourceRow.hidden = !needsSource;
-    if (scopeRow) scopeRow.hidden = !needsSource;
-    if (sourceSelect) {
-      sourceSelect.disabled = !needsSource;
-      sourceSelect.required = needsSource;
-    }
-    const methodControl = input.closest("form")?.querySelector(
-      "[data-method-selection-control]"
-    );
-    if (methodControl) {
-      methodControl.querySelectorAll("input").forEach((field) => {
-        field.disabled = needsSource;
-      });
-      methodControl.setAttribute("aria-disabled", needsSource ? "true" : "false");
-    }
-  }
-
-  function initializeTheoryPlans(root = document) {
-    root.querySelectorAll("[data-theory-plan]:checked").forEach(updateTheoryPlan);
-  }
-
   async function loadProjectTabs(url, pushHistory) {
     const target = document.getElementById("project-tabs");
     if (!target) {
@@ -615,19 +546,6 @@
   }
 
   document.addEventListener("click", (event) => {
-    const historyToggle = event.target.closest("[data-history-toggle]");
-    if (historyToggle) {
-      const table = document.getElementById(historyToggle.dataset.historyTarget || "");
-      const olderRows = table?.querySelectorAll("[data-history-older-row]") || [];
-      const expand = historyToggle.getAttribute("aria-expanded") !== "true";
-      olderRows.forEach((row) => { row.hidden = !expand; });
-      historyToggle.setAttribute("aria-expanded", String(expand));
-      historyToggle.textContent = expand
-        ? historyToggle.dataset.expandedLabel
-        : historyToggle.dataset.collapsedLabel;
-      return;
-    }
-
     const open = event.target.closest("[data-sidebar-open]");
     if (open) { setSidebar(true); return; }
 
@@ -679,9 +597,6 @@
   document.addEventListener("change", (event) => {
     const form = event.target.closest("form[data-unsaved-guard]");
     if (form) updateDirtyForm(form);
-    if (event.target.matches("[data-theory-plan]")) {
-      updateTheoryPlan(event.target);
-    }
   });
 
   document.addEventListener("submit", (event) => {
@@ -785,35 +700,7 @@
   setSidebar(false);
   initializeGuardedForms();
   restoreDraftsAfterError();
-  initializeTheoryPlans();
   formatTimes();
-
-  // ── Sync Project brief panel height to "Current research choices" ledger ──
-  function syncBriefHeight() {
-    const goal = document.querySelector(".goal-panel");
-    const ledger = document.querySelector(".ledger-panel");
-    if (!goal || !ledger) return;
-    // Reset any prior override so we measure the ledger's natural height
-    goal.style.height = "";
-    if (window.innerWidth > 640) {
-      goal.style.height = ledger.offsetHeight + "px";
-    }
-  }
-  syncBriefHeight();
-  window.addEventListener("resize", syncBriefHeight);
-  document.body.addEventListener("htmx:afterSwap", syncBriefHeight);
-  window.addEventListener("load", syncBriefHeight);
-
-  // ── Position timeline dots by their global ordinal rank ──
-  // (Inline style="left: X%" gets eaten by CSSOM on HTMX-swapped content,
-  //  so we read data-left and apply it via JS instead.)
-  function positionTimelineDots() {
-    document.querySelectorAll(".tl-dot[data-left]").forEach((dot) => {
-      dot.style.left = dot.dataset.left + "%";
-    });
-  }
-  positionTimelineDots();
-  document.body.addEventListener("htmx:afterSwap", positionTimelineDots);
 
   // ── Live elapsed-time indicator for active runs ──
   // Shows "12m 34s" next to "Started ..." so a user watching a long

@@ -977,10 +977,6 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
     assert 'name="proof_audit_source_run_id"' in proof_html
     assert 'value="opaque-source-run-id"' in proof_html
     assert "proof_audit_source_path" not in proof_html
-    assert "data-theory-plan-control" in proof_html
-    assert "data-theory-plan-display" in proof_html
-    assert "data-theory-standard-stage" in proof_html
-    assert "data-theory-audit-stage" in proof_html
 
     proof_response = client.post(
         f"/project/{PROJECT_ID}/phase/03-idea-evaluation/start",
