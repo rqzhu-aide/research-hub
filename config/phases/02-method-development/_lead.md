@@ -182,6 +182,34 @@ When retiring, set `status: retired` in the method file's frontmatter and add
 a `## Retirement reason` section to the body stating which criteria it failed
 and when the retirement was decided (run ID). Do not delete the file.
 
+**Merge duplicate methods on reruns.** When this is a rerun, the lead must also
+check whether any methods in the menu are **substantially identical** — same
+core mechanism, same mathematical definition, same unique position — even if
+worded differently or proposed by different roles. When two methods are
+identical, merge them:
+
+1. **Choose the surviving method**: prefer the one with downstream phase records
+   (Phase 03/04/05). If neither has downstream records, prefer the one with the
+   more complete mathematical definition. If tied, keep the one with the lower
+   `stable_id` alphabetically (deterministic choice).
+2. **Merge the files**: copy any unique content (insights, cross-role
+   connections, infrastructure notes) from the absorbed file into the surviving
+   file's body. Add a `## Merged from` section listing the absorbed method's
+   `stable_id` and version, the run ID where the merge was decided, and a
+   one-sentence reason why they are identical.
+3. **Handle downstream records**: if the absorbed method has downstream records
+   (Phase 03/04/05 outputs that reference its `stable_id`), **do not delete or
+   move them** — they are sealed history. Instead, note in the surviving
+   method's `## Merged from` section which downstream runs referenced the
+   absorbed identity, so the provenance chain is traceable. Future downstream
+   runs will use only the surviving `stable_id`.
+4. **Retire the absorbed file**: set `status: retired` with reason `merged into
+   <surviving_stable_id>` in the frontmatter. Do not delete the file.
+
+A merge is appropriate when two methods are the same mechanism described
+differently — not when they are merely related or composable. If the methods
+genuinely differ (even slightly), keep both.
+
 Include:
 - a **Scientific record changes** section with proposed additions;
 - the **Proposed scientific baseline**, which becomes accepted only after user
