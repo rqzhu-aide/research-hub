@@ -85,7 +85,7 @@ stateDiagram-v2
 
 3. **One run per project at a time.** Separate projects run independently.
 
-4. **Reruns never replace approved results.** Starting a new run preserves the prior approved run for comparison.
+4. **Reruns never replace approved results.** Starting a new run preserves the prior approved run for comparison. When a run is awaiting review, you can replace it directly by checking the "replace awaiting review" checkbox in the launch form.
 
 5. **Approving an upstream replacement marks downstream phases stale.** Their history is preserved — you decide whether to rerun them.
 
@@ -117,6 +117,10 @@ This steers the agents without changing the research brief. It's the primary way
 ### Prerequisites are warnings, not locks
 
 Each phase declares recommended prerequisites. If an approved prerequisite is missing, the UI explains the gap and requires an **explicit override** to proceed. This lets you move forward when you judge it safe, while ensuring the gap is acknowledged.
+
+### Method-bound phases require an approved branch
+
+Phases 3–5 are **method-bound**: their output goes to `branches/<method>/`. The launch button is disabled until you approve a method in Phase 2 (New Method). The approved method branch locks in which method the downstream phases operate on. Change it by approving a different method in Phase 2.
 
 ---
 

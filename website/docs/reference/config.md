@@ -163,3 +163,4 @@ At startup, Research Hub validates:
 - Prerequisite graph has no cycles
 - Optional feature declarations are valid for their phase
 - Required playbook files exist
+- `run_plan` values in sealed manifests are recognized theory plans or run modes

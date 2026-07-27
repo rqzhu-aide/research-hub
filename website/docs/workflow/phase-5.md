@@ -132,6 +132,14 @@ The prior assembly is **comparison evidence**. Improve on it — incorporate new
 
 The prior review and revision are comparison evidence. Conduct an independent re-review and produce a fresh revision that addresses any remaining weaknesses.
 
+### Review-only rerun (review target)
+
+If a prior assembly run produced a manuscript you want re-reviewed without re-assembling, select it from the **Review target** dropdown at launch. The dropdown lists prior assembly runs that have a sealed `manuscript-post-review.md`. This launches a review-only pass — the reviewer audits the selected manuscript and the lead revises it. The review-target selector appears automatically when one or more eligible assembly runs exist.
+
+### Replacing a result awaiting review
+
+When the latest run is awaiting your decision, a **Replace the result currently awaiting my decision** checkbox appears in the launch form. Check it to start a fresh run that supersedes the unreviewed result directly — you don't need to approve or request revision first.
+
 Prior run directories always stay sealed — nothing is ever overwritten.
 
 ## What the project produces

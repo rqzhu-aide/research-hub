@@ -128,6 +128,8 @@ Every run has a sealed manifest at `.research-hub-control/<project>/runs/<phase>
 
 If any frozen input changes after launch, verification fails. This makes every run's exact inputs auditable and reproducible.
 
+The `run_number` field is sealed in the manifest and stored in the run record at creation time. It survives phase slug merges — when two phases are consolidated (e.g. legacy `05-data-analysis` + `06-paper-writing` → `05-review-revision`), each run retains its original number rather than drifting to a positional index in the merged list.
+
 ## Integrity guarantees
 
 1. **Frozen context** — at launch, all inputs are copied and hashed. The worker reads only frozen copies.
