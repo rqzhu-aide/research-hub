@@ -1,166 +1,182 @@
 ---
-sidebar_position: 8
+sidebar_position: 9
 title: "Configuration Reference"
 slug: /reference/config
 ---
 
 # Configuration Reference
 
-This page covers the full `config.yaml` schema for advanced configuration.
+Most users only need to choose a workspace and map the four research roles to Hermes profiles. The phase definitions are part of the shipped workflow and should be changed only when you are intentionally designing a different research process.
 
-## Hub settings
+## Settings most users change
 
 ```yaml
 hub:
-  name: "My Research Hub"           # display name
-  workspace_dir: "~/research"        # where projects are stored
-  run_timeout_minutes: 240           # max runtime per phase run
-  allow_unattended_tools: true       # required for background launches
+  name: "My Research Hub"
+  workspace_dir: "~/research"
+  run_timeout_minutes: 240
+  allow_unattended_tools: true
 ```
 
-| Field | Description | Default |
-|-------|-------------|---------|
-| `name` | Display name for your hub | — |
-| `workspace_dir` | Where project files are stored | `~/research` |
-| `run_timeout_minutes` | Maximum runtime before force-stop | `240` |
-| `allow_unattended_tools` | Lets background Hermes runs use tools without prompts | `true` |
+| Field | Meaning | Shipped value | If omitted |
+|---|---|---:|---:|
+| `name` | Name shown in the Web UI | `My Research Hub` | Required |
+| `workspace_dir` | Location of the project registry and project files | `~/research` | Required |
+| `run_timeout_minutes` | Maximum duration of one phase run | `240` | `120` |
+| `allow_unattended_tools` | Allows a user-started background run to use its configured tools without further prompts | `true` | `false` |
 
-## Agent mapping
+`allow_unattended_tools: true` does not start work automatically. Every run still requires an explicit user launch.
+
+## Map research roles to Hermes profiles
 
 ```yaml
 agents:
-- id: "research_lead"               # stable role identifier
-  profile: "research_lead"          # Hermes profile name
-  name: "Research Lead"             # display name
-  role: "domain, framing, writing"  # human-readable role description
+- id: "research_lead"
+  profile: "research_lead"
+  name: "Research Lead"
+  role: "scientific question, framing, synthesis"
 
 - id: "theorist"
   profile: "theorist"
   name: "Theorist"
-  role: "methods, mathematics, rigor"
+  role: "statistical theory, assumptions, proofs"
 
 - id: "data_scientist"
   profile: "data_scientist"
   name: "Data Analyst"
-  role: "computational, algorithms, implementation"
+  role: "implementation, numerical studies, data analysis"
 
 - id: "paper_reviewer"
-  profile: "paper_reviewer"         # must be independent from above
+  profile: "paper_reviewer"
   name: "Paper Reviewer"
-  role: "independent audit"
+  role: "context-separated scientific assessment"
 ```
 
-- **`id`** is the stable role identifier referenced by phase configs
-- **`profile`** is the Hermes profile name — doesn't need to match `id`
-- Model and provider settings stay in each Hermes profile's own configuration
+The fields have different purposes:
 
-## Phase configuration
+- `id` is the stable internal role identifier used by the phase definitions.
+- `profile` is the Hermes profile assigned to that role.
+- `name` and `role` are user-facing descriptions.
 
-### Parallel phase
+The profile name does not have to match the role identifier. The paper reviewer must use a profile that is not assigned to any author-side role.
 
-```yaml
-- slug: "02-method-development"
-  name: "Method Development"
-  short_name: "New Method"
-  description: "Brainstorm genuinely new ideas"
-  pattern: parallel
-  gated_by: ["01-literature-review"]
-  folder: "ideas/"
-  members: [theorist, research_lead, data_scientist]
-  rounds: {min: 2, default: 2, max: 3}
-```
+Model, provider, tools, profile memory, and general profile skills remain in
+Hermes. See [Set Up Hermes Profiles](../profile-setup) for the operational
+procedure and [Agent Instructions, Memory, and Skills](../team-resources) for
+the boundary between profile state and frozen Research Hub instructions.
 
-### Debate phase (Phase 3)
+## The shipped phases
 
-```yaml
-- slug: "03-idea-evaluation"
-  name: "Theoretical Development"
-  pattern: debate
-  gated_by: ["02-method-development"]
-  folder: "evaluations/"
-  members: [theorist, research_lead, data_scientist]
-  rounds: {min: 2, default: 2, max: 3}
-  method_binding: true
-```
+| Phase | Interaction pattern | Participants | User-selectable plan |
+|---|---|---|---|
+| Literature Review | Parallel investigation and synthesis | Lead, theorist, data analyst | Round count |
+| Method Development | Parallel proposal and synthesis | Lead, theorist, data analyst | Round count |
+| Theoretical Development | Ordered theory, computational audit, and synthesis | Theorist, data analyst, research lead | Fixed three-stage run |
+| Implementation & Experiments | Ordered empirical work, theoretical audit, and synthesis | Data analyst, theorist, research lead | Preliminary or comprehensive scope |
+| Paper Assembly & Review | Ordered handoffs | Lead and paper reviewer | Assembly or review-revision |
 
-### Parallel phase with run modes (Phase 4)
-
-```yaml
-- slug: "04-draft-assembly"
-  name: "Implementation & Experiments"
-  description: "Implement the method in code, run pre-specified experiments with
-    diagnostics, and validate theoretical predictions against measured results"
-  pattern: parallel
-  method_binding: true
-  run_modes:
-    plans: ["preliminary", "comprehensive"]
-    default: "preliminary"
-  gated_by: ["03-idea-evaluation"]
-  folder: "draft/sections/"
-  members: [research_lead, theorist, data_scientist]
-  rounds: {min: 1, default: 2, max: 2}
-```
-
-### Sequential phase with run modes (Phase 5)
-
-```yaml
-- slug: "05-review-revision"
-  name: "Paper Assembly & Review"
-  description: "Assemble the paper from theory and experiments, then independent
-    paper review and revision into final manuscript"
-  pattern: sequential
-  method_binding: true
-  run_modes:
-    plans: ["assembly", "review_revision"]
-    default: "assembly"
-  gated_by: ["04-draft-assembly"]
-  folder: "draft/revised/"
-  members: [paper_reviewer, research_lead]
-  stages:
-  - name: Assemble
-    role: research_lead
-    description: "Combine theory, experiments, and literature into a coherent
-      manuscript with unified notation and consistent claims."
-```
+The corresponding phase entries in `config.yaml` define the allowed interaction structure. Free-text instructions can change the scientific focus of a run, but they do not add, skip, reorder, or automatically start phases.
 
 ## Phase fields
 
-| Field | Description |
-|-------|-------------|
-| `slug` | Unique phase identifier (used in URLs, paths) |
+| Field | Meaning |
+|---|---|
+| `slug` | Stable phase identifier used in URLs and records |
+| `name` | Full user-facing phase name |
+| `short_name` | Short label shown in the project tabs |
+| `description` | One-sentence purpose shown before launch |
 | `pattern` | `parallel`, `debate`, or `sequential` |
-| `gated_by` | Recommended approved prerequisites |
-| `folder` | Output directory within the project workspace |
-| `members` | Participating role IDs |
-| `rounds` | User-selectable round count: `{min, default, max}` |
-| `stages` | For sequential phases: ordered list of `{role, name, description}` |
-| `run_modes` | User-selectable run variants: `{plans: [...], default: ...}` (Phases 4 & 5) |
-| `short_name` | Short tab/sidebar label (e.g. `"Lit Review"`, `"New Method"`) |
+| `gated_by` | Recommended upstream context checked before launch |
+| `context_from` | Additional available same-branch context included when relevant |
+| `folder` | Workspace location for the phase artifacts |
+| `members` | Roles that may participate |
+| `rounds` | Minimum, default, and maximum depth for parallel or debate work |
+| `stages` | Fixed ordered handoffs for a sequential phase |
+| `method_binding` | Keeps the run tied to one method branch |
+| `run_modes` | Supported plans and the default plan for Phases 4 and 5 |
 
-## Optional feature declarations
+Do not rename a phase slug in an active project. Slugs are part of run records, paths, manifests, and migration logic.
+
+## Interaction patterns
+
+### Parallel
+
+Participants begin from the same frozen context and develop complementary analyses. Later rounds allow comparison and synthesis.
+
+### Debate
+
+Participants first develop their positions independently. Later rounds directly examine assumptions, derivations, counterexamples, and unresolved disagreements.
+
+### Sequential
+
+Stages run in a fixed order. Each stage receives the preserved output of the preceding stage.
+
+## Run modes
+
+Phase 4 supports:
+
+- `preliminary`, for implementation, focused diagnostics, and limited experiments;
+- `comprehensive`, for full benchmarking, uncertainty, robustness, and
+  sensitivity analysis.
+
+These are alternative scopes. Either can be launched directly after Phase 2 for
+a selected active method. Both use the same three-stage sequence: data analyst,
+theorist, then research lead.
+
+Phase 5 supports:
+
+- `assembly`, for combining intact, compatible evidence into a coherent manuscript;
+- `review_revision`, for context-separated review followed by research-lead revision.
+
+The configured Phase 5 `stages` block describes the base assembly plan. Research Hub constructs the review-revision stages when that mode is selected.
+
+See [Current Limitations](../known-limitations) for the restriction affecting
+repeated Phase 5 Review & Revision runs in the current implementation.
+
+## Four kinds of prerequisite
+
+The interface uses four distinct forms of dependency:
+
+1. **Recommended upstream context.** A `gated_by` entry can produce a warning
+   when recommended evidence is missing or has changed. The user can proceed through
+   an explicit recorded override when that dependency is advisory.
+2. **Required method selection.** Phases 3 to 5 must be bound to an active
+   Phase 2 method before they can run.
+3. **Required complete upstream record for Phase 5.** Phase 5 requires an intact
+   completed result from each of Phases 1 through 4. The Phase 3 and Phase 4
+   results must both match the selected method's stable ID, version, and
+   definition digest.
+4. **Legacy Phase 5 mode gate.** Phase 5 review-revision currently requires an
+   Assembly run with legacy `approved` status. The current phase panel does not
+   create this status. See [Current Limitations](../known-limitations).
+
+Phase 4 preliminary and comprehensive have no dependency on one another. A
+required method selection, Phase 5 integrity check, or exact method match cannot
+be replaced by a prerequisite override.
+
+## Optional phase features
 
 | Feature | Declaration | Effect |
-|---------|-------------|--------|
-| **Protocol checkpoint** | `protocol_checkpoint: true` | Seals a protocol document before result-stage work |
-| **Method binding** | `method_binding: true` | Freezes method identity per run; routes output to branches |
-| **Run modes** | `run_modes:` on Phase 04 or 05 | Two user-selectable modes per phase; the second mode is gated by an approved run of the first |
+|---|---|---|
+| Protocol checkpoint | `protocol_checkpoint: true` | Preserves a protocol artifact before result-stage work |
+| Method binding | `method_binding: true` | Freezes method identity and routes output to its branch |
+| Run modes | `run_modes:` | Offers explicitly supported run plans in the launch form |
 
-## Prerequisite graph
+The shipped configuration enables method binding and run modes. Phase 4 also
+enables the protocol checkpoint, which seals the analyst's protocol before the
+main result work proceeds.
 
-- **`gated_by`** — recommended approved prerequisites. Missing prerequisites trigger a warning requiring explicit override.
-- **`context_from`** — additional approved summaries that are useful but not required.
-- The current phase's prior approved result is automatically included on reruns.
+## When validation occurs
 
-## Configuration validation
+When the configuration is loaded, Research Hub checks:
 
-At startup, Research Hub validates:
-- Role and profile identifiers exist and match Hermes profiles
-- `research_lead` is present
-- `paper_reviewer` uses an independent profile
-- Output folders are project-relative and safe
-- Round bounds are consistent
-- Sequential stage owners are valid
-- Prerequisite graph has no cycles
-- Optional feature declarations are valid for their phase
-- Required playbook files exist
-- `run_plan` values in sealed manifests are recognized theory plans or run modes
+- required role identifiers and safe profile-name syntax;
+- presence of the research lead;
+- separation of the reviewer profile from author-side profiles;
+- safe project-relative output folders;
+- valid round bounds and sequential stages;
+- an acyclic prerequisite graph;
+- supported optional features; and
+- required phase playbooks.
+
+The existence and readiness of the mapped Hermes profiles are checked again before a run launches. This separates configuration syntax from runtime availability.

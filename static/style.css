@@ -487,6 +487,19 @@ summary::-webkit-details-marker { display: none; }
 .method-count-badge { padding: 2px 8px; border-radius: var(--radius-sm); background: var(--surface-raised); color: var(--text-soft); font-size: .72rem; font-weight: 500; border: 1px solid var(--line-strong); }
 .run-switcher { display: flex; align-items: center; gap: 6px; }
 .run-switcher-label { font-size: .75rem; color: var(--muted); }
+.run-history { position: relative; color: var(--muted); font-size: .75rem; }
+.run-history > summary { cursor: pointer; color: var(--text-soft); font-weight: 600; }
+.run-history-list {
+  position: absolute; right: 0; z-index: 5; min-width: 250px; max-width: min(320px, calc(100vw - 48px));
+  margin: 6px 0 0; padding: 8px; list-style: none;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface-raised); box-shadow: var(--shadow);
+}
+.run-history-list li {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 6px 8px;
+}
+.run-history-list a { color: var(--accent-bright); }
 .run-selector-dropdown {
   min-width: 260px; padding: 4px 8px; font-size: .8rem;
   border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
@@ -554,11 +567,70 @@ summary::-webkit-details-marker { display: none; }
 .phase-light { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
 .phase- { background: var(--line-strong); opacity: .3; }
 .btn-xs { min-height: 26px; padding: 2px 8px; font-size: .72rem; border-radius: 4px; border: 1px solid var(--line-strong); }
-.btn-select-method { background: var(--accent); color: var(--surface); border-color: var(--accent); font-weight: 600; }
-.btn-select-method:hover { background: var(--accent-bright); border-color: var(--accent-bright); }
 .btn-retire-method { background: transparent; color: var(--danger); border-color: var(--danger); border-width: 1px; font-weight: 600; }
 .btn-retire-method:hover { background: var(--danger); color: var(--surface); }
 .retire-form-inline { display: inline; }
+
+.method-catalog-panel {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+.method-catalog-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.method-catalog-heading h3 { margin: 0 0 4px; font-size: 1rem; color: var(--text); }
+.method-catalog-heading p { margin: 0; max-width: 760px; color: var(--muted); font-size: .8rem; line-height: 1.5; }
+.method-catalog-table { min-width: 560px; }
+.method-catalog-table .method-number-col { width: 44px; text-align: center; }
+.method-name { display: block; color: var(--text); font-weight: 650; }
+.method-stable-id { display: block; margin-top: 2px; color: var(--muted); font-size: .68rem; }
+.method-row-retired { opacity: .68; background: var(--surface); }
+.method-row-invalid { background: var(--danger-soft); }
+.method-status-invalid { background: var(--danger-soft); color: var(--danger); }
+.method-entry-error { display: block; margin-top: 4px; color: var(--danger); font-size: .68rem; line-height: 1.4; }
+.method-action-state { color: var(--muted); font-size: .7rem; }
+.method-empty-row td { padding: 22px 12px; text-align: center; color: var(--muted); font-style: italic; }
+.method-catalog-definitions { border-top: 1px solid var(--line); padding-top: 10px; }
+.method-catalog-definitions > summary { cursor: pointer; color: var(--text-soft); font-size: .8rem; font-weight: 600; }
+.method-definition-list { display: grid; gap: 10px; margin-top: 12px; }
+.method-choice-panel { border-color: var(--accent); background: var(--accent-soft); }
+.method-choice-panel legend { padding: 0 6px; color: var(--text); font-size: .9rem; font-weight: 700; }
+.method-choice-panel .method-row { align-items: center; }
+.method-choice-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.method-choice-heading strong { display: block; color: var(--text); font-size: .86rem; }
+.method-choice-heading p { margin: 3px 0 0; color: var(--muted); font-size: .75rem; line-height: 1.45; }
+.phase3-method-layout { display: grid; grid-template-columns: minmax(220px, .75fr) minmax(0, 1.25fr); gap: 12px; align-items: start; }
+.phase3-method-list { display: grid; gap: 7px; }
+.phase3-method-option { display: flex; gap: 9px; align-items: flex-start; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.phase3-method-option:hover { border-color: var(--accent); }
+.phase3-method-option input { margin: 3px 0 0; flex: 0 0 auto; }
+.phase3-method-option-selected { border-color: var(--accent); background: var(--surface-raised); box-shadow: inset 3px 0 0 var(--accent); }
+.phase3-method-option-unavailable { cursor: default; opacity: .65; }
+.phase3-method-option-unavailable:hover { border-color: var(--line); }
+.method-option-marker { width: 13px; height: 13px; margin-top: 3px; border: 1px solid var(--line-strong); border-radius: 50%; flex: 0 0 auto; }
+.method-option-copy { display: grid; gap: 4px; min-width: 0; }
+.method-option-title { color: var(--text); font-size: .82rem; font-weight: 650; }
+.method-option-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--muted); font-size: .68rem; }
+.method-option-meta code { overflow-wrap: anywhere; }
+.phase3-method-detail { min-height: 170px; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.phase3-method-detail .method-view-panel { max-height: 430px; }
+.method-detail-placeholder, .method-catalog-empty { margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.55; }
+.method-selection-inactive .phase3-method-list { opacity: .55; }
+.method-run-badge, .run-history-method { color: var(--muted); font-family: "IBM Plex Mono", monospace; font-size: .68rem; }
+.field-help { margin: 6px 0 0; color: var(--muted); font-size: .72rem; }
+@media (max-width: 760px) {
+  .phase3-method-layout { grid-template-columns: 1fr; }
+  .method-choice-heading { display: grid; }
+}
+.btn-retire-method:disabled { opacity: .45; cursor: not-allowed; }
 
 /* ── Method browser (Phase 02) ── */
 .method-viewer-section {
@@ -607,6 +679,8 @@ summary::-webkit-details-marker { display: none; }
   padding: 16px 20px;
   display: grid; gap: 12px;
 }
+.launch-panel-heading h3 { margin: 0; font-size: 1rem; color: var(--text); }
+.launch-panel-heading p { margin: 4px 0 0; color: var(--muted); font-size: .8rem; line-height: 1.5; }
 
 /* ── Active method branch panel (Phases 3-5) ── */
 .branch-info-panel {
@@ -706,9 +780,6 @@ summary::-webkit-details-marker { display: none; }
   background: var(--surface); color: var(--text);
 }
 .form-input-compact:focus { border-color: var(--accent); outline: 0; }
-
-/* ── Branch roster compact ── */
-.retire-form-inline { display: inline; }
 
 /* ── Rounds inline ── */
 .rounds-inline { display: flex; gap: 5px; }

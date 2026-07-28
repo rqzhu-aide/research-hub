@@ -17,7 +17,7 @@
         <button type="submit" class="btn btn-sm">Save</button>
         <span id="spin-{{ a.id }}" class="htmx-indicator profile-spin" role="status">Saving</span>
       </form>
-      {% if a.id == 'paper_reviewer' %}<p class="profile-rule-note">The outside reviewer must use a profile not assigned to a contributing role.</p>{% endif %}
+      {% if a.id == 'paper_reviewer' %}<p class="profile-rule-note">The Paper Reviewer must use a profile not assigned to an authoring role.</p>{% endif %}
     </dd>
     <dt>Role</dt><dd>{{ a.role }}</dd>
 

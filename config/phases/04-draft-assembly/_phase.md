@@ -1,151 +1,171 @@
-# Phase: Implementation & Experiments
+# Phase: Implementation and Experiments
 
 ## Goal
-**Implement the method in code, run experiments, and produce empirical results**
-that validate or challenge the theoretical predictions from Phase 3. The data
-analyst builds the implementation and runs the experiments. The theorist audits
-the numerical results against the proved rate bounds. The lead synthesizes.
 
-This phase produces **concrete code and data**: working implementations,
-diagnostic check results, experiment outputs with measured numbers. A report
-that *describes* what experiments would show is **not** a deliverable.
+Implement one method explicitly chosen by the user from the published Phase 2
+catalog and determine how it behaves empirically. Phase 2 is the prerequisite.
+Phase 3 is a sibling phase, not a prerequisite: the user may run Phase 4
+directly after Phase 2, before or after any Phase 3 run for the same method.
 
-## Role division — who does the heavy lifting
+The data analyst does the primary empirical work. The theorist then audits the
+implementation and interprets the results relative to the mathematical
+definition and any available same-branch theory. The research lead finally
+reconciles both reports into an honest empirical conclusion.
 
-| Role | Primary responsibility | Audit responsibility |
-|------|----------------------|---------------------|
-| **Data Analyst** | **Implement** the method in code, **run** experiments, **produce** tables and figures with real data | Audit the theorist's predictions: do the numbers match? |
-| **Theorist** | **Audit** the experimental results against the proved rate bounds | Check implementation correctness against the mathematical definition |
-| **Research Lead** | **Synthesize** the empirical findings, assess what was validated and what wasn't | Ensure experiments are pre-specified and honestly reported |
+This phase must produce runnable code, recorded diagnostics, measured results,
+and a reproducibility record. A description of experiments that were not run is
+not an empirical result.
 
-The data analyst does the implementation and experiments. The theorist cross-checks
-that the code matches the math and the results match the theory. The lead ensures
-scientific integrity.
+## Role division and order
 
-## Study structure
-**Parallel pattern.** All three roles work independently in each round.
+| Stage | Role | Primary responsibility |
+|------|------|------------------------|
+| 1 | **Data Analyst** | Prespecify the study, implement the method, run the selected scope, and report measured results |
+| 2 | **Theorist** | Audit correspondence between definition, code, assumptions, and results |
+| 3 | **Research Lead** | Reconcile the empirical and mathematical assessments and summarize unresolved issues |
 
-Phase 04 has two run modes, selected at launch:
+The stages are sequential. The theorist reads the analyst's current-stage
+report, code references, and results. The research lead reads both current-stage
+reports. Every role also reads the frozen prior Phase 3 and Phase 4 summaries
+and discussion reports from the same method branch that are named in the run
+prompt.
 
-### Preliminary run (1 round)
-**Goal: confirm the method works in code.** The data analyst implements the
-method from the Phase 3 mathematical definition and runs diagnostic sanity
-checks only. The theorist checks implementation correctness. The lead records
-whether the implementation is sound. **No benchmarking, no baselines, no
-publication figures** — that is the comprehensive run's job.
+## Run scope
 
-- **Round 1**: Data analyst implements the method and runs diagnostic sanity
-  checks (known-answer tests, conservation invariants, reproducibility). Theorist
-  checks the implementation against the Phase 3 math. Lead records status.
+The two run modes change the scope of the empirical study only. They use the
+same method-selection rule, the same three roles, and the same stage order.
+Either mode may be launched directly after Phase 2. A comprehensive run does
+not require a preliminary run.
 
-### Comprehensive run (2 rounds)
-**Goal: produce the comparison results for the paper draft.** Requires a prior
-*approved* preliminary run in the same method branch — the preliminary run's
-working implementation is the starting point, not a re-implementation.
+### Preliminary study
 
-- **Round 1**: Data analyst benchmarks the implemented method against existing
-  baselines across the settings the paper will report. Theorist independently
-  checks the implementation against the Phase 3 mathematical definition. Lead
-  pre-specifies the experiment protocol.
-- **Round 2**: Data analyst runs the full benchmark study. Theorist audits
-  whether the measured rates match the proved bounds. Lead synthesizes findings.
+A preliminary study establishes whether the method can be implemented and
+whether its basic numerical behavior is scientifically credible. It should
+include:
 
-## Required deliverables
+- a runnable implementation or a clearly isolated implementation extension;
+- known-answer, invariant, unit, and reproducibility checks appropriate to the
+  method;
+- a small, focused empirical study in the most informative settings;
+- measured values and uncertainty where replication is meaningful;
+- a clear account of failures and constraints.
 
-### Data analyst MUST produce:
+A preliminary study need not conduct a full benchmark suite, broad sensitivity
+analysis, or publication-scale experiment.
 
-1. **Working implementation** — actual Python code that implements the method.
-   Not pseudocode, not a description. Code that can be run to produce results.
-2. **Diagnostic checks** — sanity checks with real measured values:
-   - Known-answer tests (e.g., does the invariant measure match for a Gaussian?)
-   - Conservation invariants
-   - Reproducibility checks (same seed → same result)
-   - Results recorded in a JSON file with actual numbers, not stubs
-3. **Benchmark experiments** — actual experimental results:
-   - Convergence curves (measured, not theoretical)
-   - ESS/s comparison against baselines
-   - Rate estimation (does the measured spectral gap match the proved bound?)
-   - Tables and figures with real data
-4. **Reproducibility record** — seeds, code paths, commands, hardware.
+### Comprehensive study
 
-### Theorist MUST produce:
+A comprehensive study develops the full empirical evidence needed for a paper.
+It should include:
 
-1. **Implementation audit** — does the code correctly implement the mathematical
-   definition from Phase 3? Identify any discrepancies.
-2. **Rate validation** — do the measured convergence rates match the proved
-   bounds from Phase 3? If the theory predicts λ ≥ f(params), does the measured
-   λ satisfy this?
-3. **Discrepancy analysis** — if theory and experiment disagree, identify why:
-   finite-N effects? step-size effects? implementation bug?
+- a verified implementation, built directly from the Phase 2 definition or from
+  an available same-branch implementation;
+- strong and relevant baselines;
+- prespecified primary and secondary outcomes;
+- multiple scientifically relevant settings and stress tests;
+- scaling and sensitivity analysis;
+- uncertainty estimates and robustness checks;
+- tables, figures, and a complete reproducibility record.
 
-### Lead MUST produce:
+When a prior preliminary or comprehensive implementation is available, audit it
+and build on it. Do not require such a prior run and do not repeat it without a
+scientific reason.
 
-1. **Experiment protocol** — what experiments will test, specified before the
-   results are known.
-2. **Synthesis** — what was validated, what was challenged, what remains open.
-3. **Recommendation** — is the method empirically supported?
+## Prespecification
 
-## Scientific integrity requirements
+The data analyst owns the study protocol because the analyst works first. Before
+examining the main results, record:
 
-1. **Pre-specify before running**: the lead states what experiments will test
-   and what results would support or contradict the claims, BEFORE the analyst
-   runs them.
-2. **Diagnostic checks first**: simple known-answer cases before complex
-   benchmarks.
-3. **Quantify uncertainty**: MCSE, confidence intervals, number of replications
-   for every empirical claim.
-4. **Report negative results honestly**: if the method underperforms, say so
-   with specific numbers.
-5. **Record reproducibility info**: seeds, versions, commands.
+1. scientific questions and hypotheses;
+2. primary and secondary outcomes;
+3. datasets, targets, or simulation settings;
+4. baselines and tuning rules;
+5. sample sizes, replications, random seeds, and stopping rules;
+6. uncertainty measures and planned comparisons;
+7. results that would support, weaken, or contradict each claim.
 
-## Prior information
-Requires a current Phase 03 summary approved by the user (contains the proved
-theorems and rate bounds). Phases 01 (literature) and 02 (methods) are also
-provided.
+Complete the protocol checkpoint before executing the result-producing part of
+the study. Record every later deviation and its reason. Exploratory analyses
+are allowed when labeled as exploratory.
 
-**On rerun:** the prior Phase 04 run is provided as **comparison evidence** —
-"here is the implementation, the experiments, and what was measured before." The
-new run must **improve on it**, not merely repeat it:
+## Required empirical work
 
-- **Fix bugs**: if the prior implementation had errors identified in the audit,
-  correct them and rerun the affected experiments.
-- **Extend experiments**: if the prior run tested only some targets or parameter
-  settings, test additional ones.
-- **Strengthen results**: if the prior measured rates were close to the bound,
-  run more replications to tighten the estimate. If the prior ESS/s improvement
-  was marginal, test at larger N or different graph structures.
-- **Close gaps**: if the prior run left diagnostics incomplete or experiments
-  untested, complete them.
-- **Improve code**: if the prior implementation was inefficient or unstable,
-  optimize it and rerun.
+The data analyst must provide, at the scope appropriate to the selected mode:
 
-The prior run's code and results are starting material, not a constraint. The
-new run should read them carefully and build on them. Re-running the same
-experiments from scratch without improvement is not useful.
+1. **Runnable implementation.** Record code paths and exact execution commands.
+2. **Diagnostic evidence.** Report actual values, expected behavior, tolerances,
+   and pass or fail conclusions.
+3. **Empirical results.** Report measurements, uncertainty, and comparison with
+   relevant baselines when the scope includes them.
+4. **Failure analysis.** Record convergence failures, numerical instability,
+   infeasible settings, and negative results.
+5. **Reproducibility.** Record data provenance, preprocessing, random seeds,
+   software versions, hardware when relevant, and commands.
+
+The theorist must then assess:
+
+1. whether the code implements the frozen Phase 2 mathematical definition;
+2. whether the experimental settings satisfy the assumptions of any available
+   same-branch Phase 3 results;
+3. whether measured behavior is consistent with, outside the scope of, or in
+   tension with those theoretical results;
+4. whether a discrepancy is most plausibly due to theory, approximation,
+   implementation, finite-sample behavior, or study design.
+
+If no Phase 3 result exists, the theorist audits structural consistency with the
+Phase 2 definition and labels unproved mathematical explanations as conjectures.
+
+## Prior information and reruns
+
+The run freezes the method's stable ID, version, canonical definition, and
+content digest. Work only on that object. Another active method requires a
+separate launch, and the Phase 2 catalog is read-only here.
+
+Read all frozen prior same-branch Phase 3 and Phase 4 summaries and discussion
+reports enumerated in the run prompt. A prior Phase 3 result can supply proved
+predictions and assumptions. A prior Phase 4 result can supply code, empirical
+findings, failures, and open design questions. Preserve disagreements and source
+status rather than blending incompatible conclusions.
+
+On a rerun, improve the scientific evidence by correcting a bug, completing a
+diagnostic, extending the study, strengthening uncertainty quantification,
+adding a missing baseline, testing a failure regime, or addressing a theory and
+experiment discrepancy. Prior run files are sealed records and must not be
+edited.
 
 ## Files and outputs
-Write all outputs under `branches/<stable_id>/draft/sections/run/NN/`:
 
-- `round-01/<role>.md`, `round-02/<role>.md`, ...: per-round reports
-- The data analyst's code files live alongside the report
+Write all outputs under the exact run output root, normally
+`branches/<stable_id>/draft/sections/run/NN/`:
+
+- `round-01/<role>.md`, `round-02/<role>.md`, and `round-03/<role>.md` contain
+  the ordered stage reports.
+- Code, data summaries, figures, and reproducibility files live under the same
+  run root at the exact paths recorded in the reports.
 - Write the HTML summary to the exact path provided for this run.
 
-**This phase continues a method branch.** The exact method identity (stable ID +
-version) is frozen into this run. Read the branch's Phase 03 results under
-`branches/<stable_id>/evaluations/` and build on that specific method's theory.
-Different methods accumulate in separate branch folders.
+Each report begins with Complete, Partial, or Failed as defined in the team
+norms.
 
 ## What the user decides
-The user starts every run. After the experiments, the lead presents the findings
-and a recommendation. The user decides:
 
-- to proceed to Phase 05 (Paper Assembly & Review);
-- to request a revision (e.g., run additional experiments);
-- to return to Phase 03 (if the experiments revealed a theory gap);
-- or to rerun with different experimental settings.
+The user starts every run and decides what happens after the lead presents the
+findings. The user may:
+
+- rerun Phase 4 with preliminary or comprehensive scope;
+- run or rerun Phase 3 for the same method to address a mathematical question;
+- launch Phase 3 or Phase 4 for another active method;
+- rerun Phase 2 when the canonical method definition must change;
+- proceed to Phase 5 only after both Phase 3 and Phase 4 have completed for the
+  same method identity;
+- defer further work.
+
+Phase 4 does not launch another phase and does not choose the user's next action.
 
 ## Files in this folder
-- `_lead.md`: instructions for the research lead.
-- `data_scientist.md`: implementation and experiment instructions.
+
+- `_lead.md`: coordination and final synthesis instructions.
+- `data_scientist.md`: prespecification, implementation, and experiment
+  instructions.
 - `theorist.md`: implementation and result audit instructions.
-- `research_lead.md`: protocol and synthesis instructions.
+- `research_lead.md`: evidence reconciliation and recommendation instructions.

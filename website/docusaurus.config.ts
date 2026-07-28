@@ -1,24 +1,33 @@
 import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 
 const config: Config = {
   title: 'Research Hub',
-  tagline: 'Structured, multi-agent research workflows with Hermes',
+  tagline: 'User-directed research workflows with Hermes',
   favicon: 'img/favicon.ico',
 
   future: {
     v4: true,
   },
 
-  // GitHub Pages deployment
   url: 'https://rqzhu-aide.github.io',
   baseUrl: '/research-hub/',
   organizationName: 'rqzhu-aide',
   projectName: 'research-hub',
 
   onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'warn',
+  onDuplicateRoutes: 'throw',
+
+  markdown: {
+    mermaid: true,
+    hooks: {
+      onBrokenMarkdownLinks: 'throw',
+      onBrokenMarkdownImages: 'throw',
+    },
+  },
 
   i18n: {
     defaultLocale: 'en',
@@ -31,7 +40,9 @@ const config: Config = {
       {
         docs: {
           sidebarPath: './sidebars.ts',
-          editUrl: 'https://github.com/rqzhu-aide/research-hub/tree/main/website/',
+          editUrl: 'https://github.com/rqzhu-aide/research-hub/edit/main/website/',
+          remarkPlugins: [remarkMath],
+          rehypePlugins: [rehypeKatex],
         },
         blog: false,
         theme: {
@@ -41,8 +52,8 @@ const config: Config = {
     ],
   ],
 
-  // IBM Plex Sans + Mono + Serif — matches the Research Hub app typography
-  // (Serif used only for hero display headings — same superfamily, editorial lift)
+  themes: ['@docusaurus/theme-mermaid'],
+
   stylesheets: [
     {
       href: 'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600&display=swap',
@@ -54,6 +65,12 @@ const config: Config = {
     colorMode: {
       respectPrefersColorScheme: true,
     },
+    mermaid: {
+      theme: {
+        light: 'neutral',
+        dark: 'dark',
+      },
+    },
     navbar: {
       title: 'Research Hub',
       items: [
@@ -62,6 +79,11 @@ const config: Config = {
           sidebarId: 'docsSidebar',
           position: 'left',
           label: 'Docs',
+        },
+        {
+          to: '/docs/setup',
+          label: 'Setup',
+          position: 'left',
         },
         {
           href: 'https://github.com/rqzhu-aide/research-hub',
@@ -74,24 +96,41 @@ const config: Config = {
       style: 'dark',
       links: [
         {
-          title: 'Documentation',
+          title: 'Start',
           items: [
             {
-              label: 'Setup Guide',
+              label: 'Setup',
               to: '/docs/setup',
             },
             {
-              label: 'Creating a Project',
-              to: '/docs/project-setup',
+              label: 'Operating System Support',
+              to: '/docs/operating-systems',
             },
             {
-              label: 'Pipeline Overview',
-              to: '/docs/workflow/pipeline',
+              label: 'Create a Project',
+              to: '/docs/project-setup',
             },
           ],
         },
         {
-          title: 'More',
+          title: 'Use Research Hub',
+          items: [
+            {
+              label: 'Workflow Overview',
+              to: '/docs/workflow/pipeline',
+            },
+            {
+              label: 'Review Results and Choose',
+              to: '/docs/workflow/decisions',
+            },
+            {
+              label: 'Current Limitations',
+              to: '/docs/known-limitations',
+            },
+          ],
+        },
+        {
+          title: 'Project',
           items: [
             {
               label: 'GitHub',
@@ -100,7 +139,7 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Research Hub. Built with Docusaurus.`,
+      copyright: `Copyright © ${new Date().getFullYear()} Research Hub.`,
     },
     prism: {
       theme: prismThemes.github,

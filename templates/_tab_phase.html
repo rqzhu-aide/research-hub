@@ -26,14 +26,22 @@
   {% set round_max = rounds_policy.max | default(10) %}
   {% set method_bound_phase = pc.method_binding | default(false) or (pc.slug in ['03-idea-evaluation', '04-draft-assembly'] and pc.pattern == 'sequential') %}
   {% set approved_method = pd.approved_method_selection | default(none) %}
+  {% set catalog_method_selection = pd.catalog_method_selection | default(false) %}
   {% set unattended_tools = run_permissions.unattended_tools | default(true) %}
   {% set phase_status = pd.decision_state | default(state.status | default('pending')) %}
   {% set recovery_only = pd.recovery_only | default(pc.recovery_only | default(false)) %}
   {% set stale_reason = pd.stale_reason | default(state.stale_reason | default(none)) %}
   {% set cross_ctx = pd.cross_phase_context | default([]) %}
+  {% set method_menu_state = pd.method_menu | default({}) %}
+  {% set method_rows = pd.method_ranking_table | default([]) %}
+  {% set method_details = pd.method_details | default([]) %}
+  {% set selectable_methods = [] %}
+  {% if method_menu_state and method_menu_state.entries and not (method_menu_state.warnings | default([])) %}
+    {% set selectable_methods = method_details | selectattr('launchable') | list %}
+  {% endif %}
 
 {# ════════════════════════════════════════════════════════════════
-   UPPER PANEL — Current run status + run selector
+   UPPER PANEL - Current run status + run selector
    ════════════════════════════════════════════════════════════════ #}
 
 <section class="phase-status-upper" id="latest-result">
@@ -57,6 +65,117 @@
   </div>
   {% endif %}
 
+  {% if pc.slug == '02-method-development' %}
+  <div class="method-catalog-panel" id="method-menu">
+    <div class="method-catalog-heading">
+      <div>
+        <h3>Current methods</h3>
+        <p>This is the current Phase 2 method catalog. A completed rerun can update it. A failed or cancelled rerun leaves it unchanged. You can also retire an individual method here.</p>
+      </div>
+      <span class="method-count-badge">{{ method_rows | length }} method{{ 's' if method_rows | length != 1 }}</span>
+    </div>
+
+    {% if method_menu_state.warnings | default([]) %}
+    <div class="notice notice-stale" role="status">
+      <strong>Method menu check:</strong>
+      {{ method_menu_state.warnings | join(' ') }}
+    </div>
+    {% endif %}
+
+    {% if latest and latest.migration_warning | default(none) %}
+    <div class="notice notice-stale" role="status">
+      <strong>Earlier Phase 2 record:</strong>
+      {{ latest.migration_warning.message }} Rerun Phase 2 to publish a catalog under the current workflow.
+    </div>
+    {% endif %}
+
+    <div class="method-ranking-table-wrap">
+      <table class="method-ranking-table method-catalog-table">
+        <caption class="sr-only">Current Phase 2 methods, versions, statuses, and available actions</caption>
+        <thead>
+          <tr>
+            <th class="method-number-col">#</th>
+            <th>Method</th>
+            <th>Version</th>
+            <th>Status</th>
+            <th class="actions-col">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in method_rows %}
+          <tr class="{% if row.status == 'retired' %}method-row-retired{% elif row.errors %}method-row-invalid{% endif %}">
+            <td class="method-number-col">{{ row.number if row.number else '' }}</td>
+            <td>
+              <span class="method-name">{{ row.name }}</span>
+              {% if row.stable_id %}<code class="method-stable-id">{{ row.stable_id }}</code>{% endif %}
+              {% if row.errors %}<span class="method-entry-error">{{ row.errors | join('; ') }}</span>{% endif %}
+            </td>
+            <td>{{ row.version or 'Not recorded' }}</td>
+            <td>
+              {% if row.errors %}
+              <span class="method-status-tag method-status-invalid">invalid</span>
+              {% else %}
+              <span class="method-status-tag method-status-{{ row.status }}">{{ row.status }}</span>
+              {% endif %}
+            </td>
+            <td class="actions-col">
+              {% if row.is_method and row.status != 'retired' %}
+              <form action="{{ url_for('retire_branch', project_id=project.id, phase_slug=pc.slug) }}"
+                    method="post" class="retire-form-inline"
+                    data-confirm="Retire '{{ row.name }}'? The method will remain visible as history.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="project_identity" value="{{ project_identity }}">
+                <input type="hidden" name="stable_id" value="{{ row.stable_id }}">
+                <input type="hidden" name="method_version" value="{{ row.version }}">
+                <input type="hidden" name="method_sha256" value="{{ row.sha256 }}">
+                <button type="submit" class="btn btn-xs btn-retire-method"
+                        aria-label="Retire {{ row.name }}"
+                        {% if run_active or active_elsewhere %}disabled aria-disabled="true" title="Wait for the active project run to finish"{% else %}title="Retire this method"{% endif %}>
+                  Retire
+                </button>
+              </form>
+              {% elif row.status == 'retired' %}
+              <span class="method-action-state">Retired</span>
+              {% else %}
+              <span class="method-action-state">Unavailable</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr class="method-empty-row">
+            <td colspan="5">No methods have been produced yet. Use the run panel below to start Phase 2.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if pd.method_details | default([]) %}
+    <details class="method-catalog-definitions">
+      <summary>Read method definitions</summary>
+      <div class="method-definition-list">
+        {% for method in pd.method_details %}
+        <article class="method-view-panel{% if method.status == 'retired' %} method-row-retired{% endif %}">
+          <div class="method-detail-head">
+            <span class="method-detail-label">{% if method.number %}#{{ method.number }} {% endif %}{{ method.label or method.stable_id }}</span>
+            {% if method.status %}<span class="method-status-tag method-status-{{ method.status }}">{{ method.status }}</span>{% endif %}
+            {% if method.version %}<span class="method-version">{{ method.version }}</span>{% endif %}
+          </div>
+          {% if method.errors %}
+          <p class="method-entry-error">{{ method.errors | join('; ') }}</p>
+          {% elif method.body_html %}
+          <div class="method-detail-body markdown-body">{{ method.body_html | safe }}</div>
+          {% else %}
+          <p class="muted">No method definition was recorded.</p>
+          {% endif %}
+        </article>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {% if run_active %}
     {% if pd.active_conflict | default(false) %}
     <div class="inline-error" role="alert">
@@ -74,16 +193,18 @@
     <div class="run-selector-row">
       <div class="run-selector-left">
         <span class="run-number">Run {{ latest.number | default(latest.run_number | default(latest_id)) }}</span>
-        {% if latest_status == 'approved' %}
-        <span class="run-complete-badge">✓ Complete</span>
+        {% if pc.slug == '02-method-development' and latest_status == 'approved' %}
+        <span class="run-complete-badge">{{ 'Published with limitations' if latest.scientific_outcome == 'Partial' else 'Published' }}</span>
+        {% elif latest_status == 'approved' %}
+        <span class="run-complete-badge">Complete</span>
         {% elif latest_status in ['awaiting_review', 'completed'] %}
-        <span class="run-complete-badge">✓ Complete</span>
+        <span class="run-complete-badge">Complete</span>
         {% elif latest_status in ['failed', 'cancelled'] %}
         <span class="run-failed-badge">Did not complete</span>
         {% else %}
         <span class="run-status-badge">{{ latest_status | replace('_', ' ') }}</span>
         {% endif %}
-        {# Method count — only for method development phase #}
+        {# Method count - only for method development phase #}
         {% if pc.slug == '02-method-development' %}
         {% set method_menu = pd.method_menu | default(none) %}
         {% if method_menu and method_menu.entries %}
@@ -93,85 +214,61 @@
           {% endif %}
         {% endif %}
         {% endif %}
+        {% if method_bound_phase and latest.method_selection | default(none) %}
+        <span class="method-run-badge">{{ latest.method_selection.stable_id }} &middot; {{ latest.method_selection.version }}</span>
+        {% endif %}
+        {% if pc.slug == '04-draft-assembly' and latest.frozen_plan.variant | default(none) %}
+        <span class="run-mode-badge">{{ latest.frozen_plan.variant }}</span>
+        {% endif %}
       </div>
 
       {% if history | length > 1 %}
-      <div class="run-switcher">
-        <label for="run-selector-{{ pc.slug }}" class="run-switcher-label">View:</label>
-        <select id="run-selector-{{ pc.slug }}" class="run-selector-dropdown" data-run-switcher="{{ pc.slug }}">
+      <details class="run-history">
+        <summary>Run history</summary>
+        <ul class="run-history-list">
           {% for run in history %}
             {% set run_id = run.id | default(run.run_id | default(run.number | default(run.run_number | default(loop.revindex)))) %}
-          <option value="{{ run_id }}" {% if run_id == latest_id %}selected{% endif %}>
-            Run {{ run.number | default(run.run_number | default(loop.revindex)) }}
-            {% if run.status == 'approved' %}✓{% elif run.status in ['failed', 'cancelled'] %}✗{% endif %}
-            {% set ts = run.completed_at | default(run.started_at) | default('') %}
-            {% if ts %} — {{ ts[:10] }} {{ ts[11:16] }}{% endif %}
-          </option>
+          <li>
+            {% if pc.slug == '02-method-development' and run.status == 'approved' %}
+            <span>Run {{ run.number | default(run.run_number | default(loop.revindex)) }}: {{ 'published with limitations' if run.scientific_outcome == 'Partial' else 'published' }}</span>
+            {% elif pc.slug == '02-method-development' and run.status == 'superseded' %}
+            <span>Run {{ run.number | default(run.run_number | default(loop.revindex)) }}: historical</span>
+            {% else %}
+            <span>Run {{ run.number | default(run.run_number | default(loop.revindex)) }}: {{ run.status | replace('_' , ' ') }}</span>
+            {% endif %}
+            {% if method_bound_phase and run.method_selection | default(none) %}
+            <span class="run-history-method">{{ run.method_selection.stable_id }} &middot; {{ run.method_selection.version }}</span>
+            {% endif %}
+            {% if pc.slug == '04-draft-assembly' and run.frozen_plan.variant | default(none) %}
+            <span class="run-history-method">{{ run.frozen_plan.variant }}</span>
+            {% endif %}
+            {% if run.summary_available %}
+            <a href="{{ url_for('phase_summary', project_id=project.id, phase_slug=pc.slug, run_id=run_id) }}"
+               target="_blank" rel="noopener">Summary</a>
+            {% endif %}
+            {% if run.log_available %}
+            <a href="{{ url_for('run_log', project_id=project.id, phase_slug=pc.slug, run_id=run_id) }}"
+               target="_blank" rel="noopener">Log</a>
+            {% endif %}
+          </li>
           {% endfor %}
-        </select>
-      </div>
+        </ul>
+      </details>
       {% endif %}
     </div>
 
     {# ── Summary / comparison ── #}
-    {% if pc.slug == '02-method-development' and pd.method_details | default([]) %}
-    {# Method Development: show ranking table in upper panel #}
-    {% if pd.method_ranking_table | default([]) %}
-    <div class="method-ranking-table-wrap">
-      <table class="method-ranking-table">
-        <thead>
-          <tr>
-            <th>Idea</th>
-            <th>Note</th>
-            <th class="score-col" data-type="risk" title="Mathematical risk">Risk</th>
-            <th class="score-col" data-type="potential" title="Acceleration potential">Potential</th>
-            <th class="score-col" data-type="tractability" title="Tractability">Tract.</th>
-            <th class="phase-col" title="Theory">P3</th>
-            <th class="phase-col" title="Experiments">P4</th>
-            <th class="phase-col" title="Paper">P5</th>
-            <th class="actions-col"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in pd.method_ranking_table %}
-          <tr>
-            <td>{{ row.name }}</td>
-            <td class="note-col">{{ row.note }}</td>
-            <td class="score-col" data-type="risk"><span class="score-badge score-{{ row.risk | lower | replace(' ', '-') }}">{{ row.risk }}</span></td>
-            <td class="score-col" data-type="potential"><span class="score-badge score-{{ row.potential | lower | replace(' ', '-') }}">{{ row.potential }}</span></td>
-            <td class="score-col" data-type="tractability"><span class="score-badge score-{{ row.tractability | lower | replace(' ', '-') }}">{{ row.tractability }}</span></td>
-            <td class="phase-col"><span class="phase-light phase-{{ row.p3 | default('') }}" title="{{ 'Has records' if row.p3 == 'done' else 'No records' }}"></span></td>
-            <td class="phase-col"><span class="phase-light phase-{{ row.p4 | default('') }}" title="{{ 'Has records' if row.p4 == 'done' else 'No records' }}"></span></td>
-            <td class="phase-col"><span class="phase-light phase-{{ row.p5 | default('') }}" title="{{ 'Has records' if row.p5 == 'done' else 'No records' }}"></span></td>
-            <td class="actions-col">
-              {% if row.is_method %}
-              <button class="btn btn-xs btn-select-method" title="Use for following phases">→</button>
-              <form action="{{ url_for('retire_branch', project_id=project.id, phase_slug=pc.slug) }}"
-                    method="post" class="retire-form-inline"
-                    data-confirm="Retire '{{ row.name }}'?">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="project_identity" value="{{ project_identity }}">
-                <input type="hidden" name="stable_id" value="{{ row.stable_id }}">
-                <button type="submit" class="btn btn-xs btn-retire-method" title="Retire">×</button>
-              </form>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% elif pd.method_comparison %}
-    <div class="run-summary-highlight method-comparison-panel">
-      <div class="method-comparison-text">{{ pd.method_comparison }}</div>
+    {% if pc.slug == '02-method-development' %}
+    <div class="run-summary-highlight" data-run-highlight="{{ pc.slug }}">
+      {% if latest.summary_integrity_error %}
+        <strong class="inline-error-text">Evidence integrity check failed.</strong> Recorded evidence is missing or changed. Restore sealed files or rerun.
+      {% elif latest.summary_highlight %}
+        {{ latest.summary_highlight }}
+      {% else %}
+        <span class="muted">The current method menu is shown above. Open the full summary for the run-level rationale.</span>
+      {% endif %}
     </div>
     {% else %}
-    <div class="run-summary-highlight">
-      <span class="muted">No comparison available yet. Run the phase to generate an evaluation.</span>
-    </div>
-    {% endif %}
-    {% else %}
-    {# Other phases: regular summary highlight #}
     <div class="run-summary-highlight" data-run-highlight="{{ pc.slug }}">
       {% if latest.summary_integrity_error %}
         <strong class="inline-error-text">Evidence integrity check failed.</strong> Recorded evidence is missing or changed. Restore sealed files or rerun.
@@ -182,8 +279,7 @@
       {% endif %}
     </div>
     {% endif %}
-
-    {# ── Action row ── #}
+{# ── Action row ── #}
     <div class="run-actions">
       {% if latest.summary_available %}
       <a href="{{ url_for('phase_summary', project_id=project.id, phase_slug=pc.slug, run_id=latest_id) }}"
@@ -210,65 +306,13 @@
   {% endif %}
 </section>
 
-{# ════════════════════════════════════════════════════════════════
-   MIDDLE PANEL — Method viewer (Phase 02 only)
-   ════════════════════════════════════════════════════════════════ #}
-{% if pc.slug == '02-method-development' and pd.method_details | default([]) and not run_active and latest %}
-<section class="method-viewer-section">
-  <div class="method-viewer-controls">
-    <label for="method-view-{{ pc.slug }}" class="run-switcher-label">Method:</label>
-    <select id="method-view-{{ pc.slug }}" class="run-selector-dropdown"
-            onchange="
-              var val = this.value;
-              this.closest('.method-viewer-section').querySelectorAll('[data-method-panel]').forEach(function(p) {
-                p.hidden = p.getAttribute('data-method-panel') !== val;
-              });
-            ">
-      {% for m in pd.method_details %}
-      <option value="{{ m.stable_id }}" {% if loop.first %}selected{% endif %}>{{ m.label }} ({{ m.status }}){% if m.created_display %} — {{ m.created_display }}{% endif %}</option>
-      {% endfor %}
-    </select>
-  </div>
-
-  {% for m in pd.method_details %}
-  <div class="method-view-panel" data-method-panel="{{ m.stable_id }}" {% if not loop.first %}hidden{% endif %}>
-    <div class="method-detail-head">
-      <span class="method-detail-label">{{ m.label }}</span>
-      <span class="method-status-tag method-status-{{ m.status }}">{{ m.status }}</span>
-      {% if m.version %}<span class="method-version">{{ m.version }}</span>{% endif %}
-    </div>
-    <div class="method-detail-body markdown-body">{{ m.body_html | safe }}</div>
-  </div>
-  {% endfor %}
-</section>
-{% endif %}
-
 {# ── MathJax for math rendering in summaries and method bodies ── #}
-{% if latest and not run_active %}
-<script>
-  window.MathJax = {
-    tex: { inlineMath: [['$', '$'], ['\\(', '\\)']],
-           displayMath: [['$$', '$$'], ['\\[', '\\]']] },
-    svg: { fontCache: 'global' }
-  };
-</script>
-<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" id="MathJax-script" async></script>
-{% endif %}
-
-{# ── Hidden data for JS run-switching ── #}
-{% if history | length > 1 and latest %}
-<script type="application/json" data-run-highlights="{{ pc.slug }}">
-{
-  {% for run in history %}
-    {% set run_id = run.id | default(run.run_id | default(run.number | default(run.run_number | default(loop.revindex)))) %}
-  "{{ run_id }}": {{ run.summary_highlight | default('') | tojson }}{% if not loop.last %},{% endif %}
-  {% endfor %}
-}
-</script>
+{% if (latest and not run_active) or ((pc.slug == '02-method-development' or catalog_method_selection) and pd.method_details | default([])) %}
+<span hidden data-mathjax-required></span>
 {% endif %}
 
 {# ════════════════════════════════════════════════════════════════
-   LOWER PANEL — Launch controls
+   LOWER PANEL - Launch controls
    ════════════════════════════════════════════════════════════════ #}
 
 {% if active_elsewhere and not run_active %}
@@ -288,48 +332,147 @@
   <input type="hidden" name="project_identity" value="{{ project_identity }}">
   <input type="hidden" name="phase_plan_version" value="{{ pd.phase_plan_version | default('') }}">
   <input type="hidden" name="prerequisite_report_version" value="{{ pd.prerequisite_report_version }}">
+  {% if catalog_method_selection %}
+  <input type="hidden" name="method_menu_version" value="{{ pd.method_menu_version | default('') }}">
+  {% endif %}
 
-  {# ── Active method branch panel (Phases 3-5): shows which branch is locked in ── #}
-  {% if method_bound_phase and pc.slug != '02-method-development' and approved_method %}
-  <div class="branch-info-panel">
-    <div class="branch-info-left">
-      <span class="branch-info-icon" aria-hidden="true">⎇</span>
-      <div class="branch-info-text">
-        <span class="branch-info-label">Active method branch</span>
-        <span class="branch-info-name">{{ approved_method.label or approved_method.stable_id }}</span>
-        <span class="branch-info-id">{{ approved_method.stable_id }} · v{{ approved_method.version }}</span>
-      </div>
-    </div>
-    <span class="branch-info-hint">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-      Change this in <strong>New Method</strong> (Phase 2)
-    </span>
-  </div>
-  {% elif method_bound_phase and pc.slug != '02-method-development' and not approved_method %}
-  <div class="branch-info-panel branch-info-panel-warning">
-    <div class="branch-info-left">
-      <span class="branch-info-icon" aria-hidden="true">⎇</span>
-      <div class="branch-info-text">
-        <span class="branch-info-label">No method branch selected</span>
-        <span class="branch-info-name">Waiting for Phase 2 approval</span>
-      </div>
-    </div>
-    <span class="branch-info-hint">
-      A method branch must be approved in <strong>New Method</strong> before this phase can run.
-    </span>
+  {% if pc.slug == '02-method-development' %}
+  <div class="launch-panel-heading">
+    <h3>{{ 'Rerun Phase 2' if history else 'Start Phase 2' }}</h3>
+    <p>{{ 'The team will begin from the current catalog and work in a private run copy.' if history else 'Give the team the scientific direction for the first method-development run.' }}</p>
   </div>
   {% endif %}
 
-  {# ── Cross-phase context chips ── #}
+  {# Method-bound phases read the Phase 2 catalog but never edit it. #}
+  {% if catalog_method_selection and method_bound_phase %}
+  <fieldset class="launch-fieldset-compact method-choice-panel" data-method-selection>
+    <legend>Choose a method for this run</legend>
+    <div class="method-choice-heading">
+      <div>
+        <strong>Phase 2 method catalog</strong>
+        <p>
+          {% if pc.slug == '03-idea-evaluation' %}
+          Choose the method whose theory you want to develop. Phase 3 cannot revise or retire catalog entries.
+          {% elif pc.slug == '04-draft-assembly' %}
+          Choose the method you want to implement and evaluate. Phase 4 cannot revise or retire catalog entries.
+          {% else %}
+          Choose a method after all previous phases are complete. The Phase 3 and Phase 4 results must match this exact version, and Phase 5 cannot combine different branches.
+          {% endif %}
+        </p>
+      </div>
+      <span class="method-count-badge">{{ method_details | length }} listed</span>
+    </div>
+
+    {% if method_menu_state.warnings | default([]) %}
+    <div class="inline-warning" role="status">
+      <strong>The method catalog needs attention.</strong>
+      {{ method_menu_state.warnings | join(' ') }} Resolve this in Phase 2 before starting this run.
+    </div>
+    {% endif %}
+
+    {% if method_details %}
+    <div class="phase3-method-layout">
+      <div class="phase3-method-list" aria-label="Phase 2 methods">
+        {% for method in method_details %}
+          {% set method_selectable = method.launchable | default(false) and not (method_menu_state.warnings | default([])) %}
+        <div class="phase3-method-option{% if not method_selectable %} phase3-method-option-unavailable{% endif %}"
+             data-method-option="{{ method.stable_id or method.path }}">
+          {% if method_selectable %}
+          <input id="method-branch-{{ loop.index }}" type="radio"
+                 name="method_branch" value="{{ method.stable_id }}"
+                 required data-method-radio data-method-selectable="true">
+          {% else %}
+          <span class="method-option-marker" aria-hidden="true"></span>
+          {% endif %}
+          {% if method_selectable %}
+          <label class="method-option-copy" for="method-branch-{{ loop.index }}">
+          {% else %}
+          <span class="method-option-copy">
+          {% endif %}
+            <span class="method-option-title">
+              {% if method.number %}#{{ method.number }} {% endif %}{{ method.label or method.stable_id or method.path or 'Invalid method entry' }}
+            </span>
+            <span class="method-option-meta">
+              <code>{{ method.stable_id or method.path or 'unidentified entry' }}</code>
+              {% if method.version %}<span>{{ method.version }}</span>{% endif %}
+              {% if method.status %}<span class="method-status-tag method-status-{{ method.status }}">{{ method.status }}</span>{% endif %}
+            </span>
+            {% if method.errors %}
+            <span class="method-entry-error">Unavailable: {{ method.errors | join('; ') }}</span>
+            {% elif method.status == 'retired' %}
+            <span class="method-action-state">Retired methods remain visible as history and cannot start new runs.</span>
+            {% elif method.launch_blockers | default([]) %}
+            <span class="method-entry-error">Complete {{ method.launch_blockers | join(' and ') }} for this method version before Phase 5.</span>
+            {% endif %}
+          {% if method_selectable %}
+          </label>
+          {% else %}
+          </span>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="phase3-method-detail">
+        <p class="method-detail-placeholder" data-method-detail-empty>Choose an available method to inspect its Phase 2 definition and mathematical details.</p>
+        {% for method in selectable_methods %}
+        <article class="method-view-panel" data-method-detail="{{ method.stable_id }}" hidden>
+          <div class="method-detail-head">
+            <span class="method-detail-label">{% if method.number %}#{{ method.number }} {% endif %}{{ method.label or method.stable_id }}</span>
+            <span class="method-status-tag method-status-{{ method.status }}">{{ method.status }}</span>
+            <span class="method-version">{{ method.version }}</span>
+          </div>
+          {% if method.body_html %}
+          <div class="method-detail-body markdown-body">{{ method.body_html | safe }}</div>
+          {% else %}
+          <p class="muted">No method definition was recorded.</p>
+          {% endif %}
+        </article>
+        {% endfor %}
+      </div>
+    </div>
+    <p class="field-help">
+      The stable ID, version, definition, and content digest are frozen for this run.
+      {% if pc.slug in ['03-idea-evaluation', '04-draft-assembly'] %}
+      Available prior results and role discussions from both phases are added only when they belong to this same branch.
+      {% else %}
+      Phase 5 uses the completed theory and empirical results verified for this same branch.
+      {% endif %}
+    </p>
+    {% else %}
+    <p class="method-catalog-empty">No methods have been produced yet. Run Phase 2 before starting this phase.</p>
+    {% endif %}
+  </fieldset>
+  {% elif method_bound_phase and approved_method %}
+  <div class="branch-info-panel">
+    <div class="branch-info-left">
+      <div class="branch-info-text">
+        <span class="branch-info-label">Method used for this phase</span>
+        <span class="branch-info-name">{{ approved_method.label or approved_method.stable_id }}</span>
+        <span class="branch-info-id">{{ approved_method.stable_id }} · {{ approved_method.version }}</span>
+      </div>
+    </div>
+  </div>
+  {% elif method_bound_phase %}
+  <div class="branch-info-panel branch-info-panel-warning">
+    <div class="branch-info-left">
+      <div class="branch-info-text">
+        <span class="branch-info-label">No verified method is available for this phase</span>
+        <span class="branch-info-name">Return to Phase 2 and produce an active method definition.</span>
+      </div>
+    </div>
+  </div>
+  {% endif %}{# ── Cross-phase context chips ── #}
   {% if cross_ctx %}
   <div class="context-chips-row">
-    <span class="context-chips-label">Context:</span>
+    <span class="context-chips-label">Project history:</span>
     <div class="context-chips">
       {% for ctx in cross_ctx %}
       <div class="context-chip {% if not ctx.has_result %}context-chip-empty{% endif %}" data-context-chip="{{ ctx.slug }}">
         <span class="chip-name">{{ ctx.name }}</span>
         {% if ctx.has_result %}
           {% if ctx.run_number %}<span class="chip-run">#{{ ctx.run_number }}</span>{% endif %}
+          {% if ctx.status %}<span class="chip-run">{{ ctx.status | replace('_', ' ') }}</span>{% endif %}
           {# Method Development: show method picker dropdown #}
           {% if ctx.method_menu and ctx.method_menu.entries %}
           <span class="chip-method">{{ ctx.method_menu.entries | length }} methods</span>
@@ -343,11 +486,12 @@
       {% endfor %}
     </div>
   </div>
+  <p class="field-help">These chips show project-wide history, not the inputs for this run. After you choose a method, Research Hub verifies the files and filters actual run context to that method branch.</p>
   {% endif %}
 
-  {# ── Method selection (Phase 03+): handled by context chip above, 
-       just pass the approved method as hidden field ── #}
-  {% if method_bound_phase and approved_method %}
+  {# ── Legacy downstream method handoff: displayed above,
+       with the legacy identity passed as a hidden field ── #}
+  {% if method_bound_phase and not catalog_method_selection and approved_method %}
   <input type="hidden" name="method_branch" value="{{ approved_method.stable_id }}">
   {% endif %}
 
@@ -357,21 +501,35 @@
     {% set audit_options = proof_audit.plans | default(proof_audit.options) %}
     {% set audit_default = proof_audit.default | default('standard') %}
     {% set audit_source_options = pd.theory_audit_sources | default([]) %}
-    {% set audit_source_run = (audit_source_options | first).run_id | default('') if audit_source_options else '' %}
   <fieldset class="launch-fieldset-compact">
     <div class="method-row">
       <span class="field-label">Proof plan:</span>
-      <select class="form-input-compact" name="theory_plan">
+      <select class="form-input-compact" name="theory_plan" data-theory-plan>
         {% for opt in audit_options %}
         <option value="{{ opt }}"
-                {% if opt == audit_default %}selected{% endif %}>
+                {% if opt == audit_default %}selected{% endif %}
+                {% if opt == 'audit_only' and not audit_source_options %}disabled{% endif %}>
           {{ {'standard': 'Standard', 'standard_with_audit': 'Standard + audit', 'audit_only': 'Audit only'}[opt] }}
         </option>
         {% endfor %}
       </select>
     </div>
-    {% if audit_source_run %}
-    <input type="hidden" name="proof_audit_source_run_id" value="{{ audit_source_run }}">
+    {% if audit_source_options %}
+    <div class="method-row" data-theory-audit-row
+         {% if audit_default != 'audit_only' %}hidden{% endif %}>
+      <label class="field-label" for="proof-audit-source-{{ pc.slug }}">Theory artifact to audit:</label>
+      <select class="form-input-compact" id="proof-audit-source-{{ pc.slug }}"
+              name="proof_audit_source_run_id" required data-theory-audit-source
+              {% if audit_default != 'audit_only' %}disabled{% endif %}>
+        <option value="">Choose a prior theory artifact</option>
+        {% for source in audit_source_options %}
+        <option value="{{ source.run_id }}">
+          Run {{ source.run_number }} &middot; {{ source.status | replace('_', ' ') }} &middot; theorist round {{ source.source_round }} &middot; SHA {{ source.sha256[:12] }}
+        </option>
+        {% endfor %}
+      </select>
+      <p class="field-help">Audit only examines the exact sealed artifact selected here. It does not start new theory for another method.</p>
+    </div>
     {% endif %}
   </fieldset>
   {% endif %}
@@ -387,10 +545,13 @@
         {% for opt in run_modes.plans %}
         <option value="{{ opt }}"
                 {% if opt == mode_default %}selected{% endif %}>
-          {{ {'preliminary': 'Preliminary — implement & test', 'comprehensive': 'Comprehensive — benchmark', 'assembly': 'Assembly — assemble manuscript', 'review_revision': 'Review & Revision — review and revise'}[opt] }}
+          {{ {'preliminary': 'Preliminary: implementation and focused diagnostics', 'comprehensive': 'Comprehensive: full benchmarking and sensitivity analysis', 'assembly': 'Assembly: assemble manuscript', 'review_revision': 'Review and revision: assess and revise'}[opt] }}
         </option>
         {% endfor %}
       </select>
+      {% if pc.slug == '04-draft-assembly' %}
+      <p class="field-help">Either scope can be launched directly. Both use the analyst, theorist, and lead in that order.</p>
+      {% endif %}
     </div>
   </fieldset>
   {% endif %}
@@ -431,7 +592,7 @@
   </script>
   {% endif %}
 
-  {# ── Rounds value (hidden — only surfaced inline at the button) ── #}
+  {# ── Rounds value (hidden - only surfaced inline at the button) ── #}
   {% if round_min == round_max %}
     <input type="hidden" name="rounds" value="{{ round_default }}">
   {% endif %}
@@ -441,21 +602,24 @@
     <label class="instruction-label" for="feedback-{{ pc.slug }}">Your instructions for this run</label>
     <textarea name="feedback" id="feedback-{{ pc.slug }}" rows="6" class="instruction-textarea"
               maxlength="5000" autocomplete="off" spellcheck="true"
-              placeholder="What should the agents focus on? What changed? What would you like to see improved?"></textarea>
+              placeholder="{{ 'What should the team develop, compare, revise, preserve, or retire in this run?' if pc.slug == '02-method-development' else 'What should the agents focus on? What changed? What would you like to see improved?' }}"></textarea>
   </div>
 
   {# ── Conditional overrides ── #}
-  {% if not prereqs_ok %}
+  {% if not prereqs_ok and pc.slug != '05-review-revision' %}
+  <div class="inline-warning" role="status">
+    <strong>Recommended context is incomplete.</strong> {{ prereq.message }}
+  </div>
   <label class="check-row-compact" for="override-prerequisites-{{ pc.slug }}">
     <input type="checkbox" id="override-prerequisites-{{ pc.slug }}" name="override_prerequisites" value="1" required>
-    <span>Override prerequisite warning</span>
+    <span>I reviewed this limitation and choose to run this phase anyway.</span>
   </label>
   {% endif %}
 
   {# ── Replace awaiting-review run (R10): if the latest run is awaiting
        review, allow the user to launch a new run that replaces it directly,
        without needing to approve or request revision first. ── #}
-  {% if latest and latest_status == 'awaiting_review' and latest_identity %}
+  {% if pc.slug != '02-method-development' and latest and latest_status == 'awaiting_review' and latest_identity %}
   <input type="hidden" name="rerun_from" value="{{ latest_identity }}">
   <label class="check-row-compact" for="replace-awaiting-{{ pc.slug }}">
     <input type="checkbox" id="replace-awaiting-{{ pc.slug }}" name="replace_awaiting_review" value="1" required>
@@ -465,9 +629,12 @@
 
   {# ── Launch button with inline rounds selector ── #}
   <div class="launch-footer-compact">
-    {% set no_method = method_bound_phase and not approved_method %}
-    <button type="submit" class="btn btn-primary btn-large" {% if not unattended_tools or no_method %}disabled aria-disabled="true"{% endif %}>
-      {{ 'Run / Improve' if history else 'Launch' }} {{ pc.name }}
+    {% set audit_only_available = audit_source_options | default([]) %}
+    {% set no_catalog_method = catalog_method_selection and not selectable_methods and not (pc.slug == '03-idea-evaluation' and audit_only_available) %}
+    {% set no_method = method_bound_phase and (no_catalog_method or (not catalog_method_selection and not approved_method)) %}
+    {% set launch_base_disabled = run_active or not can_start or not unattended_tools or no_method %}
+    <button type="submit" class="btn btn-primary btn-large"{% if catalog_method_selection %} data-method-launch data-base-blocked="{{ 'true' if launch_base_disabled else 'false' }}"{% endif %}{% if launch_base_disabled %} disabled aria-disabled="true"{% endif %}>
+      {{ 'Rerun' if history else 'Launch' }} {{ pc.name }}
     </button>
     {% if round_min != round_max and not run_modes.plans %}
     <span class="rounds-inline-at-button">
@@ -483,12 +650,22 @@
       {{ 'rounds of debate' if pc.pattern == 'debate' else 'rounds of refinement' }}
     </span>
     {% elif run_modes.plans %}
-    {# Mode-locked phases: rounds are determined by the run mode, not by the
-       user. Send a default so the form field is always present. #}
     <input type="hidden" name="rounds" value="{{ round_default }}">
     {% endif %}
-    {% if no_method %}
-    <span class="launch-hint">Approve a method in <strong>New Method</strong> first.</span>
+    {% if no_catalog_method %}
+    <span class="launch-hint">
+      {% if pc.slug == '05-review-revision' %}
+      Complete every previous phase, with Phase 3 and Phase 4 on the same active method version, then choose it here.
+      {% else %}
+      Run Phase 2 to produce a valid active method, then choose it here.
+      {% endif %}
+    </span>
+    {% elif no_method %}
+    <span class="launch-hint">No verified method is available for this phase.</span>
+    {% elif catalog_method_selection and selectable_methods %}
+    <span class="launch-hint" data-method-choice-hint>Choose a method above before launch.</span>
+    {% elif run_active %}
+    <span class="launch-hint">This run is already in progress.</span>
     {% endif %}
   </div>
 </form>

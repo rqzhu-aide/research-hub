@@ -6,7 +6,7 @@ hub:
   workspace_dir: "~/research"    # where projects + database live (separate from app)
   # projects:    ~/research/projects/project-NNN-<slug>/
   # database:    ~/research/hub.db
-  run_timeout_minutes: 240   # numerical phases run real MCMC — 120m was too short
+  run_timeout_minutes: 240   # numerical phases run real MCMC; 120m was too short
 # Phase runs are explicitly started by the user. This permits the lead to
 # execute the project-local tools needed by Hermes after that decision.
   allow_unattended_tools: true
@@ -52,10 +52,11 @@ agents:
 #     parallel: members investigate independently, then the lead synthesizes
 #     sequential: fixed ordered handoffs, with each stage reading the prior one
 #     debate: independent proposals followed by configured comparison rounds
-#   gated_by: recommended approved, current prerequisites. The user may proceed
-#     with an explicit recorded override when one is missing or stale.
-#   context_from: additional approved context to include when current. These
-#     phases are useful inputs, not prerequisites.
+#   gated_by: launch prerequisites. Most phases allow a recorded user override;
+#     a strict phase may require intact completed results instead.
+#   context_from: additional phases whose intact completed results may be frozen
+#     as context. Method-bound runs filter them to the selected stable method ID
+#     and label results from older definitions as history.
 #   folder: where this phase's run outputs are written, relative to the project
 #   members: roles that may participate in the configured plan
 #   rounds: allowed/default depth for parallel and debate work
@@ -80,8 +81,8 @@ phases:
 - slug: "02-method-development"
   name: "Method Development"
   short_name: "New Method"
-  description: "Brainstorm genuinely new ideas — new mechanisms, frameworks, or insights
-    — with a unique position distinct from any existing method"
+  description: "Brainstorm genuinely new ideas, including new mechanisms, frameworks, or insights
+    with a unique position distinct from any existing method"
   pattern: parallel
   gated_by: ["01-literature-review"]
   folder: "ideas/"
@@ -92,39 +93,67 @@ phases:
   short_name: "Theory & Proofs"
   description: "Derive and prove the main theorems and rate bounds for the selected
     method, with computational cost assessment and cross-audit"
-  pattern: debate
+  pattern: sequential
   method_binding: true
   gated_by: ["02-method-development"]
+  context_from: ["04-draft-assembly"]
   folder: "evaluations/"
   members:
   - theorist
-  - research_lead
   - data_scientist
+  - research_lead
   rounds:
-    min: 2
-    default: 2
+    min: 3
+    default: 3
     max: 3
+  stages:
+  - name: Develop the theory
+    role: theorist
+    description: Derive the mathematical results, assumptions, proofs, bounds,
+      limitations, and unresolved conjectures for the selected method.
+  - name: Audit the theory and assess computation
+    role: data_scientist
+    description: Read the theorist's report, test its assumptions and proof steps,
+      and quantify implementation feasibility, numerical stability, and cost.
+  - name: Synthesize the theoretical record
+    role: research_lead
+    description: Read both specialist reports, resolve what can be resolved, and
+      summarize proved claims, open gaps, disagreements, and empirical implications.
 - slug: "04-draft-assembly"
   name: "Implementation & Experiments"
   short_name: "Code & Experiments"
   description: "Implement the method in code, run pre-specified experiments with
     diagnostics, and validate theoretical predictions against measured results"
-  pattern: parallel
+  pattern: sequential
   method_binding: true
+  protocol_checkpoint: true
   run_modes:
     plans: ["preliminary", "comprehensive"]
     default: "preliminary"
-  gated_by:
-  - 03-idea-evaluation
+  gated_by: ["02-method-development"]
+  context_from: ["03-idea-evaluation"]
   folder: "draft/sections/"
   members:
-  - research_lead
-  - theorist
   - data_scientist
+  - theorist
+  - research_lead
   rounds:
-    min: 1
-    default: 2
-    max: 2
+    min: 3
+    default: 3
+    max: 3
+  stages:
+  - name: Implement and evaluate
+    role: data_scientist
+    description: Prespecify the study, implement the selected method, and run the
+      diagnostics or experiments required by the user-selected scope.
+  - name: Audit the implementation and evidence
+    role: theorist
+    description: Read the analyst's report, check fidelity to the method definition,
+      and assess empirical findings against any available same-branch theory.
+  - name: Synthesize the computational record
+    role: research_lead
+    description: Read both specialist reports and summarize implementation status,
+      empirical support, discrepancies, unresolved disagreements, and next steps.
 - slug: "05-review-revision"
   name: "Paper Assembly & Review"
   short_name: "Paper Draft"
@@ -132,7 +161,7 @@ phases:
     paper review and revision into final manuscript"
   pattern: sequential
   method_binding: true
-  gated_by: ["04-draft-assembly"]
+  gated_by: ["03-idea-evaluation", "04-draft-assembly"]
   folder: "draft/revised/"
   members:
   - paper_reviewer

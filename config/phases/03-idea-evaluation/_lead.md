@@ -1,109 +1,118 @@
 # Lead Instructions: Theoretical Development
 
-Coordinate the theoretical development phase. Your job is to ensure the theorist
-produces actual proved results (not ratings or sketches), the data analyst
-provides a rigorous computability assessment, and the mathematical output is
-synthesized into a coherent framework.
+Coordinate a fixed three-stage theoretical development run for the method chosen
+by the user. The order is theorist, data analyst, research lead. The theorist
+does the primary mathematical work, the analyst audits it and assesses
+computability, and the lead reconciles the evidence.
 
-## Step 1: Read prior context
+## Step 1: Establish the branch and prior context
+
 Read:
-- `setting.md`
-- the approved Phase 02 summary (method definitions and idea set)
-- the approved Phase 01 summary (literature context)
-- prior runs for the selected method (under `branches/<stable_id>/`)
 
-Identify the method to develop. If the user named one in the run-start form, use
-it. If not, select based on Phase 2 outcomes and state the choice clearly.
+- `setting.md`;
+- the published Phase 2 summary and canonical method definition;
+- the Phase 1 literature assessment;
+- every frozen prior same-branch Phase 3 and Phase 4 summary and discussion
+  report enumerated in the run prompt.
 
-**This is a rerun.** When prior outputs exist for the
-selected method (under `branches/<stable_id>/run/`), treat this run as an **audit and refinement** of that prior
-material, not a clean restart:
+Verify the selected stable ID, version, definition path, and SHA-256 digest. If
+they are missing or inconsistent, report a launch-integrity failure. No team
+member may choose a replacement method or edit the Phase 2 catalog.
 
-1. **Audit first.** Read every prior round output for this method. For each
-   existing theorem, proof, computational assessment, or narrative claim,
-   identify: what's correct, what's incomplete, what's wrong, what's missing.
-   Write the audit findings into the report.
-2. **Fix in place.** Correct errors, fill proof gaps, and tighten claims in
-   the existing material. Do not discard correct prior work — build on it.
-3. **Add new material.** Extend with additional theorems, sharper bounds,
-   deeper computational analysis, or stronger literature positioning that the
-   prior run lacked (e.g., incorporate the updated literature library at
-   `references/papers/`, exploit cross-role insights from a Phase 2 rerun).
-4. **Never replace.** Prior outputs are sealed history. Write new rounds into
-   the new run directory; the prior run's files stay intact. The final summary
-   must reference both the prior and new material, noting what changed.
+The supplied prior context is the shared discussion history for this run. Give
+it to every role. Preserve its source status and distinguish mathematical
+results, empirical findings, interpretations, and unresolved disagreements.
+Never import an unlisted artifact or material from another method branch.
 
-## Step 2: Round 1 — independent development
-Dispatch three independent tasks:
+On a rerun, begin from supported earlier results rather than restarting. Earlier
+files are sealed. The new run should correct an error, close a proof gap,
+strengthen a bound, relax an assumption, extend the scope, or address a Phase 4
+discrepancy. The final summary must state what changed.
 
-1. **Theorist**: derive and prove the main results for the selected method.
-   Give them the full method definition and all prior context. They must produce
-   actual theorems with full proofs — see `theorist.md` for deliverable
-   requirements.
+## Step 2: Stage 1, theorist
 
-2. **Data analyst**: assess computational cost, implementation feasibility, and
-   numerical stability. See `data_scientist.md`.
+Assign the theorist the selected definition and all frozen same-branch context.
+Require precise definitions, numbered assumptions, theorem statements, complete
+proofs, quantitative bounds when relevant, and explicit scope. Any unproved
+result must be labeled as a conjecture with its exact gap.
 
-3. **You (research lead)**: identify the contribution structure — what the
-   proved results mean, how they position against existing work, what the paper's
-   narrative should be. See `research_lead.md`.
+The theorist's report must be self-contained enough for the analyst to audit. It
+must also identify computational claims, numerical assumptions, and empirical
+questions arising from the theory.
 
-All three work independently. They do not wait for each other.
+## Step 3: Stage 2, data analyst
 
-## Step 3: Debate round — cross-check
-From round 2 onward, each role reads the others' work:
+Give the analyst the same frozen context and the completed current theorist
+report. Require:
 
-- The **data analyst audits the theorist's proofs**: are assumptions missing? Are
-  steps unjustified? Is the scope correctly stated? This is a mathematical audit.
-- The **theorist audits the analyst's cost claims**: is the per-step cost
-  accurate? Are the numerical stability concerns correctly identified?
-- The **lead reconciles**: identifies what is solid, what is conjectural, what
-  needs more work. Flags unresolved disagreements for the user.
+- a quantitative time and memory analysis;
+- an end-to-end cost assessment tied to a statistical or numerical precision
+  target;
+- an implementation and numerical-stability assessment;
+- a theorem-by-theorem proof audit with exact citations to assumptions,
+  equations, and inference steps;
+- reconciliation with any supplied Phase 4 evidence.
 
-## Step 4: Final synthesis
-Write the HTML summary to the exact path provided. Present:
+The analyst does not merely rate the proofs. Each criticism must state its
+scientific consequence and a possible correction or discriminating check.
 
-1. **Proved results**: list each theorem with its statement, assumptions, and
-   proof status (proved / conjectured with gap stated).
-2. **Rate bound**: the key quantitative result, if applicable.
-3. **Computational assessment**: cost, feasibility, stability.
-4. **Cross-check outcomes**: what the audit found, what was revised.
-5. **Open questions**: results that could not be proved, with the specific gap.
+## Step 4: Stage 3, research lead
 
-6. **Readiness assessment and recommendation.** Evaluate explicitly:
+Give the lead all prior context and both current reports. Require the lead to:
 
-   a. **Is the theory sufficient to proceed to Phase 04?** Can the analyst
-      implement the method and design experiments from what was proved? If yes,
-      recommend proceeding and state what Phase 04 should test first.
+- decide which mathematical claims remain supported after the audit;
+- narrow or relabel any claim with an unresolved substantive gap;
+- position the contribution against named prior work;
+- separate deductive conclusions from empirical findings;
+- state the implications for a Phase 4 run or rerun;
+- preserve every unresolved disagreement in a structured ledger.
 
-   b. **Does the theory need improvement before Phase 04?** If the proofs are
-      incomplete, the rate bound is loose, or the scope is unclear, recommend
-      rerunning this phase with a specific focus (e.g., "close the gap in the
-      invariance proof," "tighten the rate bound," "extend to non-Gaussian
-      targets"). State exactly what needs to be proved.
+The lead cannot ask an earlier role to revise within this run. An unresolved
+issue becomes a precise target for a user-initiated rerun.
 
-   c. **Should a previous phase be rerun?** If the method definition from Phase 02
-      is unclear, or the literature review from Phase 01 missed relevant work,
-      recommend rerunning that phase with a specific focus (e.g., "Phase 02
-      should clarify the interaction structure," "Phase 01 should survey
-      non-reversible MCMC").
+## Step 5: Final synthesis
 
-   d. **Is this method a dead end?** If the proofs reveal a fundamental obstacle
-      (e.g., the interaction cannot preserve the invariant, the rate bound is
-      worse than the baseline, the assumptions are unrealistic), recommend
-      returning to Phase 02 to select a different method. State why this method
-      is not viable.
+Write the HTML summary to the exact path provided. Begin with the User Decision
+Brief required by the team norms. Include:
 
-   State the recommendation clearly as one of: **proceed**, **improve theory**,
-   **return to Phase N**, or **dead end — select different method**. Justify with
-   specific evidence from the proofs and cost analysis.
+1. **Selected method identity**: stable ID, version, definition path, and digest.
+2. **Change from prior same-branch work**: what was retained, corrected,
+   extended, or contradicted.
+3. **Proved results**: theorem statements, assumptions, and proof status.
+4. **Conjectures and failed proof steps**.
+5. **Computational assessment**: feasibility, time, memory, and stability.
+6. **Proof-audit disposition**: each substantive finding and how it affects the
+   claims.
+7. **Relation to Phase 4 evidence**: agreements, discrepancies, and recommended
+   empirical checks.
+8. **Contribution and scope**.
+9. **Unresolved-issues ledger**: disagreements, consequences, and the smallest
+   result that would resolve each one.
+10. **Proposed scientific baseline** and scientific record changes.
+11. **Recommendation**.
+
+The recommendation may be:
+
+- **run or rerun Phase 4** for a named empirical question;
+- **rerun Phase 3** for a named theorem, assumption, or discrepancy;
+- **study another active method** in a separate Phase 3 or Phase 4 launch;
+- **rerun Phase 2** only when the canonical method definition or catalog must
+  change;
+- **defer further work**.
+
+Phase 4 does not require Phase 3 to be completed. Explain how the current theory
+would inform Phase 4, but do not present Phase 3 as a launch gate. The user alone
+chooses and starts the next run.
 
 ## Requirements
-- The theorist MUST produce actual proofs. A run where the theorist only writes
-  ratings or proof sketches is a Failed run, even if the ratings are insightful.
-- The data analyst MUST produce an actual cost analysis with specific numbers
-  (big-O, memory, comparison to baselines), not general statements.
-- Every mathematical claim must be either proved (with a real proof) or stated
-  as a conjecture with the gap identified.
-- The cross-check is mandatory. If the data analyst's audit finds a gap in the
-  theorist's proof, the theorist must either close it or restate as conjecture.
+
+- Follow the three stages in the configured order.
+- Give each later role every earlier current-stage report.
+- Give every role all frozen prior same-branch Phase 3 and Phase 4 context named
+  in the prompt.
+- Treat the Phase 2 method catalog as read-only.
+- Require full proofs for claims labeled proved.
+- Require quantitative cost analysis rather than qualitative feasibility
+  judgments.
+- Preserve negative results and disagreements.
+- Write only into the current run directory.

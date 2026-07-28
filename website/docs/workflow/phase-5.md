@@ -6,145 +6,229 @@ slug: /workflow/phase-5
 
 # Phase 5: Paper Assembly & Review
 
-Transform the separate Phase 1–4 artifacts into a final manuscript through two run modes: **assembly** (combine everything into one paper) then **review and revision** (independent audit + revision).
+Phase 5 turns the completed literature, method, theory, and empirical evidence
+into a coherent manuscript. It also provides a context-separated internal review
+and a revision step when you choose that mode.
 
-## At a glance
+This internal review is not external peer review. It does not replace review by
+human coauthors, domain experts, statisticians, journal referees, or other
+specialists required by the study.
 
-| | |
-|---|---|
-| **Pattern** | Sequential |
-| **Run modes** | Assembly (default), Review & Revision |
-| **Participants** | Research Lead, Paper Reviewer |
-| **Output** | `branches/<method>/draft/revised/` |
-| **Method-bound** | Yes |
-| **Prerequisites** | Phase 4 (Implementation & Experiments) |
+## Before you launch
 
-## Run modes
+Phase 5 requires an intact completed result from each of Phases 1 through 4.
+Its launch form uses the Phase 2 catalog to identify the selected method. The
+Phase 3 and Phase 4 results must both match that method's stable ID, version,
+and definition digest. Research Hub verifies the integrity of all four results
+and the sibling branch match before launch.
 
-Phase 5 has two run modes, selected at launch:
+It does not combine theory for one method with empirical results for another,
+and a result bound to an older method version or definition does not silently
+satisfy the current branch.
 
-### Assembly — combine everything (default)
+Available summaries, role reports, and supporting evidence from both sibling
+phases are included as same-branch evidence. A Phase 3 or Phase 4 result must
+have a complete artifact inventory to satisfy this strict gate. Older records
+created before complete artifact tracking remain visible as advisory history,
+but the affected phase must be rerun before Phase 5. The same applies when a
+required result is missing, fails its integrity check, or is incompatible with
+the selected method.
 
-The research lead combines the Phase 1–4 artifacts into one coherent manuscript. This is the convergence point — the first time the entire research thread lives as a single document.
+| Choice | When to use it | Who works |
+|---|---|---|
+| **Assembly** | Intact completed results from Phases 1 through 4 have not yet been combined into one manuscript, or that evidence has changed substantially. The Phase 3 and Phase 4 results match the selected method snapshot. | Research Lead |
+| **Review & Revision** | A same-branch Assembly run already has the legacy `approved` status required by the current launcher. The phase panel does not create this status; see [Current Limitations](../known-limitations). | Paper Reviewer, then Research Lead |
+| **Review target** | The selector is shown and you want a fresh assessment of one exact sealed post-review manuscript without revising it in the same run. | Paper Reviewer only, in two stages |
 
-The lead assembles five sections from upstream phases:
+In your launch instructions, identify the intended audience or venue, the claims
+that need particular scrutiny, sections that remain uncertain, and any reporting
+standards relevant to the statistical, machine-learning, mathematical, or
+biological application.
 
-| Section | Source |
-|---------|--------|
-| **Introduction** | Written fresh: motivate the problem, state the contribution, position against Phase 1 literature |
-| **Method** | Phase 2 method definition (the precise definition of what was proposed) |
-| **Theory** | Phase 3 proved theorems with full proofs |
-| **Experiments** | Phase 4 implementation, diagnostics, and benchmark results (tables, figures) |
-| **Discussion** | Synthesize open questions and connections to broader literature |
+Launching Phase 5 starts only the selected run. It does not determine that the
+manuscript is ready for submission, submit it, or initiate any outside review.
 
-**Assembly requirements:**
-- **Notation reconciliation**: the same symbols must mean the same thing across method, theory, and experiments
-- **Claim consistency**: the intro's claims must match what the theory proves and what the experiments show. If the intro overclaims, narrow it
-- **Honest reporting**: do not soften the theorist's proofs or the analyst's negative results
-- **Unified bibliography**: merge all section references into one
+## What the team does
 
-- **1 round** — research lead assembles the manuscript
-- Uses the `stat-paper-writing` skill
+### Assembly
 
-### Review & Revision — audit then revise (gated)
+The Research Lead prepares one manuscript from the compatible branch evidence:
 
-The paper reviewer audits the assembled manuscript, then the research lead revises it. Requires a prior approved **assembly** run for the same method branch — the assembled manuscript is the input to the review.
+- the Introduction motivates the problem and positions the contribution using
+  the literature record;
+- the Method section states the selected method precisely;
+- the Theory section reports only results supported by Phase 3, with assumptions
+  and unresolved claims preserved;
+- the empirical sections use the implementation, protocol, measurements, and
+  uncertainty from Phase 4;
+- the Discussion separates conclusions, limitations, and open questions.
 
-Can be run **iteratively** on the same assembly — multiple review passes without re-assembling.
+The lead reconciles notation, aligns claims with evidence, preserves negative
+results, and combines the references. Assembly does not include a reviewer
+stage.
 
-**Stage 1 — Review (Paper Reviewer):**
-The reviewer reads the assembled manuscript independently and audits it across four dimensions:
+### Review & Revision
 
-| Dimension | What's checked |
-|-----------|---------------|
-| **Soundness** | Are the theorems correct? Are the proofs complete? Do the experiments actually support the claims? Are there hidden assumptions? |
-| **Clarity** | Is the writing clear? Is the notation consistent? Can a reader follow the argument from start to finish? |
-| **Significance** | Does the contribution matter to the field? Is it substantial enough to publish? |
-| **Originality** | How does it compare to existing work? Is the differentiation clearly stated and accurate? |
+The intended sequence is review followed by revision. The current launcher
+still requires a same-branch Assembly run with legacy `approved` status. The
+phase panel does not provide an approval action, so this mode is not normally
+available after a newly completed Assembly run. See
+[Current Limitations](../known-limitations).
 
-The reviewer produces **ranked revision recommendations** — a prioritized list from critical errors that must be fixed, to polish items.
+When the legacy gate is satisfied:
 
-**Stage 2 — Revise (Research Lead):**
-The lead addresses each review point:
-- **Fix** errors identified by the reviewer
-- **Strengthen** weak claims with additional evidence or tighter arguments
-- **Defer** (with reasoning) points that don't need immediate attention
-- **Push back** (with reasoning) on recommendations the lead disagrees with
-- Produce the **final manuscript** with a mandatory **revision log**
+1. **Context-separated internal review.** The Paper Reviewer uses a separate
+   Hermes profile and evaluates the assembled manuscript for soundness, clarity,
+   significance, originality, evidential support, and reporting completeness.
+   The reviewer ranks the issues and recommends specific changes.
+2. **Revision.** The Research Lead addresses every material point. The lead may
+   correct it, revise the claim, defer it with a reason, or disagree with a
+   scientific justification. The run produces a revised manuscript and a
+   revision record.
 
-- **2 rounds** — review then revise
-- Reviewer uses the `stat-paper-reviewer` skill; lead uses `stat-paper-writing` during revision
+The separate reviewer profile reduces direct carryover from the authoring
+conversation. It does not make the reviewer external or fully independent, and
+it does not guarantee that the review identifies every error.
 
-## Gate: review-revision requires assembly
+### Review target
 
-The **review & revision** mode requires a prior approved **assembly** run for the same method branch. The assembled manuscript is the input to the review — you can't review a paper that hasn't been assembled yet.
+The **Review target** selector has a narrower current behavior than Review &
+Revision:
 
-If you try to launch review-revision without a prior approved assembly, the UI will block it with an explanation.
+- It lists completed prior Phase 5 runs that contain a valid, sealed
+  `manuscript-post-review.md` artifact. It does not select the `manuscript.md`
+  produced by a standard assembly run.
+- The selected manuscript and its hash are preserved as the exact object of
+  review.
+- The Paper Reviewer first records a first-reader assessment using only that
+  sealed manuscript.
+- The Paper Reviewer then compares the preserved first reading with the internal
+  scientific record.
+- No Research Lead revision occurs in this review-target run, and the selected
+  manuscript is not modified.
 
-## Why independence matters
+The same Paper Reviewer profile performs both assessments. The first assessment
+uses only the selected manuscript; the second uses the internal scientific
+record as additional context.
 
-The paper reviewer **must use a separate Hermes profile** from the theorist, data analyst, and research lead. Research Hub validates this at startup.
+Choose a Review target when you want an assessment of a specific post-review
+version. Choose Review & Revision only when the legacy launch gate is already
+satisfied and you want the lead to revise that Assembly after review.
 
-This independence is essential:
-- The reviewer **hasn't seen** the draft being written — they approach it fresh
-- The reviewer's judgment isn't influenced by the authoring process
-- The review is closer to what a real peer reviewer would provide
+There is currently no one-click continuation that revises the exact manuscript
+selected as a Review target. Standard Review & Revision starts from the
+Assembly recognized by the legacy gate, not from that selected post-review
+manuscript.
 
-## Output: folder structure
+## Evidence you should receive
 
-```
-branches/
-└── <method-stable-id>/
-    └── draft/
-        └── revised/
-            └── run/
-                └── 01/
-                    ├── .directives/
-                    ├── round-01/                      ← Assembly mode
-                    │   └── research_lead.md           ← assembled manuscript
-                    └── (review-revision mode writes to a separate run)
-                        ├── round-01/
-                        │   └── paper_reviewer.md      ← structured review
-                        └── round-02/
-                            └── research_lead.md       ← revised manuscript + revision log
-```
+### From an assembly run
 
-## Readiness assessment
+- a complete manuscript with consistent notation and definitions;
+- claims traceable to the recorded literature, theory, and empirical evidence;
+- limitations, negative results, and unresolved theoretical statements retained
+  in the paper;
+- a coherent bibliography and sufficient methodological detail for the intended
+  audience.
 
-After each run, the lead presents a readiness assessment with a clear recommendation:
+### From a Review & Revision run
 
-| Recommendation | Meaning |
-|----------------|---------|
-| **Approve** | The manuscript is ready for submission |
-| **Revise further** | Run another review-revision cycle with specific focus areas |
-| **Return to Phase N** | The theory, experiments, or literature needs more work |
-| **Dead end** | The method cannot be supported; select a different one |
+- a structured internal review with issues ranked by scientific importance;
+- a response or disposition for every material review point;
+- a separate revised manuscript;
+- an exact record of changes from the reviewed manuscript;
+- clear labeling when a changed post-review manuscript has not itself received
+  another review.
 
-**You make the final call** based on this assessment.
+### From a review-target run
 
-## Reruns
+- a preserved first-reader assessment of the exact selected manuscript;
+- a second reviewer assessment informed by the internal scientific record;
+- no automatic author revision and no change to the selected manuscript.
 
-### Assembly rerun
+## Review checklist
 
-The prior assembly is **comparison evidence**. Improve on it — incorporate new Phase 3/4 results, fix notation inconsistencies, deepen thin sections.
+Before using an assembly or revision, ask:
 
-### Review-revision rerun
+- Is the central contribution stated precisely and consistently across the
+  abstract, introduction, results, and discussion?
+- Is every important claim supported by a theorem, empirical result, cited
+  source, or clearly identified interpretation?
+- Are conjectures, incomplete proofs, exploratory analyses, and post-protocol
+  deviations labeled accurately?
+- Do the theorem statements, assumptions, and proof scope agree with Phase 3?
+- Do numerical and empirical claims report sample size, replication,
+  uncertainty, missingness, and relevant sensitivity analyses from Phase 4?
+- Are baseline comparisons fair and are negative or inconclusive findings
+  visible?
+- Are the data, code, computational environment, and reproduction steps
+  described to the extent that access permits?
+- For biological work, are the experimental unit, biological replication,
+  technical replication, batches, confounders, and biological interpretation
+  reported correctly?
+- Are ethics approval, consent, data governance, conflicts of interest, funding,
+  and data or code availability statements included when relevant?
+- Does the review distinguish errors that can be fixed in the manuscript from
+  evidence gaps that require returning to an earlier phase?
+- Does the revision record show how every major concern was handled?
+- If the manuscript changed after review, is it clear that the changed text has
+  not automatically been reviewed?
 
-The prior review and revision are comparison evidence. Conduct an independent re-review and produce a fresh revision that addresses any remaining weaknesses.
+Human authors remain responsible for factual accuracy, mathematical correctness,
+authorship, citations, research ethics, journal compliance, and the decision to
+submit.
 
-### Review-only rerun (review target)
+## How to use the result
 
-If a prior assembly run produced a manuscript you want re-reviewed without re-assembling, select it from the **Review target** dropdown at launch. The dropdown lists prior assembly runs that have a sealed `manuscript-post-review.md`. This launches a review-only pass — the reviewer audits the selected manuscript and the lead revises it. The review-target selector appears automatically when one or more eligible assembly runs exist.
+Every Phase 5 run produces a separate sealed record. Read the manuscript,
+supporting reports, internal review when present, and revision record before
+choosing the next run or using the manuscript outside Research Hub.
 
-### Replacing a result awaiting review
+### After assembly
 
-When the latest run is awaiting your decision, a **Replace the result currently awaiting my decision** checkbox appears in the launch form. Check it to start a fresh run that supersedes the unreviewed result directly — you don't need to approve or request revision first.
+Use Assembly again when upstream evidence changed, notation or claim alignment
+needs correction, or the manuscript needs a different scientific structure.
+State the required changes in the new run instructions. The prior Assembly
+remains available for comparison.
 
-Prior run directories always stay sealed — nothing is ever overwritten.
+Assembly produces the manuscript and its sealed record. The current launcher
+still accepts only an Assembly record with legacy `approved` status as the
+source for standard Review & Revision. Because the phase panel no longer
+provides an approval action, a newly completed Assembly cannot normally become
+that source. This is an implementation restriction, not a scientific
+acceptance step. See [Current Limitations](../known-limitations).
 
-## What the project produces
+### After Review & Revision
 
-After Phase 5 review-revision is approved, you have:
-- A **final manuscript** ready for submission
-- A complete **revision log** documenting every change
-- The full **provenance chain**: from literature review through method development, theorem proving, experimentation, assembly, and review
+Use the revised manuscript and revision record to decide whether to run another
+paper-stage assessment, return to an earlier research phase, or seek human
+review. Return to Phase 1, 2, 3, or 4 when the review identifies a literature,
+method, proof, implementation, or empirical gap that cannot be repaired through
+writing.
+
+If important text changed during revision, consider reviewing that exact
+post-review manuscript again before submission.
+
+### After a review-target run
+
+Use the two reviewer assessments to decide whether the selected manuscript needs
+a new authoring run, work in an earlier phase, or human review. The review-target
+run itself does not revise the manuscript. If you start another authoring run,
+carry the reviewer comments forward explicitly and verify the manuscript version
+shown as its source.
+
+## Reruns and downstream effects
+
+Every rerun creates a separate sealed record. Earlier manuscripts and reviews
+remain available for comparison.
+
+Research Hub does not submit a Phase 5 manuscript or represent it as accepted,
+published, externally reviewed, or verified.
+
+The same legacy gate restricts repeated Review & Revision launches. Even when an
+eligible Assembly record exists, a later Phase 5 result can cause it to stop
+satisfying the gate. See [Current Limitations](../known-limitations) before
+planning repeated review cycles.
+
+For artifact names, run records, manuscript variants, and branch layout, see
+[Files and records](../reference/files-and-records).

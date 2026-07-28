@@ -1,136 +1,205 @@
 ---
 sidebar_position: 1
-title: "Pipeline Overview"
+title: "Research Workflow"
 slug: /workflow/pipeline
 ---
 
-# Pipeline Overview
+# Research workflow
 
-Research Hub organizes a research project into **five sequential phases**. Each phase produces evidence that, once you approve it, becomes trusted context for the next phase. You control every transition.
+Research Hub separates a research project into five phases so that you can
+evaluate the evidence before deciding what happens next. A completed run makes
+its summary and supporting material available for inspection. You decide
+whether to use that material as context, rerun with new direction, start an
+eligible phase, or stop.
 
-## The pipeline
+## The five scientific questions
+
+| Phase | Question you are deciding | Evidence you receive |
+|---|---|---|
+| [1. Literature Review](./phase-1) | Is the relevant literature understood well enough to define the contribution and proceed? | Search scope, closest prior work, foundations, implementations, unresolved overlap, and coverage gaps |
+| [2. Method Development](./phase-2) | Is there a scientifically valuable and sufficiently precise method worth evaluating? | A ranked method menu, mathematical definitions, assumptions, novelty arguments, computational implications, and a team recommendation |
+| [3. Theoretical Development](./phase-3) | Which claims are supported, which remain conjectural, and which fail under stated assumptions? | Proofs or proof plans, assumption checks, counterexamples, failure regimes, and a claim-by-claim assessment |
+| [4. Implementation and Experiments](./phase-4) | Does the method work computationally and empirically under an adequate evaluation design? | Implementation evidence, diagnostics, benchmark comparisons, uncertainty, robustness checks, and limitations |
+| [5. Paper Assembly and Review](./phase-5) | Is the manuscript accurate, coherent, reproducible, and ready for its intended audience? | An assembled manuscript, context-separated internal review, revised claims, and a readiness assessment |
 
 ```mermaid
 flowchart LR
-    P1["**Phase 1**<br/>Literature Review<br/><br/>Survey prior work<br/>Identify gaps"] --> P2["**Phase 2**<br/>Method Development<br/><br/>Propose new methods<br/>Select one"]
-    P2 --> P3["**Phase 3**<br/>Theoretical Development<br/><br/>Prove theorems<br/>Establish bounds"]
-    P3 --> P4["**Phase 4**<br/>Implementation & Experiments<br/><br/>Implement in code<br/>Run benchmarks"]
-    P4 --> P5["**Phase 5**<br/>Paper Assembly & Review<br/><br/>Assemble manuscript<br/>Independent review"]
+    P1["Phase 1: Literature"] --> P2["Phase 2: Method catalog"]
+    P2 --> P3["Phase 3: Theory"]
+    P2 --> P4["Phase 4: Experiments"]
+    P3 --> P5["Phase 5: Paper"]
+    P4 --> P5
 ```
+Phase 3 and Phase 4 are sibling studies. After Phase 2, you may start either
+one for any active method, then return to the other when useful. Phase 5 becomes
+available only after Phases 1 through 4 have intact completed results and the
+sibling results match the same selected method snapshot. Finishing one phase
+never starts another.
 
-## Phase summary
+## Your decision cycle
 
-| Phase | Pattern | Participants | Modes | Output folder |
-|-------|---------|-------------|-------|---------------|
-| [1. Literature Review](./phase-1) | Parallel | theorist, research_lead, data_scientist | — | `references/` |
-| [2. Method Development](./phase-2) | Parallel | theorist, research_lead, data_scientist | — | `ideas/methods/` |
-| [3. Theoretical Development](./phase-3) | Debate | theorist, research_lead, data_scientist | — | `branches/<method>/evaluations/` |
-| [4. Implementation & Experiments](./phase-4) | Parallel | theorist, research_lead, data_scientist | preliminary, comprehensive | `branches/<method>/draft/sections/` |
-| [5. Paper Assembly & Review](./phase-5) | Sequential | paper_reviewer, research_lead | assembly, review_revision | `branches/<method>/draft/revised/` |
+Use the same scientific cycle for every phase:
 
-## How phases connect
+1. **Frame the run.** State the question you want the team to resolve.
+2. **Launch deliberately.** Choose the phase, method when applicable, available
+   run settings, and any specific direction.
+3. **Follow the work.** Monitor progress and inspect the reports produced during
+   the run.
+4. **Review the evidence.** Read the final summary, disagreements, missing work,
+   and supporting artifacts needed to assess consequential claims.
+5. **Choose the next action.** Use relevant material as context, rerun with
+   specific direction, start another eligible phase, or stop.
+6. **Launch explicitly.** No later phase or rerun starts until you choose it.
 
-Each phase's **approved summary** becomes frozen, hash-verified context for downstream phases. When Phase 3 runs, it receives the approved summaries of Phases 1 and 2 as trusted inputs.
+See [Review results and choose what happens next](./decisions) for a practical
+review and rerun guide.
 
-This means:
-- A downstream phase always knows **exactly which version** of upstream results it consumed
-- **Rerunning** an upstream phase and approving the new result marks downstream phases as **stale** — you decide whether to rerun them
-- The full **provenance chain** is auditable: you can trace any claim back to the exact run that produced it
+## While a run is active
 
-## Round patterns
+Only one run can be active in a project. Open the active phase to see its
+technical status and select **Open live log** when you need the detailed
+execution record. A running status reports process progress, not scientific
+validity.
 
-### Parallel (Phases 1, 2, 4)
-- **Round 1**: each role works **independently** — no cross-reading
-- **Round 2+**: **cross-pollination** — roles read each other's outputs, refine, and propose new ideas sparked by other perspectives
+Select **Cancel run** when you decide the work should stop. Research Hub
+preserves completed work in that run's record.
 
-### Debate (Phase 3)
-- **Round 1**: each role works independently (theorist proves, data analyst assesses cost, lead positions)
-- **Round 2+**: **challenge and revise** — roles critique each other's claims, concede when persuaded, or hold with reasoning. The goal is convergence toward defensible claims.
+If the interface reports that cleanup is pending, the project remains locked
+until Research Hub can confirm that the local worker and Hermes tasks have
+stopped. Select **Retry cleanup** first. Use **Release after manual
+verification** only after you have independently confirmed that no worker or
+Hermes task for the run remains active. Releasing the lock does not stop those
+processes.
 
-### Sequential (Phase 5)
-- Phase 5 has **two run modes**: assembly (1 round) and review-revision (2 rounds)
-- **Assembly**: the lead combines all upstream artifacts into one manuscript
-- **Review-revision** (gated by assembly): reviewer audits, then lead revises — runs one at a time
-- Review-revision can iterate on the same assembly without re-assembling
+After a run stops, inspect the preserved record before deciding whether to
+rerun the phase with new direction.
 
-### Run modes (Phases 4 & 5)
-- Phases 4 and 5 declare **run modes** — user-selected variants with different round counts and goals
-- Phase 4: preliminary (implement & test) → comprehensive (full benchmark, gated by preliminary)
-- Phase 5: assembly (combine manuscript) → review-revision (audit & revise, gated by assembly)
-- The gating prevents skipping ahead: you can't benchmark unvalidated code or review an unassembled paper
+## What you decide before launch
 
----
+Before each run, decide:
 
-## The run lifecycle
+- **The scientific question.** What uncertainty should this run reduce?
+- **The scope.** Is this an initial assessment, a focused correction, or an
+  extension of earlier work?
+- **The available run settings.** Choose a round count only when the phase offers
+  it. In Phase 4, choose preliminary or comprehensive according to the empirical
+  scope you need; neither scope requires the other.
+- **Your direction to the team.** State the population, estimand, assumptions,
+  method family, benchmark, biological setting, or claim that deserves special
+  attention.
+- **Whether the available inputs are adequate.** If earlier material is
+  incomplete or no longer aligned with the question, decide whether to rerun
+  the relevant phase, narrow the new instructions, or proceed when the launch
+  conditions permit. The current form assembles eligible context automatically.
 
-Every phase run follows this lifecycle:
+Good direction is specific enough to guide inquiry without deciding the answer
+in advance. For example:
 
-```mermaid
-stateDiagram-v2
-    [*] --> starting: You start the run
-    starting --> running: Manifest sealed, worker launched
-    running --> submitting: All rounds complete
-    submitting --> awaiting_review: Summary written
-    awaiting_review --> approved: You approve
-    awaiting_review --> revision_requested: You request revision
-    awaiting_review --> rerun: You start a new run
-    approved --> [*]: Trusted as downstream context
-```
+- "Compare the proposed estimator with methods that target the same estimand
+  under dependent sampling."
+- "Check whether the claimed rate requires strong convexity or only a spectral
+  gap."
+- "Evaluate performance across sample size, signal strength, and distribution
+  shift, with uncertainty from independent repetitions."
 
-### Key rules
+## What the team does
 
-1. **Agents cannot approve their own result.** When agent work finishes, the run enters `awaiting_review`. Only your decision moves it forward.
+The roles contribute different forms of scientific scrutiny:
 
-2. **Only approved, current runs are trusted downstream.** An `awaiting_review` run is visible but not trusted. A stale approved run (because upstream was rerun) is marked stale until you act.
+- In Phases 1 and 2, the research lead, theorist, and data analyst begin with
+  distinct analyses. Later rounds compare their conclusions and investigate
+  specific conflicts or gaps.
+- In Phase 3, the theorist performs the main mathematical analysis, the data
+  analyst stress-tests its computational implications and assumptions, and the
+  research lead synthesizes both reports.
+- In Phase 4, the data analyst performs the main implementation and empirical
+  analysis, the theorist audits correspondence with the method and theory, and
+  the research lead synthesizes both reports.
+- In both Phase 3 and Phase 4, later stages read the earlier stages, and every
+  role receives available prior results and discussion from both phases on the
+  same method branch.
+- In Phase 5, work depends on the selected mode. The research lead performs
+  Assembly, a Review target uses the Paper Reviewer, and Review & Revision uses
+  the Paper Reviewer followed by the research lead.
 
-3. **One run per project at a time.** Separate projects run independently.
+The research lead synthesizes the reports, but does not make the user's
+decision. A recommendation should state its evidence, uncertainty, and credible
+alternatives.
 
-4. **Reruns never replace approved results.** Starting a new run preserves the prior approved run for comparison. When a run is awaiting review, you can replace it directly by checking the "replace awaiting review" checkbox in the launch form.
+## What every summary should let you judge
 
-5. **Approving an upstream replacement marks downstream phases stale.** Their history is preserved — you decide whether to rerun them.
+A useful phase summary should make the following visible:
 
-6. **Every run and summary persists.** Nothing is ever overwritten.
+- the question and scope actually examined;
+- the status of each material scientific statement;
+- the strongest supporting and contradicting evidence;
+- assumptions, uncertainty, and conditions of validity;
+- disagreements among roles and whether they were resolved;
+- missing work and its consequence for later phases;
+- material changes from earlier results;
+- a clear recommendation with reasons;
+- the earlier result used for comparison, when one exists.
 
-7. **Completing a phase never starts the next phase.** You alone decide when to proceed.
+A completed summary is material for scientific judgment. Completion does not
+certify its claims or trigger another action. Inspect it before deciding how, or
+whether, later work should use it.
 
----
+## What you can do after a run
 
-## What you do at each phase
+| Your action | When it is useful | Effect |
+|---|---|---|
+| **Let the result inform later work** | The material is relevant and sufficiently reliable for the next question. | Eligible material is assembled automatically. Inspect it before launch; the context received by the run is frozen. |
+| **Rerun the phase** | A new pass could resolve a gap, test a changed assumption, or use new evidence. | A new run is created. Earlier runs remain available for comparison. |
+| **Start another eligible phase** | Its required conditions are satisfied and the available evidence is sufficient for its purpose. | Only the phase you explicitly start will run. |
+| **Stop or defer** | The direction is not useful or no further work is currently warranted. | Nothing else starts. The completed material remains available. |
 
-The cycle is the same for every phase:
+## Dependencies and newer evidence
 
-1. **Start the run** — choose round count, add optional direction (free-text guidance for the agents)
-2. **Monitor** — watch round-by-round progress, read the live log
-3. **Review** — read the HTML summary at `awaiting_review`
-4. **Decide** — approve, request revision, or rerun
-5. **Proceed** — start the next phase when you're satisfied
+Phase 1 has no prerequisite. Phase 2 can use available Phase 1 literature
+evidence and publishes the method catalog without selecting one method.
 
-### The "direction" field
+Phase 3 and Phase 4 both show that catalog as a read-only list. When launching
+either phase, you explicitly choose an active method. The method identity,
+version, and definition are frozen for that run, and work for the same method is
+routed to one durable branch. Either sibling phase can run first. Each run can
+use available prior results and discussion from both phases on the same branch.
 
-When starting any run, you can add free-text direction. Examples:
-- *"Focus on graph-based sampling methods and their spectral properties"*
-- *"Compare specifically against ALDI and the two-system paradigm"*
-- *"The data scientist should test at N=100 and N=1000"*
+Phase 5 requires an intact completed result from each of Phases 1 through 4.
+The Phase 3 and Phase 4 results must both match the selected method's stable ID,
+version, and definition digest. It does not combine theory and experiments from
+different methods or silently substitute an older method version or
+definition.
 
-This steers the agents without changing the research brief. It's the primary way to guide a run toward what you care about.
+When a newer upstream result changes an assumption, method definition, dataset,
+implementation, or conclusion used downstream, the earlier downstream result
+remains preserved with its original context. Inspect the affected claims and
+decide whether the change is immaterial or whether a focused or full rerun is
+needed.
 
-### Prerequisites are warnings, not locks
+Some missing recommended prerequisites can be acknowledged through an explicit
+override when the launch form offers one. Phase 3 and Phase 4 still require a
+valid active method. The Phase 5 integrity and exact method-snapshot
+requirements are not overridable.
 
-Each phase declares recommended prerequisites. If an approved prerequisite is missing, the UI explains the gap and requires an **explicit override** to proceed. This lets you move forward when you judge it safe, while ensuring the gap is acknowledged.
+## Rerun with a purpose
 
-### Method-bound phases require an approved branch
+The intended workflow lets you return to any phase when the scientific question
+warrants another pass. After Phase 2, Phase 3 and Phase 4 can be launched or
+rerun independently. Phase 5 remains subject to the full Phase 1 through Phase 4
+integrity and method-snapshot requirements above. A useful rerun should state
+what has changed and what evidence would alter your decision.
 
-Phases 3–5 are **method-bound**: their output goes to `branches/<method>/`. The launch button is disabled until you approve a method in Phase 2 (New Method). The approved method branch locks in which method the downstream phases operate on. Change it by approving a different method in Phase 2.
+On a rerun, the team should:
 
----
+1. compare the new question with the available earlier results and discussion;
+2. identify correct, uncertain, incomplete, or contradicted material;
+3. preserve valid earlier evidence;
+4. investigate the named gap or changed assumption;
+5. report what changed and why.
 
-## Reruns: audit, fix, extend
+The new result does not erase the earlier run. Both remain in the research
+record so you can compare what changed and decide which material to use.
 
-Any phase can be rerun at any time. Research Hub treats reruns as **iterative refinement**, not clean restarts:
-
-1. **Audit first** — read every prior round output, identify what's correct, incomplete, wrong, or missing
-2. **Fix in place** — correct errors and fill gaps in the existing material
-3. **Add new material** — extend with new theorems, experiments, or analysis
-4. **Never replace** — prior run files are sealed history; new rounds go into a new run directory
-
-Each phase has phase-specific rerun logic — see the individual phase pages for details.
+For the location and interpretation of run summaries, scientific artifacts,
+and decision records, see
+[Files and research records](../reference/files-and-records).

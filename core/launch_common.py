@@ -126,7 +126,7 @@ THEORY_RUN_PLANS = frozenset({
     THEORY_PLAN_AUDIT_ONLY,
 })
 
-# Phase 04 run modes — preliminary (implement + test) vs comprehensive (benchmark).
+# Phase 04 run modes: preliminary (implement + test) vs comprehensive (benchmark).
 RUN_MODE_PRELIMINARY = "preliminary"
 RUN_MODE_COMPREHENSIVE = "comprehensive"
 
@@ -135,7 +135,7 @@ RUN_MODES = frozenset({
     RUN_MODE_COMPREHENSIVE,
 })
 
-# Phase 05 run modes — assembly (assemble manuscript) vs review-revision (review + revise).
+# Phase 05 run modes: assembly (assemble manuscript) vs review-revision (review + revise).
 RUN_MODE_ASSEMBLY = "assembly"
 
 RUN_MODE_REVIEW_REVISION = "review_revision"

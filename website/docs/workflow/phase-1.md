@@ -6,140 +6,239 @@ slug: /workflow/phase-1
 
 # Phase 1: Literature Review
 
-Survey relevant prior work, produce structured notes, and identify the gaps your project will address.
+## Purpose
 
-## At a glance
+Phase 1 determines what is already known, what the proposed research can
+legitimately build on, and where the important uncertainty remains. Its purpose
+is not to produce a long bibliography. It is to establish an evidence base from
+which you can judge the contribution and design the next stage of the research.
 
-| | |
-|---|---|
-| **Pattern** | Parallel |
-| **Participants** | Theorist, Research Lead, Data Analyst |
-| **Rounds** | 1–5 (default 2) |
-| **Output** | `references/` |
-| **Prerequisites** | None |
+No earlier phase is required. You can use Phase 1 for an initial survey or for
+a focused update at any point in the project.
 
-## How it works
+## The decision this phase supports
 
-### Round 1: Independent search
+After reviewing the result, you should be able to decide:
 
-Each role searches the literature from their own angle, **without reading each other's work**:
+- whether the closest prior work has been identified;
+- whether the proposed contribution is stated precisely enough to compare with
+  that work;
+- which mathematical and scientific foundations can be reused;
+- which implementations, datasets, and evaluation practices already exist;
+- which originality or contribution statements are supported, qualified,
+  contradicted, or still unresolved;
+- whether the evidence is adequate for method development.
 
-- **Theorist**: finds **theoretical foundations** — the mathematical frameworks the project builds on (e.g., Bakry–Émery theory, hypocoercivity, optimal transport). Identifies which theoretical tools exist and which gaps remain.
-- **Research Lead**: finds **direct prior work** — the closest existing contributions that must be differentiated from. Establishes how to position the project's contribution and what makes it novel.
-- **Data Analyst**: finds **existing implementations** and **computational approaches**. Identifies benchmarks, standard evaluation targets, and practical algorithms in the area.
+The team may recommend proceeding, improving the literature review, or
+reconsidering the research direction. The recommendation informs your decision
+but does not replace it.
 
-### Round 2+: Cross-pollination
+## What you decide before launch
 
-Roles read what the others found and fill gaps:
-- A paper the theorist found might change how the research lead positions the contribution
-- A benchmark the data scientist found might reveal an unexplored regime
-- Roles propose additional searches based on cross-role insights
+Choose the scope of the run.
 
-## Per-role responsibilities
+### Initial survey
 
-### Theorist — theoretical foundations
-- Find the **theoretical tools** the project will use (e.g., Γ₂ calculus, Wasserstein gradients, spectral graph theory)
-- Identify **prior mathematical frameworks** that are related but distinct from the proposed approach
-- Note which assumptions are standard and which would be novel
-- Flag theoretical obstacles that the proposed methods will need to overcome
+Use an initial survey when the project is new or the surrounding field has not
+yet been mapped. State, as clearly as possible:
 
-### Research Lead — positioning and closest prior work
-- Find the **closest existing contributions** — the papers a reviewer would compare your work to
-- Establish the **differentiation**: what does this project do that nothing else does?
-- Identify the **research gap** the project fills
-- Note how prior work has been positioned and what framing would be most compelling
+- the research question, estimand, or prediction target;
+- the proposed method, mechanism, or representation;
+- the anticipated statistical, mathematical, computational, or biological
+  advance;
+- the population, data-generating setting, or biological system of interest;
+- the conditions under which the advance is expected to hold.
 
-### Data Analyst — computational landscape
-- Find **existing implementations** of related methods (code, packages)
-- Identify **standard benchmarks** and evaluation protocols in the area
-- Note **computational approaches** that are established vs. novel
-- Flag practical challenges (scalability, numerical stability) seen in prior work
+Unclear items can be included as questions for the team.
 
-## Output: folder structure
+### Focused literature update
 
-After a successful run, the `references/` directory contains:
+Use a focused update when a particular uncertainty has emerged. Name the gap,
+such as:
 
-```
-references/
-├── literature-review/
-│   └── run/
-│       └── 01/                         ← run number
-│           ├── .directives/
-│           │   ├── round-01.md         ← what each role was told to do
-│           │   └── round-02.md
-│           ├── round-01/
-│           │   ├── theorist.md         ← theoretical foundations found
-│           │   ├── research_lead.md    ← prior work and positioning
-│           │   └── data_scientist.md   ← implementations and benchmarks
-│           └── round-02/
-│               └── ...                 ← cross-pollination outputs
-│
-├── papers/                             ← per-reference summary files
-│   ├── arxiv-2509.09162.md             ← one file per cited paper
-│   ├── arxiv-2603.03268.md
-│   └── ...
-│
-└── literature-summary.md               ← consolidated summary (read this first)
-```
+- a possible overlap with a newly found paper;
+- a theorem or assumption that needs source verification;
+- an unfamiliar method family that may contain a direct precedent;
+- an implementation that may already realize part of the proposed method;
+- a biological setting or dataset that was absent from the initial review.
 
-### Per-reference files (`references/papers/`)
+Select 1 to 5 rounds, with 2 as the usual starting point. A later round is most
+useful when the first round identifies a specific conflict or missing source
+that another targeted search can resolve.
 
-Each cited paper gets a markdown file with YAML frontmatter:
+Use the direction field to state what deserves emphasis. Do not direct the team
+toward a preferred conclusion. Ask for evidence that could support or weaken
+the proposed contribution.
 
-```yaml
----
-arxiv_id: "2509.09162"
-title: "Exact title from the citation"
-authors: ["Author One", "Author Two"]
-year: 2025
-relation: "direct prior work"     # or: theoretical foundation / related method / existing implementation
-found_in_run: "06"
-found_by_role: "research_lead"
-also_found_in: ["07"]
----
+## What the team does
 
-# arXiv:2509.09162 — Short Title
+In the first round, three roles examine the literature independently:
 
-## One-line summary
-What this paper does, in one sentence.
+- **The theorist** compares the proposed mathematical object, estimand,
+  identity, algorithm, and guarantee with primary theoretical results. The
+  theorist records assumptions, proof dependencies, counterexamples, and
+  failure regimes.
+- **The research lead** identifies the closest scientific contributions and
+  evaluates the proposed positioning. The lead distinguishes importance from
+  originality and asks what claim remains defensible after comparison with
+  prior work.
+- **The data analyst** examines existing implementations, benchmark practice,
+  datasets, computational costs, and evaluation protocols. The analyst checks
+  whether software or empirical practice already implements the claimed
+  advance.
 
-## Relevance to this project
-2-4 sentences: why it matters here, how it relates to the candidate contribution.
+In later rounds, the roles compare their findings. They investigate named
+disagreements, follow backward and forward citations, test alternative search
+terms, and close consequential evidence gaps. Repeating the same broad search
+is not a useful additional round.
 
-## Key results / tools
-- Specific theorem, algorithm, or data the project references
-```
+The research lead then produces an evidence-weighted synthesis. A conflict
+between roles should remain visible unless a source or argument resolves it.
 
-### Consolidated summary (`literature-summary.md`)
+## Literature evidence standard
 
-A single document with:
-- A table of all papers, their relation to the project, and which role found them
-- The landscape of prior work (what exists, what's established, what's open)
-- The identified gaps the project could fill
+Judge the Phase 1 result by the quality and relevance of its evidence, not by
+the number of references.
 
-**Downstream phases read this summary first** for orientation, then check individual reference files when evaluating specific methods.
+### Define the comparison precisely
 
-## Reruns
+The review should distinguish:
 
-Phase 1 can be rerun when:
-- You want to search a **broader or different** area
-- New papers have appeared since the last run
-- A later phase revealed relevant literature the initial run missed
+1. **Direct prior work:** the same target, construction, formula, estimand, or
+   scientific conclusion for the same purpose.
+2. **Theoretical foundations:** established results that the project can use
+   but should not present as new.
+3. **Related methods:** similar mathematical or computational ideas used for a
+   different target, setting, or scientific purpose.
+4. **Existing implementations:** code, packages, analysis procedures, datasets,
+   or benchmarks that implement part or all of the proposed approach.
 
-### Rerun protocol
+Shared vocabulary or similar notation is not sufficient to establish
+equivalence. The comparison should examine the actual target, mathematical
+definition, assumptions, computation, and intended use.
 
-1. **Audit**: read the existing `references/papers/` and `literature-summary.md`. Identify what's already covered and what's missing.
-2. **Extend**: search for additional literature. Add new per-reference files. **Do not delete** existing reference files.
-3. **Update the summary**: rewrite `literature-summary.md` to incorporate both old and new references. The old summary is preserved in the prior run's output directory.
-4. **Never replace**: prior run outputs at `references/literature-review/run/01/` stay sealed. The new run writes to `run/02/`, `run/03/`, etc.
+### Prefer evidence close to the claim
 
-### What changes downstream when you rerun Phase 1
+Use primary papers for scientific and mathematical claims, original
+repositories for software claims, and official documentation for documented
+behavior. A review article can orient the search but should not be the sole
+support for a central comparison.
 
-If you approve the rerun, Phases 2–5 are marked **stale** (because their literature context changed). You decide whether to rerun them. When you rerun Phase 2, the agents are told that the existing literature folder and summaries are available for consideration.
+For a theorem or guarantee, record the exact result and its assumptions. For an
+algorithm, record the operative computation and target. For an empirical or
+biological claim, record the study population or model system, data source,
+outcome, design, sample size where relevant, and uncertainty. Check whether
+apparently similar findings depend on different measurements, interventions,
+or validity conditions.
 
-## What Phase 1 produces for Phase 2
+### Make the search reproducible
 
-Phase 2 (Method Development) receives Phase 1's approved summary as a trusted input. The method proposals in Phase 2 are explicitly checked against the literature:
-- Don't propose a method that merely redoes classified prior work
-- Position new methods relative to what was found in Phase 1
-- Use the per-reference files to see exactly which prior papers are relevant
+The report should preserve a compact search account containing:
+
+- databases, indexes, repositories, or other sources searched;
+- search dates;
+- query families, formulas, and important synonyms;
+- backward and forward citation paths;
+- software and implementation searches;
+- restrictions on language, date, venue, population, or study type;
+- the stopping rule.
+
+A defensible stopping rule is evidence saturation: further targeted searches
+no longer change the closest-work set, the contribution boundary, important
+assumptions, or material uncertainty.
+
+### Calibrate negative and originality statements
+
+Failure to find a paper is not proof that none exists. Use language such as
+"not found within the searched scope," followed by the scope and remaining
+uncertainty. Treat unresolved overlap as unresolved. Do not convert a narrow or
+unsuccessful search into a claim of originality.
+
+Check the current status of central sources when possible, including corrections
+or retractions that affect the result being used.
+
+## Evidence you receive
+
+The final summary should give you:
+
+- a short decision brief;
+- a precise statement of the candidate contribution and its validity
+  conditions;
+- the searched scope and stopping rule;
+- a classified evidence table for direct prior work, foundations, related
+  methods, and implementations;
+- the closest overlapping work and the exact basis for comparison;
+- source quality and uncertainty for each material conclusion;
+- differences among the three role assessments;
+- coverage gaps and questions for a focused update;
+- proposed changes to the scientific record;
+- one recommendation: **proceed**, **improve literature**, or **reconsider
+  direction**, with reasons.
+
+Source-level notes and run records remain available for checking the synthesis.
+See [Files and research records](../reference/files-and-records).
+
+## Review checklist
+
+Before making a decision, ask:
+
+- [ ] Is the research question, target, contribution, and scope stated
+      precisely?
+- [ ] Does the search cover the method names, mathematical formulations,
+      scientific synonyms, and application terminology that a close precedent
+      might use?
+- [ ] Are central comparisons based on primary sources rather than titles,
+      abstracts, or secondary summaries alone?
+- [ ] Does each claimed precedent identify the same or different target,
+      assumptions, computation, and purpose?
+- [ ] Are foundational results separated from genuinely new claims?
+- [ ] Are available code, datasets, benchmarks, and standard evaluation
+      practices represented?
+- [ ] For empirical or biological evidence, are the population, model system,
+      measurement, design, and generalizability relevant to this project?
+- [ ] Are negative findings limited to the searched scope?
+- [ ] Are disagreements, missing sources, and uncertain classifications
+      visible?
+- [ ] Does the recommendation follow from the evidence and state what remains
+      at risk?
+
+## Inspect the result and choose the next action
+
+A completed Phase 1 run becomes available for inspection and possible use as
+context. Completion does not certify the literature conclusions or require
+later work to rely on them.
+
+| Action | Use it when | Direction to provide |
+|---|---|---|
+| **Use the result as context** | The evidence is broad and precise enough for the next question, and its important uncertainties are explicit. | Record any known gaps that later work must not treat as resolved. |
+| **Rerun Phase 1** | The scope changed, new literature appeared, a later phase exposed an overlap, or the existing search cannot support the intended use. | State the new search question, likely terminology or citation path, and what evidence would change your judgment. |
+| **Pause or redirect the project** | The evidence does not support the current direction or another question now has higher priority. | Preserve the useful findings and state why no immediate follow-up is warranted. |
+
+See [Review results and choose what happens next](./decisions) for the general
+control model.
+
+## Consequences for later phases
+
+A Phase 2 run can use relevant Phase 1 material to avoid reproducing known
+work, distinguish new mechanisms from established ingredients, and define
+comparisons that will matter in theory and experiments.
+
+No literature search establishes originality permanently. Revisit its
+conclusions when the method changes or new evidence appears. If a new Phase 1
+result changes evidence used by later work, inspect the affected claims and
+decide whether a focused or full rerun is needed. Earlier runs remain available
+with the context they originally used.
+
+## Rerun guidance
+
+Rerun Phase 1 with a named purpose. Ask the team to compare against the relevant
+earlier result, retain supported findings, correct contradicted claims, and
+search the identified gap. A useful rerun should make clear:
+
+- which part of the contribution or scope changed;
+- which sources or search paths are new;
+- which earlier conclusions remain supported;
+- which conclusions changed and why;
+- whether the new evidence changes the recommendation for Phase 2.
+
+Prior runs remain part of the research record.

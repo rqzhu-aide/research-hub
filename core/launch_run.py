@@ -31,6 +31,7 @@ from typing import Any, Mapping, Sequence
 
 
 from core import launch_common
+from core import method_menu
 from core import project_state
 from core import profile_skills
 from core import launch_dispatch
@@ -126,6 +127,9 @@ from core.launch_manifest import (
     _verified_preloaded_skill_names,
     _verify_frozen_inputs,
     phase_requires_method_binding,
+    phase_uses_catalog_method_selection,
+    phase_five_branch_readiness,
+    phase_five_required_completed_runs,
 )
 from core.launch_plans import (
     _configured_proof_audit,
@@ -360,11 +364,14 @@ def launch_run(
     run_mode: str = "",
     run_specific_method_id: str = "",
     run_specific_method_version: str = "",
+    run_specific_method_sha256: str = "",
+    expected_method_menu_version: str = "",
     expected_phase_plan_version: str = "",
     expected_workspace_path: str = "",
     expected_project_directory_name: str = "",
     expected_project_path: str = "",
     include_downstream: bool = False,
+    required_completed_runs: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Launch one run while workspace replacement and project creation are excluded."""
 
@@ -427,8 +434,11 @@ def launch_run(
             run_mode=run_mode,
             run_specific_method_id=run_specific_method_id,
             run_specific_method_version=run_specific_method_version,
+            run_specific_method_sha256=run_specific_method_sha256,
+            expected_method_menu_version=expected_method_menu_version,
             expected_phase_plan_version=expected_phase_plan_version,
             include_downstream=include_downstream,
+            required_completed_runs=required_completed_runs,
         )
 
 
@@ -451,12 +461,73 @@ def _launch_run_locked(
     run_mode: str = "",
     run_specific_method_id: str = "",
     run_specific_method_version: str = "",
+    run_specific_method_sha256: str = "",
+    expected_method_menu_version: str = "",
     expected_phase_plan_version: str = "",
     include_downstream: bool = False,
+    required_completed_runs: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Prepare and launch exactly one user-authorized phase run."""
 
     project_dir = Path(project_dir).resolve()
+    expected_required_runs: dict[str, str] | None = None
+    if required_completed_runs is not None:
+        if phase_slug != launch_common.PAPER_WRITING_PHASE:
+            raise launch_common.LaunchError(
+                "Exact completed-run bindings are valid only for Phase 5"
+            )
+        try:
+            expected_required_runs = project_state._normalize_required_completed_runs(
+                required_completed_runs
+            )
+        except project_state.ProjectStateError as exc:
+            raise launch_common.LaunchError(str(exc)) from exc
+    supplied_method_id = str(run_specific_method_id).strip()
+    supplied_method_version = str(run_specific_method_version).strip()
+    supplied_method_sha256 = str(run_specific_method_sha256).strip().lower()
+    expected_menu_version = str(expected_method_menu_version).strip().lower()
+    selected_method_entry: dict[str, Any] | None = None
+    if supplied_method_id or supplied_method_version or supplied_method_sha256:
+        if phase_slug in {
+            launch_common.IDEA_EVALUATION_PHASE,
+            launch_common.DRAFT_ASSEMBLY_PHASE,
+            launch_common.PAPER_WRITING_PHASE,
+        }:
+            if len(expected_menu_version) != 64 or any(
+                character not in "0123456789abcdef"
+                for character in expected_menu_version
+            ):
+                raise launch_common.LaunchError(
+                    "The reviewed Phase 2 method catalog version is missing or invalid"
+                )
+            try:
+                current_menu_version = method_menu.catalog_version(project_dir)
+            except (OSError, ValueError) as exc:
+                raise launch_common.LaunchError(
+                    "The Phase 2 method catalog could not be verified"
+                ) from exc
+            if not hmac.compare_digest(expected_menu_version, current_menu_version):
+                raise launch_common.LaunchError(
+                    "The Phase 2 method catalog changed after launch was requested. "
+                    "Reload this phase and review the methods again"
+                )
+        entry, error = method_menu.find_selectable_entry(
+            project_dir, supplied_method_id
+        )
+        if (
+            entry is None
+            or not supplied_method_version
+            or str(entry.get("version", "")) != supplied_method_version
+            or len(supplied_method_sha256) != 64
+            or not hmac.compare_digest(
+                str(entry.get("sha256", "")).lower(), supplied_method_sha256
+            )
+        ):
+            detail = error or "its version or definition changed after the page was shown"
+            raise launch_common.LaunchError(
+                "The selected method is no longer launchable: " + detail
+            )
+        selected_method_entry = dict(entry)
     config = launch_plans._load_hub_config()
     configured_phase = launch_plans._phase_config(config, phase_slug)
     phase = dict(configured_phase)
@@ -502,7 +573,7 @@ def _launch_run_locked(
     selected_run_mode = str(run_mode).strip()
     # F3 fix: review-target and run-mode are mutually exclusive. The webapp
     # may supply both, but review_target means "review-only" and run_mode means
-    # "assembly/revision" — combining them silently destroys the review plan.
+    # "assembly/revision"; combining them silently destroys the review plan.
     if review_source is not None and selected_run_mode:
         raise launch_common.LaunchError(
             "A manuscript review target cannot be combined with a run mode; "
@@ -518,16 +589,64 @@ def _launch_run_locked(
         phase = launch_plans._phase_for_run_mode(phase, selected_run_mode)
     elif selected_run_mode:
         raise launch_common.LaunchError("This phase does not declare run modes")
+
+    method_selection = launch_plans._method_selection_for_run(
+        phase,
+        {},
+        supplied_method_id,
+        supplied_method_version,
+    )
+    if method_selection is not None and selected_method_entry is None:
+        raise launch_common.LaunchError(
+            "The selected method has no reviewed canonical definition"
+        )
+    resolved_method_id = (
+        str(method_selection.get("stable_id", "")).strip()
+        if method_selection
+        else ""
+    )
+    resolved_method_version = (
+        str(method_selection.get("version", "")).strip()
+        if method_selection
+        else ""
+    )
+    phase_five_readiness: dict[str, Any] | None = None
+    phase_five_required_runs: dict[str, str] | None = None
+    if phase_slug == launch_common.PAPER_WRITING_PHASE:
+        if selected_method_entry is None:
+            raise launch_common.LaunchError(
+                "Phase 5 requires an active Phase 2 method selected for this run"
+            )
+        phase_five_readiness = launch_manifest.phase_five_branch_readiness(
+            project_dir, selected_method_entry
+        )
+        if not phase_five_readiness["ready"]:
+            raise launch_common.LaunchError(
+                "Phase 5 requires completed, intact results from every previous phase. "
+                "Phase 3 and Phase 4 must match this exact method version. Missing: "
+                + ", ".join(phase_five_readiness["blockers"])
+            )
+        phase_five_required_runs = phase_five_required_completed_runs(
+            phase_five_readiness
+        )
+        if (
+            expected_required_runs is not None
+            and expected_required_runs != phase_five_required_runs
+        ):
+            raise launch_common.LaunchError(
+                "The exact Phase 1 to Phase 4 results changed before launch. "
+                "Reload the phase and review the selected method again."
+            )
     try:
         hermes_root = profile_skills.resolve_hermes_root()
     except (profile_skills.ProfileSkillsError, OSError, ValueError) as exc:
         raise launch_common.LaunchError("Hermes profile locations could not be resolved safely") from exc
     # F15 fix: fingerprint the SHAPED phase, not the configured one.
-    # Preliminary vs comprehensive (different rounds) must yield different
-    # phase_plan_version tokens, so the "reviewed plan" binds the user to
-    # the variant they actually saw.  Previously, all non-review-target
-    # runs used configured_phase, making the fingerprint blind to the
-    # variant selected.
+    # Preliminary and comprehensive use the same stages but different scientific
+    # scope. Their run_plan values must yield different phase_plan_version tokens
+    # so the reviewed plan binds the user to the scope they actually saw.
+    # Previously, all non-review-target runs used configured_phase, making the
+    # fingerprint blind to the variant selected.
     plan_phase = phase
     initial_recommended_skills = launch_plans._recommended_skills_snapshot(
         config,
@@ -594,7 +713,12 @@ def _launch_run_locked(
         hermes_root=hermes_root,
     )
 
-    report = project_state.prerequisite_report(project_dir, phase_slug, dependencies)
+    report = project_state.prerequisite_report(
+        project_dir,
+        phase_slug,
+        dependencies,
+        required_completed_runs=phase_five_required_runs,
+    )
     current_prerequisite_version = project_state.decision_report_version(
         "prerequisite", report
     )
@@ -613,6 +737,11 @@ def _launch_run_locked(
         )
     override = None
     if not report.get("satisfied"):
+        if phase_five_required_runs is not None:
+            raise launch_common.LaunchError(
+                "The completed Phase 5 prerequisites changed during launch. "
+                "Reload the phase and review the available branch results."
+            )
         reason = prerequisite_override_reason.strip()
         if not reason:
             blockers = ", ".join(report.get("blockers", []))
@@ -627,7 +756,13 @@ def _launch_run_locked(
             )
         override = {"actor": "user", "reason": reason}
 
-    prior_runs = project_state.get_runs(project_dir, phase_slug)
+    prior_run_exists = (
+        launch_prompts._has_prior_method_run(
+            project_dir, phase_slug, resolved_method_id
+        )
+        if resolved_method_id
+        else bool(project_state.get_runs(project_dir, phase_slug))
+    )
     if review_source:
         mode = "user-directed review-only rerun"
     elif selected_theory_plan == launch_common.THEORY_PLAN_AUDIT_ONLY:
@@ -635,17 +770,19 @@ def _launch_run_locked(
     elif selected_theory_plan == launch_common.THEORY_PLAN_STANDARD_WITH_AUDIT:
         mode = (
             "user-directed rerun with independent proof audit"
-            if prior_runs
+            if prior_run_exists
             else "user-directed initial run with independent proof audit"
         )
     else:
-        mode = "user-directed rerun" if prior_runs else "user-directed initial run"
+        mode = (
+            "user-directed rerun"
+            if prior_run_exists
+            else "user-directed initial run"
+        )
     run_id: str | None = None
     process: subprocess.Popen[str] | None = None
     manifest_file: Path | None = None
-    # F6 note: mode gates (comprehensive/review-revision) are evaluated
-    # after method_selection resolution below, keyed on the resolved
-    # branch identity rather than the run_specific_method_id form field.
+    # Phase 05 review-revision is checked against the resolved branch identity.
     try:
         run_id = project_state.reserve_run(
             project_dir,
@@ -660,47 +797,33 @@ def _launch_run_locked(
             expected_prerequisite_report_version=(
                 submitted_prerequisite_version or None
             ),
+            required_completed_runs=phase_five_required_runs,
         )
         index = launch_common._run_index(project_dir, phase_slug, run_id)
         run_number = index + 1
         context_inputs = launch_prompts._trusted_context(
-            project_dir, phase_slug, config,
+            project_dir,
+            phase_slug,
+            config,
             include_downstream=include_downstream,
+            selected_method_id=resolved_method_id,
+            selected_method_version=resolved_method_version,
+            selected_method_sha256=(
+                str(selected_method_entry.get("sha256", ""))
+                if selected_method_entry
+                else ""
+            ),
         )
         project_state.set_run_context(
             project_dir, phase_slug, run_id, context_inputs
         )
         snapshots = launch_prompts._snapshot_run_inputs(
-            project_dir, phase, run_id, context_inputs
-        )
-        method_selection = launch_plans._method_selection_for_run(
+            project_dir,
             phase,
-            snapshots,
-            run_specific_method_id,
-            run_specific_method_version,
+            run_id,
+            context_inputs,
+            selected_method=selected_method_entry,
         )
-        # F6 fix: mode gates evaluated AFTER method_selection resolution,
-        # keyed on the resolved branch identity. This catches both
-        # run-specific and Phase-02 decision-record-bound methods.
-        resolved_method_id = (
-            str(method_selection.get("stable_id", "")).strip()
-            if method_selection
-            else ""
-        )
-        if (
-            phase_slug == launch_common.DRAFT_ASSEMBLY_PHASE
-            and selected_run_mode == launch_common.RUN_MODE_COMPREHENSIVE
-            and resolved_method_id
-        ):
-            if not launch_plans._comprehensive_gate_satisfied(
-                project_dir, resolved_method_id
-            ):
-                raise launch_common.LaunchError(
-                    "A comprehensive Phase 04 run requires a prior approved preliminary "
-                    "run for this method branch. Launch a preliminary run first to "
-                    "confirm the implementation works, then approve it before "
-                    "benchmarking."
-                )
         if (
             phase_slug == launch_common.PAPER_WRITING_PHASE
             and selected_run_mode == launch_common.RUN_MODE_REVIEW_REVISION
@@ -724,6 +847,13 @@ def _launch_run_locked(
         launch_common._ensure_contained_directory(
             output_root, project_dir, label="run output directory"
         )
+        if phase_slug == launch_common.METHOD_DEVELOPMENT_PHASE:
+            try:
+                method_menu.stage_method_menu(project_dir, output_root)
+            except (OSError, ValueError) as exc:
+                raise launch_common.LaunchError(
+                    f"The Phase 2 method catalog could not be staged: {exc}"
+                ) from exc
         paper_review: dict[str, Any] = {
             "kind": "full",
             "review_path": str(launch_plans._paper_manuscript_paths(output_root)["review"]),
@@ -742,7 +872,7 @@ def _launch_run_locked(
             }
         # R2 fix: for review_revision runs, freeze the approved assembly
         # run's manuscript into the new run's review path. Without this,
-        # the reviewer has no manuscript to review — the file never exists.
+        # the reviewer has no manuscript to review because the file never exists.
         assembly_run_ref = locals().get("assembly_run")
         if (
             selected_run_mode == launch_common.RUN_MODE_REVIEW_REVISION
@@ -880,6 +1010,7 @@ def _launch_run_locked(
             paper_review,
             frozen_theory_audit_source,
             method_selection,
+            branch_readiness=phase_five_readiness,
             run_mode=str(phase.get("run_plan", "")),
             output_root=output_root,
         )
@@ -930,6 +1061,7 @@ def _launch_run_locked(
             "paper_review": paper_review,
             "submission_outputs": submission_outputs,
             "method_selection": method_selection,
+            "branch_readiness": phase_five_readiness,
             "recommended_skills": recommended_skills,
             "phase_plan_version": current_phase_plan_version,
             "prerequisite_report_version": current_prerequisite_version,
@@ -1221,7 +1353,7 @@ def _worker(
             # at the manifest's declared path, attempt the staging +
             # finalization here rather than declaring failure.
             if current.get("status") == "submitting":
-                # Staging succeeded but finalization returned False —
+                # Staging succeeded but finalization returned False;
                 # retry once in case of a transient lock conflict.
                 finalized = project_state.finalize_run_submission(
                     project_path,
@@ -1404,9 +1536,9 @@ def _status_all_projects() -> str:
                 if status in ("running", "awaiting_review", "staged", "stopping"):
                     active_total += 1
                     badge = "🔄" if status == "running" else "⏸️"
-                    project_lines.append(f"  {badge} **{label}** — run {rid} — {status}")
+                    project_lines.append(f"  {badge} **{label}** | run {rid} | {status}")
                 elif run.get("run_id") == approved:
-                    project_lines.append(f"  ✅ **{label}** — run {rid} — approved")
+                    project_lines.append(f"  ✅ **{label}** | run {rid} | approved")
         if project_lines:
             lines.append(f"## {name}")
             lines.extend(project_lines)
@@ -1532,14 +1664,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             if not outputs:
                 raise launch_common.LaunchError("At least one --output is required")
-            launch_dispatch._complete_round_checked(
+            supporting_count = launch_dispatch._complete_round_checked(
                 args.project_dir,
                 args.phase,
                 _run_ref(args),
                 args.round,
                 outputs,
             )
-            print(f"Round {args.round} completed with {len(outputs)} artifacts.")
+            print(
+                f"Round {args.round} completed with {len(outputs)} role "
+                f"report{'s' if len(outputs) != 1 else ''} and "
+                f"{supporting_count} supporting "
+                f"artifact{'s' if supporting_count != 1 else ''}."
+            )
         elif args.command == "status":
             if args.all_projects:
                 print(_status_all_projects())

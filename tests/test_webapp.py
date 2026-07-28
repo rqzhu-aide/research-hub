@@ -176,6 +176,65 @@ def _ready_prerequisites(*_args, **_kwargs) -> dict:
     return {"satisfied": True, "blockers": [], "requirements": []}
 
 
+def _ready_phase_five_branch(_project: Path, method: dict) -> dict:
+    method_id = str(method["stable_id"])
+    method_version = str(method["version"])
+    method_sha256 = str(method["sha256"])
+    requirements = []
+    for phase_slug, label, run_id, branch_specific in (
+        (
+            "01-literature-review",
+            "Phase 1 literature review",
+            "literature-ready",
+            False,
+        ),
+        (
+            webapp.project_state.METHOD_DEVELOPMENT_PHASE,
+            "Phase 2 method development",
+            "method-menu-ready",
+            False,
+        ),
+        (
+            "03-idea-evaluation",
+            "Phase 3 theoretical development",
+            "theory-ready",
+            True,
+        ),
+        (
+            "04-draft-assembly",
+            "Phase 4 implementation and experiments",
+            "experiment-ready",
+            True,
+        ),
+    ):
+        result = {
+            "phase": phase_slug,
+            "run_id": run_id,
+            "status": "awaiting_review",
+            "scientific_outcome": "Complete",
+        }
+        if branch_specific:
+            result.update({
+                "method_id": method_id,
+                "method_version": method_version,
+                "method_sha256": method_sha256,
+            })
+        requirements.append({
+            "phase": phase_slug,
+            "label": label,
+            "satisfied": True,
+            "result": result,
+        })
+    return {
+        "ready": True,
+        "method_id": method_id,
+        "method_version": method_version,
+        "method_sha256": method_sha256,
+        "requirements": requirements,
+        "blockers": [],
+    }
+
+
 def _launch_tokens(
     web_env: dict,
     phase_slug: str,
@@ -184,7 +243,7 @@ def _launch_tokens(
     effective_phase: dict | None = None,
 ) -> dict[str, str]:
     prerequisite_report = report if report is not None else _ready_prerequisites()
-    return {
+    tokens = {
         "phase_plan_version": webapp.launch_plan_version(
             web_env["config"], phase_slug, effective_phase=effective_phase
         ),
@@ -192,6 +251,16 @@ def _launch_tokens(
             "prerequisite", prerequisite_report
         ),
     }
+    configured_phase = effective_phase or next(
+        phase
+        for phase in web_env["config"]["phases"]
+        if phase["slug"] == phase_slug
+    )
+    if webapp.phase_uses_catalog_method_selection(configured_phase):
+        tokens["method_menu_version"] = webapp.method_menu.catalog_version(
+            web_env["project_dir"]
+        )
+    return tokens
 
 
 def test_empty_workspace_get_renders_onboarding(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -933,6 +1002,7 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
         "name": "Paper Writing",
         "description": "Write and review the paper.",
         "pattern": "sequential",
+        "method_binding": True,
         "rounds": {"min": 5, "default": 5, "max": 5},
         "gated_by": [],
         "folder": "draft/",
@@ -951,6 +1021,17 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
     monkeypatch.setattr(
         webapp.project_state, "prerequisite_report", _ready_prerequisites
     )
+    monkeypatch.setattr(
+        webapp,
+        "phase_five_branch_readiness",
+        _ready_phase_five_branch,
+    )
+    monkeypatch.setattr(
+        web_phase_data,
+        "phase_five_branch_readiness",
+        _ready_phase_five_branch,
+    )
+    _write_menu_file(project_dir, "proof-method", "recommended")
     monkeypatch.setattr(
         webapp,
         "theory_audit_source_options",
@@ -976,6 +1057,8 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
     assert 'value="audit_only"' in proof_html
     assert 'name="proof_audit_source_run_id"' in proof_html
     assert 'value="opaque-source-run-id"' in proof_html
+    assert "Choose a prior theory artifact" in proof_html
+    assert 'type="hidden" name="proof_audit_source_run_id"' not in proof_html
     assert "proof_audit_source_path" not in proof_html
 
     proof_response = client.post(
@@ -985,6 +1068,7 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
             "project_identity": identity,
             **_launch_tokens(web_env, "03-idea-evaluation"),
             "theory_plan": "standard_with_audit",
+            "method_branch": "proof-method",
         },
     )
     assert proof_response.status_code == 302
@@ -1061,6 +1145,7 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
             **_launch_tokens(web_env, "05-review-revision"),
             "review_target": "draft/run/01/manuscript-post-review.md",
             "review_target_sha256": "a" * 64,
+            "method_branch": "proof-method",
         },
     )
     assert review_response.status_code == 302
@@ -1078,10 +1163,11 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
     assert review_call.kwargs["review_target_sha256"] == "a" * 64
 
 
-def test_phase_three_and_four_show_the_approved_method_and_optional_override_fields(
+def test_legacy_phase_two_selection_remains_visible_for_schema_seven_projects(
     web_env: dict,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Preserve read-only compatibility with projects created before schema 9.
     method_slug = webapp.project_state.METHOD_DEVELOPMENT_PHASE
     theory_slug = "03-idea-evaluation"
     numerical_slug = "04-draft-assembly"
@@ -1219,18 +1305,309 @@ def _theory_phase_config() -> dict:
     }
 
 
-def _write_menu_file(project_dir: Path, stable_id: str, status: str) -> None:
+def _method_phase_config() -> dict:
+    return {
+        "slug": webapp.project_state.METHOD_DEVELOPMENT_PHASE,
+        "name": "Method Development",
+        "description": "Develop and maintain the candidate method menu.",
+        "pattern": "debate",
+        "rounds": {"min": 1, "default": 2, "max": 4},
+        "gated_by": [],
+        "folder": "ideas/",
+        "members": ["research_lead", "theorist", "data_scientist"],
+    }
+
+
+def _write_menu_file(
+    project_dir: Path,
+    stable_id: str,
+    status: str,
+    *,
+    number: int | None = None,
+    body: str = "A precise method definition.",
+) -> None:
     menu_dir = project_dir / "ideas" / "methods"
     menu_dir.mkdir(parents=True, exist_ok=True)
+    if number is None:
+        number = len(list(menu_dir.glob("*.md"))) + 1
+    number_line = f"number: {number}\n"
     (menu_dir / f"{stable_id}.md").write_text(
         "---\n"
         f"stable_id: {stable_id}\n"
         "version: v1\n"
         f"label: {stable_id.replace('-', ' ').title()}\n"
         f"status: {status}\n"
+        f"{number_line}"
         "---\n\n"
-        f"# {stable_id}\n",
+        f"# {stable_id}\n\n{body}\n",
         encoding="utf-8",
+    )
+
+
+def _retirement_fields(project_dir: Path, stable_id: str) -> dict[str, str]:
+    entry = next(
+        item
+        for item in webapp.method_menu.load_method_menu(project_dir)["entries"]
+        if item["stable_id"] == stable_id
+    )
+    return {
+        "stable_id": stable_id,
+        "method_version": str(entry["version"]),
+        "method_sha256": str(entry["sha256"]),
+    }
+
+
+def test_phase_two_page_always_shows_an_empty_method_menu_and_run_panel(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    phase_slug = webapp.project_state.METHOD_DEVELOPMENT_PHASE
+    web_env["config"]["phases"].append(_method_phase_config())
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+
+    response = web_env["client"].get(
+        f"/project/{PROJECT_ID}?tab={phase_slug}"
+    )
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "Current methods" in body
+    assert "No methods have been produced yet" in body
+    assert "Your instructions for this run" in body
+    assert "Launch Method Development" in body
+    assert "Use for following phases" not in body
+    assert 'name="replace_awaiting_review"' not in body
+    assert "accept_selected_scientific_object" not in body
+
+
+def test_phase_two_page_uses_method_files_without_a_run_summary(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    phase_slug = webapp.project_state.METHOD_DEVELOPMENT_PHASE
+    web_env["config"]["phases"].append(_method_phase_config())
+    _write_menu_file(
+        web_env["project_dir"],
+        "spectral-graph-coupling",
+        "recommended",
+        number=2,
+    )
+    _write_menu_file(
+        web_env["project_dir"],
+        "old-method",
+        "retired",
+        number=5,
+    )
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+
+    response = web_env["client"].get(
+        f"/project/{PROJECT_ID}?tab={phase_slug}"
+    )
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "Spectral Graph Coupling" in body
+    assert "Old Method" in body
+    assert "#2 Spectral Graph Coupling" in body
+    assert "#5 Old Method" in body
+    assert body.count('class="btn btn-xs btn-retire-method"') == 1
+    assert "method-status-retired" in body
+    assert "Use for following phases" not in body
+
+
+def test_phase_two_published_catalog_and_rerun_form_launch_without_approval(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    phase_slug = webapp.project_state.METHOD_DEVELOPMENT_PHASE
+    web_env["config"]["phases"].append(_method_phase_config())
+    web_env["config"]["hub"]["allow_unattended_tools"] = True
+    _write_menu_file(
+        web_env["project_dir"],
+        "existing-method",
+        "recommended",
+        number=1,
+    )
+    webapp.project_state.init(
+        web_env["project_dir"],
+        "project-001",
+        "test",
+        "Test Project",
+        phase_slugs=[phase_slug],
+        dependencies={phase_slug: []},
+    )
+    run_id = "published-phase-two-run"
+    state_data = webapp.project_state.load(web_env["project_dir"])
+    phase_state = state_data["phases"][phase_slug]
+    phase_state.update({
+        "status": "approved",
+        "approved_run": run_id,
+        "latest_run": run_id,
+        "publication_readiness": "ready",
+        "runs": [{
+            "run_id": run_id,
+            "number": 1,
+            "status": "approved",
+            "mode": "initial method catalog",
+            "rounds_requested": 2,
+            "rounds": [],
+            "publication_kind": "method_menu",
+            "publication_outcome": "Complete",
+            "publication_readiness": "ready",
+            "published_at": "2026-07-27T00:00:00+00:00",
+        }],
+    })
+    webapp.project_state._save(web_env["project_dir"], state_data)
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+
+    client = web_env["client"]
+    response = client.get(f"/project/{PROJECT_ID}?tab={phase_slug}")
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "Current methods" in body
+    assert "Existing Method" in body
+    assert "Rerun Phase 2" in body
+    assert "Your instructions for this run" in body
+    assert 'name="replace_awaiting_review"' not in body
+    assert 'name="approval_kind"' not in body
+    assert "accept_selected_scientific_object" not in body
+    rerun_button = re.search(
+        r'<button type="submit" class="btn btn-primary btn-large"([^>]*)>'
+        r"\s*Rerun Method Development",
+        body,
+    )
+    assert rerun_button is not None
+    assert "disabled" not in rerun_button.group(1)
+
+    launched = Mock(return_value={"run_number": 2, "rounds_requested": 2})
+    monkeypatch.setattr(webapp, "launch_run", launched)
+    accepted = client.post(
+        f"/project/{PROJECT_ID}/phase/{phase_slug}/start",
+        data={
+            "csrf_token": _csrf(client),
+            "project_identity": _project_identity(web_env),
+            **_launch_tokens(web_env, phase_slug),
+            "rounds": "2",
+            "feedback": "Retain the strong method and reassess the alternatives.",
+        },
+    )
+
+    assert accepted.status_code == 302
+    call = launched.call_args
+    assert call.args[:5] == (
+        web_env["project_dir"].resolve(),
+        PROJECT_ID,
+        phase_slug,
+        "Retain the strong method and reassess the alternatives.",
+        2,
+    )
+    assert call.kwargs["replace_awaiting_review_note"] is None
+    assert "replace_awaiting_review_run_id" not in call.kwargs
+    assert call.kwargs["run_specific_method_id"] == ""
+    assert call.kwargs["run_specific_method_version"] == ""
+
+def test_phase_two_table_and_launch_controls_remain_visible_during_a_run(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    phase_slug = webapp.project_state.METHOD_DEVELOPMENT_PHASE
+    web_env["config"]["phases"].append(_method_phase_config())
+    _write_menu_file(
+        web_env["project_dir"],
+        "active-method",
+        "viable",
+        number=1,
+    )
+    webapp.project_state.init(
+        web_env["project_dir"],
+        "project-001",
+        "test",
+        "Test Project",
+        phase_slugs=[phase_slug],
+        dependencies={phase_slug: []},
+    )
+    webapp.project_state.reserve_run(
+        web_env["project_dir"],
+        phase_slug,
+        mode="active menu update",
+        rounds_requested=1,
+        dependencies={phase_slug: []},
+    )
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+
+    response = web_env["client"].get(
+        f"/project/{PROJECT_ID}?tab={phase_slug}"
+    )
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "Current methods" in body
+    assert "Active Method" in body
+    assert "Your instructions for this run" in body
+    assert "This run is already in progress" in body
+    assert "Wait for the active project run to finish" in body
+    assert re.search(
+        r'class="btn btn-xs btn-retire-method"[\s\S]*?disabled aria-disabled="true"',
+        body,
+    )
+    assert 'btn btn-primary btn-large" disabled' in body
+
+
+def test_phase_two_retirement_is_disabled_while_another_phase_runs(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    phase_slug = webapp.project_state.METHOD_DEVELOPMENT_PHASE
+    theory = _theory_phase_config()
+    web_env["config"]["phases"].extend([_method_phase_config(), theory])
+    _write_menu_file(
+        web_env["project_dir"],
+        "active-method",
+        "viable",
+        number=1,
+    )
+    dependencies = {phase_slug: [], theory["slug"]: []}
+    webapp.project_state.init(
+        web_env["project_dir"],
+        "project-001",
+        "test",
+        "Test Project",
+        phase_slugs=list(dependencies),
+        dependencies=dependencies,
+    )
+    webapp.project_state.reserve_run(
+        web_env["project_dir"],
+        theory["slug"],
+        mode="active theory run",
+        rounds_requested=1,
+        dependencies=dependencies,
+    )
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+
+    response = web_env["client"].get(
+        f"/project/{PROJECT_ID}?tab={phase_slug}"
+    )
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "Current methods" in body
+    assert "Active Method" in body
+    assert "Another phase is currently running" in body
+    assert re.search(
+        r'class="btn btn-xs btn-retire-method"[\s\S]*?disabled aria-disabled="true"'
+        r'[\s\S]*?title="Wait for the active project run to finish"',
+        body,
     )
 
 
@@ -1239,7 +1616,15 @@ def test_method_menu_branch_selection_drives_run_specific_identity(
 ) -> None:
     theory_slug = "03-idea-evaluation"
     web_env["config"]["phases"].append(_theory_phase_config())
-    _write_menu_file(web_env["project_dir"], "spectral-graph-coupling", "recommended")
+    _write_menu_file(
+        web_env["project_dir"],
+        "spectral-graph-coupling",
+        "recommended",
+        body=(
+            "## Statistical target\nEstimate $\\theta$ under a sparse graph model.\n\n"
+            "## Mathematical definition\nUse $\\hat{\\theta}=A^{-1}b$."
+        ),
+    )
     _write_menu_file(web_env["project_dir"], "old-idea", "retired")
     monkeypatch.setattr(
         webapp.project_state, "prerequisite_report", _ready_prerequisites
@@ -1250,8 +1635,18 @@ def test_method_menu_branch_selection_drives_run_specific_identity(
     response = client.get(f"/project/{PROJECT_ID}?tab={theory_slug}")
     body = response.get_data(as_text=True)
     assert response.status_code == 200
-    # Simplified UI: method selection handled by context chip, not a separate fieldset
     assert "launch-form-lower" in body
+    assert 'name="method_branch"' in body
+    assert 'type="radio"' in body
+    assert 'name="method_menu_version"' in body
+    assert "Phase 2 method catalog" in body
+    assert "Spectral Graph Coupling" in body
+    assert "Mathematical definition" in body
+    assert "A^{-1}b" in body
+    assert "data-mathjax-required" in body
+    assert 'value="old-idea"' not in body
+    assert 'name="method_branch" value="spectral-graph-coupling" checked' not in body
+    assert "btn-retire-method" not in body
 
     launched = Mock(return_value={"run_number": 1, "rounds_requested": 1})
     monkeypatch.setattr(webapp, "launch_run", launched)
@@ -1275,6 +1670,49 @@ def test_method_menu_branch_selection_drives_run_specific_identity(
         == "spectral-graph-coupling"
     )
     assert launched.call_args.kwargs["run_specific_method_version"] == "v1"
+    assert len(launched.call_args.kwargs["run_specific_method_sha256"]) == 64
+    assert (
+        launched.call_args.kwargs["expected_method_menu_version"]
+        == webapp.method_menu.catalog_version(web_env["project_dir"])
+    )
+
+    launched.reset_mock()
+    missing_choice = client.post(
+        f"/project/{PROJECT_ID}/phase/{theory_slug}/start",
+        data={
+            "csrf_token": token,
+            "project_identity": identity,
+            **_launch_tokens(web_env, theory_slug),
+        },
+        follow_redirects=True,
+    )
+    assert missing_choice.status_code == 200
+    assert "Choose an active method" in missing_choice.get_data(as_text=True)
+    launched.assert_not_called()
+
+    reviewed_tokens = _launch_tokens(web_env, theory_slug)
+    _write_menu_file(
+        web_env["project_dir"],
+        "spectral-graph-coupling",
+        "recommended",
+        number=1,
+        body="## Mathematical definition\nA changed definition with the same version.",
+    )
+    changed_catalog = client.post(
+        f"/project/{PROJECT_ID}/phase/{theory_slug}/start",
+        data={
+            "csrf_token": token,
+            "project_identity": identity,
+            **reviewed_tokens,
+            "method_branch": "spectral-graph-coupling",
+        },
+        follow_redirects=True,
+    )
+    assert changed_catalog.status_code == 200
+    assert "catalog changed since this page was shown" in changed_catalog.get_data(
+        as_text=True
+    )
+    launched.assert_not_called()
 
     for payload, fragment in [
         ({"method_branch": "old-idea"}, "retired"),
@@ -1294,6 +1732,34 @@ def test_method_menu_branch_selection_drives_run_specific_identity(
         assert rejected.status_code == 200
         assert fragment in rejected.get_data(as_text=True)
         launched.assert_not_called()
+
+
+def test_phase_three_disables_selection_when_catalog_cannot_be_fingerprinted(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    theory_slug = "03-idea-evaluation"
+    web_env["config"]["phases"].append(_theory_phase_config())
+    _write_menu_file(web_env["project_dir"], "active-method", "recommended")
+    (web_env["project_dir"] / "ideas" / "methods" / "notes.txt").write_text(
+        "unsupported catalog child",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+    monkeypatch.setattr(webapp, "theory_audit_source_options", lambda _project: [])
+
+    response = web_env["client"].get(
+        f"/project/{PROJECT_ID}?tab={theory_slug}"
+    )
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "The method catalog cannot be verified" in body
+    assert 'data-method-selectable="true"' not in body
+    assert 'name="method_menu_version" value=""' in body
+    assert 'data-method-launch data-base-blocked="true"' in body
 
 
 def test_quick_rerun_recovers_special_plan_only_from_prior_run(
@@ -1330,6 +1796,7 @@ def test_quick_rerun_recovers_special_plan_only_from_prior_run(
                 "name": "Paper Writing",
                 "description": "Write and review the paper.",
                 "pattern": "sequential",
+                "method_binding": True,
                 "rounds": {"min": 5, "default": 5, "max": 5},
                 "gated_by": [],
                 "folder": "draft/",
@@ -1357,6 +1824,17 @@ def test_quick_rerun_recovers_special_plan_only_from_prior_run(
     monkeypatch.setattr(webapp, "exact_rerun_options", exact)
     monkeypatch.setattr(
         webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+    _write_menu_file(project_dir, "paper-method", "recommended")
+    monkeypatch.setattr(
+        webapp,
+        "phase_five_branch_readiness",
+        _ready_phase_five_branch,
+    )
+    monkeypatch.setattr(
+        web_phase_data,
+        "phase_five_branch_readiness",
+        _ready_phase_five_branch,
     )
     monkeypatch.setattr(
         webapp.project_state,
@@ -1405,6 +1883,7 @@ def test_quick_rerun_recovers_special_plan_only_from_prior_run(
             ),
             "rerun_from": "prior-review",
             "preserve_frozen_plan": "1",
+            "method_branch": "paper-method",
         },
     )
     assert paper_response.status_code == 302
@@ -1765,6 +2244,7 @@ def test_run_progress_renders_checkpoint_accessible_state_and_focus_key(
         "rounds": [],
         "protocol_checkpoint_required": True,
         "protocol_checkpoint": checkpoint,
+        "frozen_plan": {"run_plan": "preliminary"},
     }
     phase_data = {
         "latest_run": current,
@@ -1793,6 +2273,84 @@ def test_run_progress_renders_checkpoint_accessible_state_and_focus_key(
         assert checkpoint["sha256"] in rendered
         assert checkpoint["data"]["protocol_files"][0]["path"] in rendered
 
+
+def test_project_history_chips_are_not_presented_as_selected_run_context(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    archived_phase = {
+        "slug": "03-analysis",
+        "name": "Analysis",
+        "description": "Analyze the result.",
+        "pattern": "parallel",
+        "rounds": {"min": 1, "default": 1, "max": 1},
+        "gated_by": [],
+        "folder": "analysis/",
+        "members": ["analyst"],
+    }
+    phases = [web_env["phases"][0], web_env["phases"][1], archived_phase]
+    state_data = {
+        "phases": {
+            DISCOVERY: {
+                "approved_run": None,
+                "latest_run": "discovery-result",
+                "runs": [{
+                    "run_id": "discovery-result",
+                    "run_number": 2,
+                    "status": "awaiting_review",
+                }],
+            },
+            VALIDATION: {"runs": []},
+            archived_phase["slug"]: {"runs": []},
+        }
+    }
+    monkeypatch.setattr(
+        web_phase_data.project_state,
+        "load",
+        lambda _project: state_data,
+    )
+    chips = web_phase_data._cross_phase_context(
+        web_env["project_dir"],
+        VALIDATION,
+        phases,
+    )
+    discovery_chip = next(chip for chip in chips if chip["slug"] == DISCOVERY)
+    assert discovery_chip["status"] == "awaiting_review"
+    assert discovery_chip["run_number"] == "2"
+
+    phase = web_env["phases"][1]
+    phase_data = {
+        "phase_cfg": phase,
+        "state": {"status": "pending"},
+        "run_history": [],
+        "latest_run": None,
+        "approved_run": None,
+        "run_active": False,
+        "active_elsewhere": False,
+        "can_start": False,
+        "prerequisite_report": _ready_prerequisites(),
+        "rounds_policy": phase["rounds"],
+        "stages": phase["stages"],
+        "plan_view": {},
+        "decision_state": "pending",
+        "recovery_only": False,
+        "cross_phase_context": chips,
+    }
+    monkeypatch.setattr(webapp, "_phase_catalog", lambda *_args: phases)
+    monkeypatch.setattr(webapp, "prepare_overview_data", lambda *_args: [])
+    monkeypatch.setattr(webapp, "prepare_phase_data", lambda *_args: phase_data)
+
+    response = web_env["client"].get(
+        f"/project/{PROJECT_ID}?tab={VALIDATION}"
+    )
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert '<span class="context-chips-label">Project history:</span>' in body
+    assert "awaiting review" in body
+    assert "not run" in body
+    assert "These chips show project-wide history, not the inputs for this run" in body
+    assert '<span class="context-chips-label">Context:</span>' not in body
 
 def test_run_history_is_focusable_and_progressively_discloses_older_runs(
     web_env: dict, monkeypatch: pytest.MonkeyPatch
@@ -1840,9 +2398,12 @@ def test_run_history_is_focusable_and_progressively_discloses_older_runs(
     body = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    # Simplified UI: runs are in a dropdown selector
-    assert "run-selector-dropdown" in body
-    assert "run-switcher" in body
+    assert '<details class="run-history">' in body
+    assert "<summary>Run history</summary>" in body
+    assert "Run 12: cancelled" in body
+    assert "Run 1: cancelled" in body
+    assert "run-selector-dropdown" not in body
+    assert "run-switcher" not in body
 
 
 def test_project_markdown_is_rendered_without_executable_html(
@@ -2162,8 +2723,9 @@ def test_client_controls_preserve_dirty_forms_and_mobile_focus_contract() -> Non
     assert "data-progress-announcement" in run_progress_template
     assert 'data-progress-focus="live-log"' in run_progress_template
     assert "_protocol_checkpoint.html" in run_progress_template
-    # Simplified UI: history uses run-selector dropdown, not progressive disclosure toggle
-    assert "run-selector-dropdown" in phase_template
+    assert 'class="run-history"' in phase_template
+    assert "<summary>Run history</summary>" in phase_template
+    assert "run-selector-dropdown" not in phase_template
     for template_name in (
         "_tab_phase.html",
         "_tab_overview.html",
@@ -2420,100 +2982,29 @@ def test_structured_baseline_requires_explicit_version_bound_approval(
     assert call.kwargs["note"] == "Accept the qualified negative result."
 
 
-def test_phase_two_approval_requires_the_exact_method_selection_acknowledgement(
+def test_phase_two_has_no_approval_route(
     web_env: dict,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     phase_slug = webapp.project_state.METHOD_DEVELOPMENT_PHASE
-    web_env["config"]["phases"].append({
-        "slug": phase_slug,
-        "name": "Method Development",
-        "description": "Develop and select the method.",
-        "pattern": "sequential",
-        "rounds": {"min": 1, "default": 1, "max": 1},
-        "gated_by": [],
-        "folder": "draft/method/",
-        "members": ["research_lead"],
-        "stages": [
-            {
-                "role": "research_lead",
-                "name": "Select the method",
-                "description": "Name the exact method and version.",
-            }
-        ],
-    })
-    client = web_env["client"]
-    token = _csrf(client)
-    identity = _project_identity(web_env)
-    digest = "d" * 64
-    selected_method = {
-        "kind": "method",
-        "stable_id": "METHOD-robust-score",
-        "version": "v2.1/finite-sample",
-    }
+    web_env["config"]["phases"].append(_method_phase_config())
     approved = Mock(return_value=[])
-    monkeypatch.setattr(
-        webapp.project_state,
-        "get_run",
-        lambda *_args, **_kwargs: {
-            "run_id": "phase-two-run",
-            "status": "awaiting_review",
-            "decision_record": {
-                "sha256": digest,
-                "data": {
-                    "schema_version": 2,
-                    "scientific_outcome": "Complete",
-                    "selected_scientific_object": selected_method,
-                },
-            },
-        },
-    )
-    monkeypatch.setattr(
-        webapp.project_state,
-        "approval_context_report",
-        lambda *_args, **_kwargs: {
-            "requires_acknowledgement": False,
-            "changed_sources": [],
-        },
-    )
     monkeypatch.setattr(webapp.project_state, "approve_run", approved)
-    common = {
-        "csrf_token": token,
-        "project_identity": identity,
-        "accept_proposed_baseline": "1",
-        "decision_record_version": digest,
-        "approval_kind": "approve",
-    }
+    client = web_env["client"]
 
-    for acknowledgement in (None, "yes"):
-        data = dict(common)
-        if acknowledgement is not None:
-            data["accept_selected_scientific_object"] = acknowledgement
-        blocked = client.post(
-            f"/project/{PROJECT_ID}/phase/{phase_slug}/run/phase-two-run/approve",
-            data=data,
-            follow_redirects=True,
-        )
-
-        assert blocked.status_code == 200
-        assert "explicitly select the named method ID and version" in (
-            blocked.get_data(as_text=True)
-        )
-        approved.assert_not_called()
-
-    accepted = client.post(
+    response = client.post(
         f"/project/{PROJECT_ID}/phase/{phase_slug}/run/phase-two-run/approve",
-        data={**common, "accept_selected_scientific_object": "1"},
+        data={
+            "csrf_token": _csrf(client),
+            "project_identity": _project_identity(web_env),
+        },
     )
 
-    assert accepted.status_code == 302
-    approved.assert_called_once()
-    acknowledgement = approved.call_args.kwargs["baseline_acknowledgement"]
-    assert (
-        "selected method METHOD-robust-score, version v2.1/finite-sample, "
-        "for downstream study"
-    ) in acknowledgement
-
+    assert response.status_code == 409
+    assert "publish the method menu automatically" in response.get_data(
+        as_text=True
+    )
+    approved.assert_not_called()
 
 def test_legacy_result_without_structured_baseline_cannot_be_approved(
     web_env: dict, monkeypatch: pytest.MonkeyPatch
@@ -3014,101 +3505,195 @@ def test_run_log_is_contained_and_served_only_as_plain_text(
 # Branch retirement (Stage 3c)
 # ---------------------------------------------------------------------------
 
-def test_retire_branch_removes_it_from_picker(
-    web_env: dict, monkeypatch: pytest.MonkeyPatch
+def test_phase_two_retire_keeps_the_method_visible_as_history(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """POSTing /branch/retire flips status and drops the branch from the picker."""
-    theory_slug = "03-idea-evaluation"
-    web_env["config"]["phases"].append(_theory_phase_config())
-    _write_menu_file(web_env["project_dir"], "spectral-graph-coupling", "recommended")
-    _write_menu_file(web_env["project_dir"], "alt-method", "viable")
+    phase_slug = webapp.project_state.METHOD_DEVELOPMENT_PHASE
+    web_env["config"]["phases"].append(_method_phase_config())
+    _write_menu_file(
+        web_env["project_dir"],
+        "spectral-graph-coupling",
+        "recommended",
+        number=1,
+    )
     monkeypatch.setattr(
         webapp.project_state, "prerequisite_report", _ready_prerequisites
     )
-    monkeypatch.setattr(webapp, "theory_audit_source_options", lambda _project: [])
-
+    staled = Mock(return_value=[])
+    monkeypatch.setattr(
+        webapp.project_state, "mark_method_dependents_stale", staled
+    )
     client = web_env["client"]
-    token = _csrf(client)
-    identity = _project_identity(web_env)
 
-    # Before: page renders for theory phase
-    before = client.get(f"/project/{PROJECT_ID}?tab={theory_slug}")
-    assert before.status_code == 200
-
-    # Retire spectral-graph-coupling
     response = client.post(
-        f"/project/{PROJECT_ID}/phase/{theory_slug}/branch/retire",
-        data={"csrf_token": token, "project_identity": identity, "stable_id": "spectral-graph-coupling"},
+        f"/project/{PROJECT_ID}/phase/{phase_slug}/branch/retire",
+        data={
+            "csrf_token": _csrf(client),
+            "project_identity": _project_identity(web_env),
+            **_retirement_fields(
+                web_env["project_dir"], "spectral-graph-coupling"
+            ),
+        },
         follow_redirects=True,
     )
-    assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "retired" in body.lower()
 
-    # After: page still renders, retired branch not selectable
-    after = client.get(f"/project/{PROJECT_ID}?tab={theory_slug}")
-    assert after.status_code == 200
-
-
-def test_retire_unknown_branch_returns_404(
-    web_env: dict, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    theory_slug = "03-idea-evaluation"
-    web_env["config"]["phases"].append(_theory_phase_config())
-    monkeypatch.setattr(
-        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    assert response.status_code == 200
+    assert "remains visible as history" in body
+    assert "Spectral Graph Coupling" in body
+    assert "method-status-retired" in body
+    assert 'name="stable_id" value="spectral-graph-coupling"' not in body
+    staled.assert_called_once_with(
+        web_env["project_dir"],
+        "spectral-graph-coupling",
+        reason="method spectral-graph-coupling was retired by the user",
     )
-    monkeypatch.setattr(webapp, "theory_audit_source_options", lambda _project: [])
 
+
+def test_phase_two_retire_rejects_a_stale_method_form(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    phase_slug = webapp.project_state.METHOD_DEVELOPMENT_PHASE
+    web_env["config"]["phases"].append(_method_phase_config())
+    stable_id = "spectral-graph-coupling"
+    _write_menu_file(
+        web_env["project_dir"], stable_id, "recommended", number=1
+    )
+    submitted = _retirement_fields(web_env["project_dir"], stable_id)
+    path = web_env["project_dir"] / "ideas" / "methods" / f"{stable_id}.md"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("version: v1", "version: v2"),
+        encoding="utf-8",
+    )
+    staled = Mock(return_value=[])
+    monkeypatch.setattr(
+        webapp.project_state, "mark_method_dependents_stale", staled
+    )
     client = web_env["client"]
-    token = _csrf(client)
-    identity = _project_identity(web_env)
 
     response = client.post(
-        f"/project/{PROJECT_ID}/phase/{theory_slug}/branch/retire",
-        data={"csrf_token": token, "project_identity": identity, "stable_id": "ghost"},
+        f"/project/{PROJECT_ID}/phase/{phase_slug}/branch/retire",
+        data={
+            "csrf_token": _csrf(client),
+            "project_identity": _project_identity(web_env),
+            **submitted,
+        },
     )
+
+    assert response.status_code == 409
+    assert "changed after this page was shown" in response.get_data(as_text=True)
+    entry, error = webapp.method_menu.find_selectable_entry(
+        web_env["project_dir"], stable_id
+    )
+    assert error is None
+    assert entry is not None
+    assert entry["version"] == "v2"
+    assert entry["status"] == "recommended"
+    staled.assert_not_called()
+
+
+def test_phase_two_retire_unknown_method_returns_404(
+    web_env: dict,
+) -> None:
+    phase_slug = webapp.project_state.METHOD_DEVELOPMENT_PHASE
+    web_env["config"]["phases"].append(_method_phase_config())
+    client = web_env["client"]
+
+    response = client.post(
+        f"/project/{PROJECT_ID}/phase/{phase_slug}/branch/retire",
+        data={
+            "csrf_token": _csrf(client),
+            "project_identity": _project_identity(web_env),
+            "stable_id": "ghost",
+            "method_version": "v1",
+            "method_sha256": "0" * 64,
+        },
+    )
+
     assert response.status_code == 404
 
 
-def test_retire_already_retired_returns_409(
-    web_env: dict, monkeypatch: pytest.MonkeyPatch
+def test_phase_two_retire_already_retired_returns_409(
+    web_env: dict,
 ) -> None:
-    theory_slug = "03-idea-evaluation"
-    web_env["config"]["phases"].append(_theory_phase_config())
+    phase_slug = webapp.project_state.METHOD_DEVELOPMENT_PHASE
+    web_env["config"]["phases"].append(_method_phase_config())
     _write_menu_file(web_env["project_dir"], "old-idea", "retired")
-    monkeypatch.setattr(
-        webapp.project_state, "prerequisite_report", _ready_prerequisites
-    )
-    monkeypatch.setattr(webapp, "theory_audit_source_options", lambda _project: [])
-
     client = web_env["client"]
-    token = _csrf(client)
-    identity = _project_identity(web_env)
 
     response = client.post(
-        f"/project/{PROJECT_ID}/phase/{theory_slug}/branch/retire",
-        data={"csrf_token": token, "project_identity": identity, "stable_id": "old-idea"},
+        f"/project/{PROJECT_ID}/phase/{phase_slug}/branch/retire",
+        data={
+            "csrf_token": _csrf(client),
+            "project_identity": _project_identity(web_env),
+            **_retirement_fields(web_env["project_dir"], "old-idea"),
+        },
     )
+
     assert response.status_code == 409
 
 
-def test_retire_blocked_on_non_binding_phase(
+def test_consumer_phase_cannot_retire_a_method(
     web_env: dict,
 ) -> None:
-    """Retiring on a phase that doesn't manage branches returns 404."""
+    theory_slug = "03-idea-evaluation"
+    web_env["config"]["phases"].append(_theory_phase_config())
+    _write_menu_file(web_env["project_dir"], "active-method", "viable")
     client = web_env["client"]
-    token = _csrf(client)
-    identity = _project_identity(web_env)
-    # Phase 01 does not bind methods
+
     response = client.post(
-        f"/project/{PROJECT_ID}/phase/01-literature/branch/retire",
-        data={"csrf_token": token, "project_identity": identity, "stable_id": "anything"},
+        f"/project/{PROJECT_ID}/phase/{theory_slug}/branch/retire",
+        data={
+            "csrf_token": _csrf(client),
+            "project_identity": _project_identity(web_env),
+            "stable_id": "active-method",
+        },
     )
+
     assert response.status_code == 404
 
 
-# ──────────────────────────────────────────────────────────────────────────
+@pytest.mark.parametrize(
+    "active_phase",
+    [webapp.project_state.METHOD_DEVELOPMENT_PHASE, "03-idea-evaluation"],
+)
+def test_phase_two_retirement_is_blocked_during_any_active_project_run(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    active_phase: str,
+) -> None:
+    phase_slug = webapp.project_state.METHOD_DEVELOPMENT_PHASE
+    web_env["config"]["phases"].append(_method_phase_config())
+    _write_menu_file(web_env["project_dir"], "active-method", "viable")
+    monkeypatch.setattr(
+        webapp.project_state,
+        "get_active_run",
+        lambda _project: {
+            "phase_slug": active_phase,
+            "run_id": "active-run",
+        },
+    )
+    client = web_env["client"]
+
+    response = client.post(
+        f"/project/{PROJECT_ID}/phase/{phase_slug}/branch/retire",
+        data={
+            "csrf_token": _csrf(client),
+            "project_identity": _project_identity(web_env),
+            "stable_id": "active-method",
+        },
+    )
+
+    assert response.status_code == 409
+    assert "active project run" in response.get_data(as_text=True)
+    entry, error = webapp.method_menu.find_selectable_entry(
+        web_env["project_dir"], "active-method"
+    )
+    assert error is None
+    assert entry is not None and entry["status"] == "viable"
+
 # Phase 04 run modes (preliminary vs comprehensive)
 # ──────────────────────────────────────────────────────────────────────────
 
@@ -3117,126 +3702,542 @@ def _phase_four_with_run_modes() -> dict:
         "slug": "04-draft-assembly",
         "name": "Implementation & Experiments",
         "description": "Implement and test.",
-        "pattern": "parallel",
+        "pattern": "sequential",
         "method_binding": True,
+        "protocol_checkpoint": True,
         "run_modes": {
             "plans": ["preliminary", "comprehensive"],
             "default": "preliminary",
         },
-        "gated_by": [],
+        "gated_by": ["02-method-development"],
+        "context_from": ["03-idea-evaluation"],
         "folder": "draft/sections/",
-        "members": ["research_lead", "theorist", "data_scientist"],
-        "rounds": {"min": 1, "default": 2, "max": 2},
+        "members": ["data_scientist", "theorist", "research_lead"],
+        "rounds": {"min": 3, "default": 3, "max": 3},
+        "stages": [
+            {
+                "role": "data_scientist",
+                "name": "Implement and evaluate",
+                "description": "Implement the selected scope.",
+            },
+            {
+                "role": "theorist",
+                "name": "Audit the evidence",
+                "description": "Audit fidelity and interpretation.",
+            },
+            {
+                "role": "research_lead",
+                "name": "Synthesize the record",
+                "description": "Summarize findings and disagreements.",
+            },
+        ],
     }
 
 
-def test_phase_four_run_mode_selector_renders(
-    web_env: dict, monkeypatch: pytest.MonkeyPatch
+def test_phase_four_frozen_scope_is_visible_for_active_latest_and_history(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The run-mode dropdown appears on Phase 04 with both options, preliminary default."""
+    phase = _phase_four_with_run_modes()
+    web_env["config"]["phases"].append(phase)
+    manifests = {
+        "preliminary-run": {
+            "phase_slug": phase["slug"],
+            "run_id": "preliminary-run",
+            "phase": {**phase, "run_plan": "preliminary"},
+        },
+        "comprehensive-run": {
+            "phase_slug": phase["slug"],
+            "run_id": "comprehensive-run",
+            "phase": {**phase, "run_plan": "comprehensive"},
+        },
+    }
+    monkeypatch.setattr(
+        web_phase_data,
+        "_sealed_run_manifest",
+        lambda run, _phase: manifests[str(run["run_id"])],
+    )
+    monkeypatch.setattr(
+        web_phase_data.project_state,
+        "run_integrity_report",
+        lambda *_args, **_kwargs: {"ok": True, "reason": ""},
+    )
+    preliminary = web_phase_data._run_view(
+        web_env["project_dir"],
+        phase["slug"],
+        {
+            "run_id": "preliminary-run",
+            "status": "running",
+            "rounds_requested": 3,
+            "rounds": [],
+        },
+        1,
+    )
+    comprehensive = web_phase_data._run_view(
+        web_env["project_dir"],
+        phase["slug"],
+        {
+            "run_id": "comprehensive-run",
+            "status": "awaiting_review",
+            "rounds_requested": 3,
+            "rounds": [],
+        },
+        2,
+    )
+    assert preliminary is not None and comprehensive is not None
+    assert preliminary["frozen_plan"]["run_plan"] == "preliminary"
+    assert preliminary["frozen_plan"]["variant"] == "Preliminary scope"
+    assert comprehensive["frozen_plan"]["run_plan"] == "comprehensive"
+    assert comprehensive["frozen_plan"]["variant"] == "Comprehensive scope"
+
+    with webapp.app.test_request_context("/"):
+        active_html = webapp.render_template(
+            "_run_progress.html",
+            phase_data={
+                "latest_run": preliminary,
+                "phase_cfg": phase,
+                "run_active": True,
+                "stages": phase["stages"],
+            },
+            project=web_env["project"],
+            project_identity="sealed-project-identity",
+        )
+    assert '<span class="run-mode-badge">preliminary</span>' in active_html
+
+    phase_data = {
+        "phase_cfg": phase,
+        "state": {"status": "awaiting_review"},
+        "run_history": [comprehensive, preliminary],
+        "latest_run": comprehensive,
+        "approved_run": None,
+        "run_active": False,
+        "active_elsewhere": False,
+        "can_start": False,
+        "prerequisite_report": _ready_prerequisites(),
+        "rounds_policy": phase["rounds"],
+        "stages": phase["stages"],
+        "plan_view": {},
+        "decision_state": "awaiting_review",
+        "recovery_only": False,
+        "method_menu": {"entries": [], "warnings": []},
+        "method_details": [],
+        "catalog_method_selection": True,
+    }
+    monkeypatch.setattr(webapp, "_phase_catalog", lambda *_args: [phase])
+    monkeypatch.setattr(webapp, "prepare_overview_data", lambda *_args: [])
+    monkeypatch.setattr(webapp, "prepare_phase_data", lambda *_args: phase_data)
+
+    response = web_env["client"].get(
+        f"/project/{PROJECT_ID}?tab={phase['slug']}"
+    )
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert '<span class="run-mode-badge">Comprehensive scope</span>' in body
+    assert "Run 2: awaiting review" in body
+    assert "Run 1: running" in body
+    assert body.count("Comprehensive scope") >= 2
+    assert "Preliminary scope" in body
+
+def test_phase_four_renders_the_explicit_method_chooser_and_scope_selector(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     client = web_env["client"]
     web_env["config"]["phases"].append(_phase_four_with_run_modes())
+    _write_menu_file(
+        web_env["project_dir"],
+        "active-method",
+        "recommended",
+        body=(
+            "## Mathematical definition\n"
+            "Evaluate $T_n = n^{-1/2}\\sum_i X_i$ under the stated model."
+        ),
+    )
+    _write_menu_file(web_env["project_dir"], "retired-method", "retired")
     monkeypatch.setattr(
         webapp.project_state, "prerequisite_report", _ready_prerequisites
     )
+
     page = client.get(f"/project/{PROJECT_ID}?tab=04-draft-assembly")
+
     assert page.status_code == 200
     html = page.get_data(as_text=True)
+    assert 'name="method_menu_version"' in html
+    assert 'name="method_branch"' in html
+    assert "Phase 2 method catalog" in html
+    assert "Active Method" in html
+    assert "Mathematical definition" in html
+    assert "T_n" in html
+    assert "data-mathjax-required" in html
+    assert 'value="retired-method"' not in html
+    radio = re.search(
+        r'<input[^>]+name="method_branch"[^>]+value="active-method"[^>]*>',
+        html,
+    )
+    assert radio is not None
+    assert "checked" not in radio.group(0)
+    assert "data-method-launch" in html
+    assert "data-phase3-launch" not in html
     assert 'name="run_mode"' in html
     assert 'value="preliminary"' in html
     assert 'value="comprehensive"' in html
-    # Preliminary should be the selected default
-    prelim_opt = html[html.index('value="preliminary"'):]
-    assert "selected" in prelim_opt[:200]
+    assert "Either scope can be launched directly" in html
+    preliminary = html[html.index('value="preliminary"'):]
+    assert "selected" in preliminary[:200]
 
 
-def test_phase_four_preliminary_passes_one_round_and_run_mode(
-    web_env: dict, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("run_mode", ["preliminary", "comprehensive"])
+def test_phase_four_scope_launches_all_three_stages(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    run_mode: str,
 ) -> None:
-    """Selecting preliminary sends rounds=1 and run_mode=preliminary to launcher."""
     client = web_env["client"]
     web_env["config"]["phases"].append(_phase_four_with_run_modes())
-    launched = Mock(return_value={"run_number": 1, "rounds_requested": 1})
+    _write_menu_file(web_env["project_dir"], "active-method", "recommended")
+    launched = Mock(return_value={"run_number": 1, "rounds_requested": 3})
     monkeypatch.setattr(webapp, "launch_run", launched)
     monkeypatch.setattr(
         webapp.project_state, "prerequisite_report", _ready_prerequisites
     )
-    token = _csrf(client)
-    identity = _project_identity(web_env)
+
     response = client.post(
         f"/project/{PROJECT_ID}/phase/04-draft-assembly/start",
         data={
-            "csrf_token": token,
-            "project_identity": identity,
+            "csrf_token": _csrf(client),
+            "project_identity": _project_identity(web_env),
             **_launch_tokens(web_env, "04-draft-assembly"),
-            "run_mode": "preliminary",
+            "method_branch": "active-method",
+            "run_mode": run_mode,
         },
     )
+
     assert response.status_code == 302
     call = launched.call_args
-    assert call.args[4] == 1  # rounds
+    assert call.args[4] == 3
+    assert call.kwargs["run_mode"] == run_mode
+    assert call.kwargs["run_specific_method_id"] == "active-method"
+    assert call.kwargs["expected_method_menu_version"] == (
+        webapp.method_menu.catalog_version(web_env["project_dir"])
+    )
+
+
+def test_phase_four_defaults_to_preliminary_with_all_three_stages(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = web_env["client"]
+    web_env["config"]["phases"].append(_phase_four_with_run_modes())
+    _write_menu_file(web_env["project_dir"], "active-method", "recommended")
+    launched = Mock(return_value={"run_number": 1, "rounds_requested": 3})
+    monkeypatch.setattr(webapp, "launch_run", launched)
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+
+    response = client.post(
+        f"/project/{PROJECT_ID}/phase/04-draft-assembly/start",
+        data={
+            "csrf_token": _csrf(client),
+            "project_identity": _project_identity(web_env),
+            **_launch_tokens(web_env, "04-draft-assembly"),
+            "method_branch": "active-method",
+        },
+    )
+
+    assert response.status_code == 302
+    call = launched.call_args
+    assert call.args[4] == 3
     assert call.kwargs["run_mode"] == "preliminary"
 
 
-def test_phase_four_comprehensive_passes_two_rounds_and_run_mode(
-    web_env: dict, monkeypatch: pytest.MonkeyPatch
+def test_phase_four_rejects_missing_retired_and_stale_method_choices(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Selecting comprehensive sends rounds=2 and run_mode=comprehensive."""
     client = web_env["client"]
+    phase_slug = "04-draft-assembly"
     web_env["config"]["phases"].append(_phase_four_with_run_modes())
-    launched = Mock(return_value={"run_number": 1, "rounds_requested": 2})
+    _write_menu_file(web_env["project_dir"], "active-method", "recommended")
+    _write_menu_file(web_env["project_dir"], "retired-method", "retired")
+    launched = Mock(return_value={"run_number": 1, "rounds_requested": 3})
     monkeypatch.setattr(webapp, "launch_run", launched)
     monkeypatch.setattr(
         webapp.project_state, "prerequisite_report", _ready_prerequisites
     )
-    token = _csrf(client)
-    identity = _project_identity(web_env)
-    response = client.post(
-        f"/project/{PROJECT_ID}/phase/04-draft-assembly/start",
-        data={
-            "csrf_token": token,
-            "project_identity": identity,
-            **_launch_tokens(web_env, "04-draft-assembly"),
-            "run_mode": "comprehensive",
-        },
+    common = {
+        "csrf_token": _csrf(client),
+        "project_identity": _project_identity(web_env),
+        "run_mode": "preliminary",
+    }
+
+    missing = client.post(
+        f"/project/{PROJECT_ID}/phase/{phase_slug}/start",
+        data={**common, **_launch_tokens(web_env, phase_slug)},
+        follow_redirects=True,
     )
-    assert response.status_code == 302
-    call = launched.call_args
-    assert call.args[4] == 2  # rounds
-    assert call.kwargs["run_mode"] == "comprehensive"
+    assert "Choose an active method" in missing.get_data(as_text=True)
+
+    retired = client.post(
+        f"/project/{PROJECT_ID}/phase/{phase_slug}/start",
+        data={
+            **common,
+            **_launch_tokens(web_env, phase_slug),
+            "method_branch": "retired-method",
+        },
+        follow_redirects=True,
+    )
+    assert "retired" in retired.get_data(as_text=True)
+
+    reviewed_tokens = _launch_tokens(web_env, phase_slug)
+    _write_menu_file(
+        web_env["project_dir"],
+        "active-method",
+        "recommended",
+        number=1,
+        body="A changed definition with the same version.",
+    )
+    stale = client.post(
+        f"/project/{PROJECT_ID}/phase/{phase_slug}/start",
+        data={
+            **common,
+            **reviewed_tokens,
+            "method_branch": "active-method",
+        },
+        follow_redirects=True,
+    )
+    assert "catalog changed since this page was shown" in stale.get_data(
+        as_text=True
+    )
+    launched.assert_not_called()
+
+def _phase_five_config() -> dict:
+    return {
+        "slug": "05-review-revision",
+        "name": "Paper Assembly & Review",
+        "description": "Assemble and review the paper.",
+        "pattern": "sequential",
+        "method_binding": True,
+        "gated_by": ["03-idea-evaluation", "04-draft-assembly"],
+        "folder": "draft/revised/",
+        "members": ["paper_reviewer", "research_lead"],
+        "run_modes": {
+            "plans": ["assembly", "review_revision"],
+            "default": "assembly",
+        },
+        "stages": [{
+            "role": "research_lead",
+            "name": "Assemble",
+            "description": "Assemble the verified branch record.",
+        }],
+    }
 
 
-def test_phase_four_defaults_to_preliminary_when_unspecified(
-    web_env: dict, monkeypatch: pytest.MonkeyPatch
+def test_phase_five_chooser_and_launch_require_all_exact_branch_results(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Omitting run_mode defaults to preliminary with 1 round."""
     client = web_env["client"]
-    web_env["config"]["phases"].append(_phase_four_with_run_modes())
+    phase_slug = "05-review-revision"
+    web_env["config"]["phases"].append(_phase_five_config())
+    _write_menu_file(web_env["project_dir"], "active-method", "recommended")
+    ready = False
+    checked_methods: list[tuple[str, str, str]] = []
+    required_completed_runs = {
+        "01-literature-review": "literature-ready",
+        webapp.project_state.METHOD_DEVELOPMENT_PHASE: "method-menu-ready",
+        "03-idea-evaluation": "theory-ready",
+        "04-draft-assembly": "experiment-ready",
+    }
+
+    def branch_readiness(_project: Path, method: dict) -> dict:
+        checked_methods.append((
+            str(method["stable_id"]),
+            str(method["version"]),
+            str(method["sha256"]),
+        ))
+        requirements = []
+        if ready:
+            for required_phase, label, branch_specific in (
+                (
+                    "01-literature-review",
+                    "Phase 1 literature review",
+                    False,
+                ),
+                (
+                    webapp.project_state.METHOD_DEVELOPMENT_PHASE,
+                    "Phase 2 method development",
+                    False,
+                ),
+                (
+                    "03-idea-evaluation",
+                    "Phase 3 theoretical development",
+                    True,
+                ),
+                (
+                    "04-draft-assembly",
+                    "Phase 4 implementation and experiments",
+                    True,
+                ),
+            ):
+                result = {
+                    "phase": required_phase,
+                    "run_id": required_completed_runs[required_phase],
+                    "status": "awaiting_review",
+                    "scientific_outcome": "Complete",
+                }
+                if branch_specific:
+                    result.update({
+                        "method_id": str(method["stable_id"]),
+                        "method_version": str(method["version"]),
+                        "method_sha256": str(method["sha256"]),
+                    })
+                requirements.append({
+                    "phase": required_phase,
+                    "label": label,
+                    "satisfied": True,
+                    "result": result,
+                })
+        return {
+            "ready": ready,
+            "method_id": str(method["stable_id"]),
+            "method_version": str(method["version"]),
+            "method_sha256": str(method["sha256"]),
+            "requirements": requirements,
+            "blockers": (
+                []
+                if ready
+                else ["Phase 4 implementation and experiments"]
+            ),
+        }
+
+    monkeypatch.setattr(
+        web_phase_data,
+        "phase_five_branch_readiness",
+        branch_readiness,
+    )
+    monkeypatch.setattr(webapp, "phase_five_branch_readiness", branch_readiness)
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
     launched = Mock(return_value={"run_number": 1, "rounds_requested": 1})
     monkeypatch.setattr(webapp, "launch_run", launched)
-    monkeypatch.setattr(
-        webapp.project_state, "prerequisite_report", _ready_prerequisites
+
+    blocked_page = client.get(f"/project/{PROJECT_ID}?tab={phase_slug}")
+    blocked_html = blocked_page.get_data(as_text=True)
+    assert blocked_page.status_code == 200
+    assert 'name="method_menu_version"' in blocked_html
+    assert "Active Method" in blocked_html
+    assert "Phase 4 implementation and experiments" in blocked_html
+    assert 'value="active-method"' not in blocked_html
+
+    common = {
+        "csrf_token": _csrf(client),
+        "project_identity": _project_identity(web_env),
+        "run_mode": "assembly",
+        "method_branch": "active-method",
+    }
+    blocked_launch = client.post(
+        f"/project/{PROJECT_ID}/phase/{phase_slug}/start",
+        data={**common, **_launch_tokens(web_env, phase_slug)},
+        follow_redirects=True,
     )
-    token = _csrf(client)
-    identity = _project_identity(web_env)
-    response = client.post(
-        f"/project/{PROJECT_ID}/phase/04-draft-assembly/start",
-        data={
-            "csrf_token": token,
-            "project_identity": identity,
-            **_launch_tokens(web_env, "04-draft-assembly"),
-        },
+    assert "Phase 5 is not ready" in blocked_launch.get_data(as_text=True)
+    launched.assert_not_called()
+
+    ready = True
+    ready_page = client.get(f"/project/{PROJECT_ID}?tab={phase_slug}")
+    ready_html = ready_page.get_data(as_text=True)
+    radio = re.search(
+        r'<input[^>]+name="method_branch"[^>]+value="active-method"[^>]*>',
+        ready_html,
     )
-    assert response.status_code == 302
+    assert radio is not None
+    assert "checked" not in radio.group(0)
+    assert "data-method-launch" in ready_html
+
+    accepted = client.post(
+        f"/project/{PROJECT_ID}/phase/{phase_slug}/start",
+        data={**common, **_launch_tokens(web_env, phase_slug)},
+    )
+
+    assert accepted.status_code == 302
+    launched.assert_called_once()
     call = launched.call_args
     assert call.args[4] == 1
-    assert call.kwargs["run_mode"] == "preliminary"
+    assert call.kwargs["run_mode"] == "assembly"
+    assert call.kwargs["run_specific_method_id"] == "active-method"
+    assert call.kwargs["run_specific_method_version"] == "v1"
+    assert len(call.kwargs["run_specific_method_sha256"]) == 64
+    assert checked_methods
+    assert all(identity[:2] == ("active-method", "v1") for identity in checked_methods)
+
+
+def test_phase_five_does_not_claim_ready_when_every_method_is_baseline_blocked(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    phase_slug = "05-review-revision"
+    phase_cfg = _phase_five_config()
+    web_env["config"]["phases"].append(phase_cfg)
+    _write_menu_file(web_env["project_dir"], "method-a", "recommended")
+    _write_menu_file(web_env["project_dir"], "method-b", "recommended")
+    blockers = ["Phase 1 literature review", "Phase 2 method development"]
+
+    def branch_readiness(_project: Path, method: dict) -> dict:
+        return {
+            "ready": False,
+            "method_id": method["stable_id"],
+            "requirements": [
+                {
+                    "phase": "01-literature-review",
+                    "satisfied": False,
+                    "result": None,
+                },
+                {
+                    "phase": "02-method-development",
+                    "satisfied": False,
+                    "result": None,
+                },
+            ],
+            "blockers": blockers,
+        }
+
+    monkeypatch.setattr(
+        web_phase_data,
+        "phase_five_branch_readiness",
+        branch_readiness,
+    )
+    monkeypatch.setattr(webapp, "phase_five_branch_readiness", branch_readiness)
+    monkeypatch.setattr(
+        webapp.project_state,
+        "prerequisite_report",
+        _ready_prerequisites,
+    )
+
+    phase_data = web_phase_data.prepare_phase_data(
+        web_env["project_dir"],
+        PROJECT_ID,
+        phase_cfg,
+        web_env["config"]["phases"],
+    )
+    assert phase_data["can_run"] is False
+    assert phase_data["prerequisite_report"]["satisfied"] is False
+    assert "No active method has intact completed results" in phase_data["gating_reason"]
+
+    response = web_env["client"].get(f"/project/{PROJECT_ID}?tab={phase_slug}")
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert all(blocker in body for blocker in blockers)
+    assert "Choose a method above before launch." not in body
+    assert "Complete every previous phase" in body
 
 
 def test_phase_four_rejects_invalid_run_mode(
     web_env: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An invalid run_mode value is rejected — launcher never called."""
+    """An invalid run_mode value is rejected; the launcher is never called."""
     client = web_env["client"]
     web_env["config"]["phases"].append(_phase_four_with_run_modes())
     launched = Mock(return_value={"run_number": 1, "rounds_requested": 1})

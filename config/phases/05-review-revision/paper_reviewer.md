@@ -1,9 +1,9 @@
 # Review & Revision: Paper Reviewer
 
 ## Your task
-Read the manuscript produced in the Phase 05 assembly run and produce a **structured,
-rigorous review** — the kind a top-venue reviewer would write. Your review
-guides the lead's revision.
+Read the manuscript produced in the Phase 05 assembly run and produce a
+**structured, rigorous review** suitable for a top venue. Your review guides the
+lead's revision.
 
 **Use the `stat-paper-reviewer` skill** (provisioned to your profile). Load it
 at the start of your work and follow its review framework, scoring criteria,
@@ -11,9 +11,16 @@ and output format.
 
 ## What to review
 Read the complete combined draft from the method-specific folder. Also read:
-- the Phase 01 literature review (to judge positioning and related work);
-- the Phase 02 method proposal (to judge what was claimed vs. what was delivered);
-- the Phase 03 evaluation (to check whether weaknesses flagged there were addressed).
+
+- the Phase 01 literature review to assess positioning and related work;
+- the Phase 02 canonical method definition to identify what was proposed;
+- the completed Phase 03 theory and discussion reports for that method;
+- the completed Phase 04 empirical results and discussion reports for the exact
+  same stable ID, version, and definition digest.
+
+If the manuscript combines mismatched method identities or omits either the
+Phase 3 or Phase 4 basis for a central claim, treat that as a major soundness
+problem and identify the affected sections.
 
 ## Review dimensions
 Evaluate the draft across four dimensions:
@@ -46,7 +53,7 @@ Write to `{{output_path}}`:
 
 Begin with **Scientific completion outcome: Complete, Partial, or Failed**.
 
-1. **Summary**: 2–3 sentence summary of the paper.
+1. **Summary**: a 2 to 3 sentence summary of the paper.
 2. **Strengths**: what the paper does well. Be specific.
 3. **Weaknesses** (ranked, most critical first):
    - For each weakness: what is wrong, where it occurs, and why it matters.
@@ -57,17 +64,17 @@ Begin with **Scientific completion outcome: Complete, Partial, or Failed**.
 5. **Questions for the authors**: things that need clarification.
 6. **Missing references or comparisons**: work that should be cited or compared
    against.
-7. **Scores** (1–4 scale for each dimension, 1–10 overall, 1–5 confidence):
+7. **Scores** (1 to 4 for each dimension, 1 to 10 overall, 1 to 5 confidence):
    - Soundness, Clarity, Significance, Originality, Overall, Confidence.
 8. **Overall assessment**: accept, minor revision, major revision, or reject.
    State your reasoning.
 
 ## Requirements
-- Be critical and thorough. Default to skepticism — if you are unsure about a
-  claim, flag it. Do not give the benefit of the doubt.
+- Be critical and thorough. Default to skepticism. If a claim is uncertain,
+  identify the uncertainty and the evidence needed to resolve it.
 - You are reviewing a **draft**, not a finished paper. Some rough edges are
   expected. Focus on substance over polish.
-- Your review is independent. Do not assume the authors' intentions — judge what
-  is on the page.
+- Your review is independent. Do not assume the authors' intentions; judge the
+  claims and evidence presented in the manuscript.
 - Every weakness must have a specific location (section, equation, figure) and a
   concrete recommendation.

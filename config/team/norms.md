@@ -2,12 +2,15 @@
 
 ## User decisions
 - Only the user starts a phase or rerun, selects any configurable round count,
-  approves a result as the current reference, chooses to proceed without a
-  recommended prerequisite, or chooses the next phase.
+  chooses a method for a method-bound run, approves a result when the phase
+  requires approval, overrides a recommended prerequisite, or chooses the next
+  phase.
 - Work only within the run initiated by the user. On completion, submit the
-  results for review and stop. Do not approve the work, start another phase, or
-  make a downstream scientific decision.
-- State the available options for approval, revision, rerun, or further study.
+  result and stop. A valid non-Failed Phase 02 submission publishes its method
+  menu, but no submission starts another phase or makes a downstream scientific
+  decision.
+- State the phase-appropriate options for proceeding, rerunning, returning to an
+  earlier phase, deferring further work, approval, or revision.
 - User direction may refine the scientific focus of a run, but does not change
   its configured phase structure or transfer the user's decisions to an agent.
 
@@ -92,6 +95,17 @@ overlapping statement IDs, and record conflicts rather than silently combining
 incompatible versions. A stale same-phase result remains comparison evidence
 only.
 
+Phase 02 is the method-menu publication exception. The current published menu
+is a working catalog, not a user-approved scientific conclusion. A valid
+Complete or Partial Phase 02 submission publishes the staged catalog
+automatically; a Failed outcome preserves the earlier menu. A Complete outcome
+can satisfy Phase 03 and Phase 04 readiness, while a Partial outcome requires
+the user to review the limitation and explicitly override the prerequisite if
+they proceed.
+On a rerun, use the current published menu as the working same-phase baseline.
+The run may revise the menu, but it does not select a method or start downstream
+work. `selected_scientific_object` must be `null`.
+
 An audit-only or review-only run uses the frozen summary and structured record
 of its selected source run as the baseline for that assessment. Preserve every
 unaffected material statement and stable ID, then apply only changes supported
@@ -128,8 +142,9 @@ Use operation `withdraw` only with the existing ID and proposed formulation
 state `Withdrawn`. Use operation `revise` only for a same-ID change that leaves
 wording and scope unchanged. A wording or scope replacement uses operation
 `add`, a new ID, and the preceding ID as `parent_statement_id`.
-The final summary labels its consolidated table **Proposed scientific
-baseline**. Approval accepts that table as a whole: later runs read accepted new
+Except in Phase 02, the final summary labels its consolidated table **Proposed
+scientific baseline**. Approval accepts that table as a whole: later runs read
+accepted new
 or revised statements as Current and their accepted replacements as
 Superseded, even though the immutable submitted summary retains its prospective
 labels. If the user does not accept the whole proposed scientific baseline, the
@@ -143,10 +158,11 @@ assessment states any resulting changes. Use one compact record per affected
 statement: statement ID, operation, changed fields only, proposed wording or
 status, evidential basis, and reason. State `No change to the scientific record`
 when appropriate. The final phase summary reconciles the changes proposed by
-each role, records unresolved conflicts, and contains one consolidated
-**Scientific record changes** section and the **Proposed scientific baseline**.
-Until the user approves that summary, the earlier accepted scientific record
-remains in force.
+each role and records unresolved conflicts. Except in Phase 02, it also contains
+the **Proposed scientific baseline**. A Phase 02 summary instead contains the
+**Published method menu**; publication makes methods available but does not
+establish their claims. For phases that require approval, the earlier accepted
+scientific record remains in force until the user approves the new summary.
 
 Support factual and evidential statements with the relevant citation,
 derivation, theorem, table, figure, dataset, computation, or recorded
@@ -202,35 +218,77 @@ Every final phase summary begins with a **User Decision Brief** containing:
 3. the main supporting evidence;
 4. the principal unresolved risk;
 5. the smallest result that would change the recommendation;
-6. the consequences of approving the complete proposed baseline, requesting
-   revision, rerunning, or deferring the decision, including the limitations
-   that approval would retain;
+6. the consequences of each phase-appropriate option, including any limitation
+   that approval would retain when approval applies;
 7. the exact scientific question for a proposed rerun.
 
-Immediately after the brief, include a **Comparison with the approved run**
+Except in Phase 02, immediately after the brief include a **Comparison with the
+approved run**
 relative to the most recent user-approved run of the same phase. State changes
 in the scientific question, inputs, findings, scientific record, limitations,
 and recommendation. If there is no earlier approved run of that phase, state
 that this is the initial run. The brief informs the user's decision and never
 makes it on the user's behalf.
 
+For Phase 02, the brief asks whether to proceed to Phase 03 or Phase 04, rerun
+Phase 02, return to Phase 01, or defer further work. It compares the new menu
+with the current published menu and reports methods added, revised, retained,
+retired, or merged. Approval and revision-response options are not Phase 02
+actions; the user supplies new instructions and launches a rerun when further
+work is needed.
+
 Each final summary is accompanied by the run's structured decision record. The
 summary and record must state the same scientific completion outcome, decision
 requested, recommendation, main evidence, principal risk, smallest result that
 would change the recommendation, consequences of each option, exact rerun
-question, **Comparison with the approved run**, **Proposed scientific
-baseline**, and **Scientific record changes**. They provide decision support
+question, **Scientific record changes**, and the phase-appropriate comparison
+and baseline section. Phase 02 uses **Comparison with the current menu** and
+**Published method menu**; other phases use **Comparison with the approved run**
+and **Proposed scientific baseline**. They provide decision support
 only and never make, approve, or begin the user's chosen action.
 
-When a decision selects a scientific object for later phases, state that
-selection separately from acceptance of the complete proposed baseline. Name the
-object's stable identifier and version in the User Decision Brief, repeat them in
-the structured record's `decision_requested` field, and record them separately
-under `selected_scientific_object`. Approval accepts both the whole baseline and
-that exact selection. Do not infer a selection from a
-recommendation, a rank ordering, or the presence of an object in the baseline.
-If the user wants a different object, revise the proposed selection before
-approval.
+Phase 02 never selects a scientific object. A `recommended` method status, rank,
+or favorable assessment is advice only. The user selects an active method
+independently in the Phase 03 or Phase 04 launch interface. A choice in one
+phase does not select a method for the other phase.
+
+Method selection is a launch input, not a result approval. In each Phase 03 or
+Phase 04 launch form, the user chooses one active stable method ID and version.
+Freeze that exact identity and definition digest in the run manifest. No role
+may substitute the recommended method, change the selected version, or infer a
+selection from rank or status.
+
+Outside Phase 02, the published method catalog is read-only. A Phase 03 or Phase
+04 run uses only the method definition, stable ID, version, and digest frozen at
+its launch.
+
+## Phase 03 and Phase 04 sibling workflow
+
+Phase 03 and Phase 04 may each be launched directly after Phase 02. Neither is a
+prerequisite for the other. Both write to the branch for the method selected in
+that run.
+
+- Phase 03 uses the fixed order theorist, data analyst, research lead. The
+  theorist does the primary mathematical work.
+- Phase 04 uses the fixed order data analyst, theorist, research lead. The data
+  analyst does the primary implementation and empirical work.
+- Every later role reads all earlier role reports from the current run. Every
+  role also reads the frozen prior Phase 03 and Phase 04 summaries and discussion
+  reports supplied for the exact same method identity.
+- Preserve the source status of earlier results and any disagreement between
+  roles. Empirical evidence does not become a proof, and a theorem does not
+  become an empirical performance result.
+- The Phase 04 preliminary and comprehensive modes change study scope only.
+  They do not change role order, branch identity, or prerequisites, and a
+  comprehensive run does not require a preliminary run.
+- Each Phase 03 and Phase 04 lead summary records unresolved disagreements, the
+  scientific consequence of each, and the smallest proof, calculation, or
+  experiment that could resolve it. Later reruns receive this discussion record.
+
+Phase 05 requires all earlier phase inputs. In particular, the exact selected
+method identity must have both a completed Phase 03 result and a completed Phase
+04 result. Phase 05 must not combine theory from one method branch or version
+with empirical evidence from another.
 
 ## Independent scientific assessment
 - Independent paper review occurs only when a phase assigns work to the Paper

@@ -154,10 +154,10 @@ def _phase_for_run_mode(
 ) -> dict[str, Any]:
     """Return the phase configuration shaped for the selected run mode.
 
-    Phase 04 modes (preliminary/comprehensive) adjust the rounds policy.
+    Phase 04 modes change scientific scope but retain the same ordered stages.
     Phase 05 modes (assembly/review_revision) adjust stages and rounds.
     The shaped dict carries ``run_plan`` so downstream prompt assembly and the
-    manifest record which shape the user picked.
+    manifest record which scope or shape the user picked.
     """
 
     slug = str(phase.get("slug", ""))
@@ -170,13 +170,9 @@ def _phase_for_run_mode(
             raise launch_common.LaunchError(f"Unknown Phase 04 run mode: {mode!r}")
         shaped = dict(phase)
         shaped["run_plan"] = mode
-        if mode == launch_common.RUN_MODE_PRELIMINARY:
-            shaped["rounds"] = {"min": 1, "default": 1, "max": 1}
-        else:  # comprehensive
-            shaped["rounds"] = {"min": 2, "default": 2, "max": 2}
         return shaped
 
-    # Phase 05 — assembly vs review_revision
+    # Phase 05: assembly vs review_revision
     if mode not in launch_common.PAPER_RUN_MODES:
         raise launch_common.LaunchError(f"Unknown Phase 05 run mode: {mode!r}")
 
@@ -195,7 +191,7 @@ def _phase_for_run_mode(
                 "role": "paper_reviewer",
                 "name": "Review the assembled manuscript",
                 "description": (
-                    "Audit the assembled manuscript independently — soundness, "
+                    "Audit the assembled manuscript independently: soundness, "
                     "clarity, significance, originality. Produce ranked revision "
                     "recommendations."
                 ),
@@ -211,72 +207,6 @@ def _phase_for_run_mode(
         ]
         shaped["rounds"] = {"min": 2, "default": 2, "max": 2}
     return shaped
-
-
-def _comprehensive_gate_satisfied(
-    project_dir: Path,
-    branch_stable_id: str,
-) -> bool:
-    """True when an approved preliminary Phase 04 run exists for this branch.
-
-    Scans prior Phase 04 runs by reading each run's sealed manifest, which
-    records both the frozen run_plan and the method_selection (branch identity).
-    A run satisfies the gate when:
-      - its manifest's phase.run_plan == "preliminary"
-      - its manifest's method_selection.stable_id == branch_stable_id
-      - its run status == "approved"
-      - the phase is not stale (R6 fix)
-    """
-    # R6 fix: if the Phase 04 phase is stale, its approved runs no longer
-    # satisfy the gate — the comprehensive benchmark must not build on a
-    # version-drifted base.
-    state = project_state.load(project_dir)
-    if bool(
-        state.get("phases", {})
-        .get(launch_common.DRAFT_ASSEMBLY_PHASE, {})
-        .get("stale")
-    ):
-        return False
-
-    root = Path(project_dir).resolve()
-    runs = project_state.get_runs(root, launch_common.DRAFT_ASSEMBLY_PHASE)
-    for run in runs:
-        if str(run.get("status", "")) != "approved":
-            continue
-        raw_manifest_path = run.get("manifest_path")
-        expected_hash = str(run.get("manifest_sha256") or "").lower()
-        if not raw_manifest_path or not expected_hash:
-            continue
-        try:
-            manifest_path = Path(str(raw_manifest_path)).resolve(strict=True)
-            manifest_root = (
-                project_state.state_dir(root) / "runs" / launch_common.DRAFT_ASSEMBLY_PHASE
-            ).resolve()
-            manifest_path.relative_to(manifest_root)
-            payload = project_state.bounded_file_bytes(
-                manifest_path,
-                maximum=project_state.MAX_CONTROL_FILE_BYTES,
-                label="run manifest",
-            )
-            import hashlib
-            if hashlib.sha256(payload).hexdigest() != expected_hash:
-                continue
-            manifest = json.loads(payload.decode("utf-8"))
-        except (OSError, TypeError, ValueError, UnicodeError, json.JSONDecodeError):
-            continue
-        if not isinstance(manifest, Mapping):
-            continue
-        frozen_phase = manifest.get("phase")
-        if not isinstance(frozen_phase, Mapping):
-            continue
-        if str(frozen_phase.get("run_plan", "")) != launch_common.RUN_MODE_PRELIMINARY:
-            continue
-        method_selection = manifest.get("method_selection")
-        if not isinstance(method_selection, Mapping):
-            continue
-        if str(method_selection.get("stable_id", "")) == str(branch_stable_id):
-            return True
-    return False
 
 
 def _review_revision_gate_satisfied(
@@ -304,7 +234,7 @@ def _find_approved_assembly_run(
     assembly manuscript into the new review_revision run's review path.
     """
     # R6 fix: if the Phase 05 phase is stale, its approved assembly runs
-    # no longer satisfy the gate — the reviewer must not review a
+    # no longer satisfy the gate; the reviewer must not review a
     # version-drifted manuscript.
     state = project_state.load(project_dir)
     if bool(
@@ -769,7 +699,7 @@ def _method_selection_for_run(
     run_specific_method_id: str,
     run_specific_method_version: str,
 ) -> dict[str, Any] | None:
-    """Freeze the exact method identity for Phase 03 and Phase 04 work."""
+    """Freeze the exact method identity for Phase 03, Phase 04, and Phase 05 work."""
 
     phase_slug = str(phase.get("slug", ""))
     method_phase = launch_manifest.phase_requires_method_binding(phase)
@@ -801,41 +731,9 @@ def _method_selection_for_run(
             "decision_record": None,
         }
 
-    for entry in snapshots.get("summaries", []):
-        if (
-            not isinstance(entry, Mapping)
-            or entry.get("phase") != project_state.METHOD_DEVELOPMENT_PHASE
-            or not entry.get("trusted", True)
-        ):
-            continue
-        decision = entry.get("decision_record")
-        selected = (
-            decision.get("selected_scientific_object")
-            if isinstance(decision, Mapping)
-            else None
-        )
-        if not isinstance(selected, Mapping) or selected.get("kind") != "method":
-            continue
-        identity = launch_manifest._method_identity(
-            str(selected.get("stable_id", "")),
-            str(selected.get("version", "")),
-        )
-        return {
-            **identity,
-            "source": "approved_phase_02_selection",
-            "source_phase": project_state.METHOD_DEVELOPMENT_PHASE,
-            "source_run_id": str(entry.get("run_id", "")),
-            "decision_record": {
-                "path": str(decision.get("path", "")),
-                "sha256": str(decision.get("sha256", "")),
-                "schema_version": decision.get("schema_version"),
-            },
-        }
     raise launch_common.LaunchError(
-        "This run needs an exact method identity. Approve a current Phase 02 result "
-        "with a structured method ID and version."
+        "Choose an active method for this run."
     )
-
 
 def _branch_aware_output_root(
     project_dir: Path,

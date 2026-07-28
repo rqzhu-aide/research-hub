@@ -1,156 +1,177 @@
 ---
-sidebar_position: 9
-title: "Architecture & Integrity"
+sidebar_position: 10
+title: "Architecture and Integrity"
 slug: /reference/architecture
 ---
 
-# Architecture & Integrity
+# Architecture and Integrity
 
-This page covers how Research Hub works under the hood: the launch pipeline, sealed manifests, and integrity guarantees. Useful for developers and anyone wanting to understand the reproducibility model.
+Research Hub records exactly what a phase run was asked to use. This provides provenance and change detection. It does not make a language-model execution deterministic, and it does not make agent-generated scientific claims correct.
 
-## Repository layout
+## What the integrity model protects
 
-```text
-research-hub/
-├── webapp.py                     ← Flask entry point
-├── hub.py                        ← Project registry, config loader
-├── config.yaml                   ← Main configuration
-├── core/                         ← Application package
-│   ├── launch_run.py                orchestration facade
-│   ├── launch_manifest.py           manifest structure + validation
-│   ├── launch_plans.py              plan selection, method binding
-│   ├── launch_prompts.py            sealed prompts, task briefs
-│   ├── launch_dispatch.py           round tracking, task dispatch
-│   ├── launch_supervision.py        reconciliation, cleanup
-│   ├── project_state.py             state machine: runs, approvals
-│   └── web_phase_data.py            read-only view models for the UI
-├── config/                       ← Phase playbooks and team definition
-│   ├── phases/                      one directory per phase
-│   │   └── <slug>/
-│   │       ├── _phase.md               phase purpose, outputs, criteria
-│   │       ├── _lead.md                lead coordination protocol
-│   │       └── <role>.md               per-role instructions
-│   ├── souls/                       agent personality files
-│   └── team/                        charter and norms
-├── bundled_skills/               ← Pinned Hermes skills
-├── static/                       ← Browser assets
-└── templates/                    ← Jinja2 HTML templates
-```
+At launch, Research Hub freezes the project brief, the assembled prior context,
+role instructions, phase playbooks, and other launch inputs. For a method-bound
+run, that context can include available prior results and discussion from Phase 3
+and Phase 4 on the same branch. Research Hub records hashes for those copies and
+for the exact prompt sent to the lead agent.
 
-## Runtime data layout
+This lets you answer:
 
-```text
-~/research/
-├── hub.db                           ← project registry (SQLite)
-└── projects/
-    ├── .research-hub-control/       ← internal control directory
-    │   └── <project-slug>/
-    │       ├── project.yaml             run state (atomic, locked)
-    │       ├── project.lock
-    │       └── runs/<phase-slug>/       sealed run artifacts
-    │           ├── <run-id>.prompt.md
-    │           ├── <run-id>.manifest.json
-    │           ├── <run-id>.context/
-    │           └── <run-id>.log
-    └── <project-slug>/              ← agent-writable workspace
-        ├── setting.md                    research brief
-        ├── phase-summaries/<slug>/       HTML run summaries
-        ├── branches/<method>/            method-bound run output
-        ├── references/                   Phase 1 output
-        └── ideas/                        Phase 2 output
-```
+- Which project brief did this run use?
+- Which upstream results were treated as context?
+- Which method and version was studied?
+- Which prompt and role instructions were supplied?
+- Did a preserved input or submitted summary change later?
 
-The **control directory** is managed by the system — agents don't write here. The **workspace directory** is agent-writable — this is where research artifacts live.
+You must still evaluate the scientific content. Hashes establish identity and provenance, not validity.
 
-## The launch pipeline
-
-When you start a phase run, Research Hub executes a multi-stage pipeline before any agent work begins:
+## What happens when you start a run
 
 ```mermaid
 flowchart TD
-    A[User submits form] --> B[Validate CSRF + tokens]
-    B --> C[Check prerequisites]
-    C --> D{OK?}
-    D -- No --> E[Require explicit override]
-    D -- Yes --> F[Reserve run slot + lock]
-    E --> F
-    F --> G[Freeze context inputs]
-    G --> H[Build sealed prompt]
-    H --> I[Build + verify manifest]
-    I --> J{Valid?}
-    J -- No --> K[Fail: cleanup]
-    J -- Yes --> L[Launch worker process]
-    L --> M[Dispatch rounds]
-    M --> N[Write summary]
-    N --> O[awaiting_review]
+    A[You configure and start a run] --> B[Research Hub validates the request]
+    B --> C[Prerequisites and the selected method branch are checked]
+    C --> D{Required evidence available?}
+    D -- No --> E[Launch stops and identifies the missing evidence]
+    D -- Yes --> F{Recommended context gap?}
+    F -- Yes --> G[You explicitly acknowledge the gap]
+    F -- No --> H[The project run slot is reserved]
+    G --> H
+    H --> I[Inputs are copied and hashed]
+    I --> J[The prompt and manifest are sealed]
+    J --> K[Hermes runs the selected phase plan]
+    K --> L[Artifacts and a summary are submitted]
+    L --> M[You inspect the evidence and decide what to do]
 ```
 
-### Stage detail
+Completing one phase never launches another. The next action remains a user decision.
 
-1. **Validation**: CSRF check, phase plan version, prerequisite report version, form fields
-2. **Prerequisite check**: each `gated_by` prerequisite must be approved and current (or explicitly overridden)
-3. **Run reservation**: a new run slot is reserved atomically in `project.yaml`; the run ID (UUID) is generated
-4. **Context freezing**: all prerequisite summaries, playbooks, souls, and the project brief are copied into an immutable `.context/` directory with SHA-256 hashes
-5. **Prompt construction**: the lead prompt is assembled (run envelope + soul + playbooks + context), written to `.prompt.md`, and hashed
-6. **Manifest sealing**: the manifest captures output paths, prompt hash, frozen input hashes, and method selection. Any mismatch causes immediate failure.
-7. **Worker launch**: a Hermes process is started with the sealed prompt
+## Frozen inputs
+
+Once launch preparation succeeds, the run receives a run-specific context snapshot. Later edits to the live project do not silently alter the context of a run that is already active.
+
+If upstream or same-branch context changes after launch, the current run still
+has its original frozen inputs. The interface can then tell you that the live
+project has moved ahead of the run you are inspecting.
+
+Research Hub freezes its own team guidance, standing role instructions, and
+phase playbooks. Hermes profile `SOUL.md` and persistent profile memory remain
+external Hermes state and are not copied into the run manifest. Essential
+scientific facts should therefore be recorded in project artifacts rather than
+only in profile memory. See
+[Agent Instructions, Memory, and Skills](../team-resources) for the complete
+resource model.
+
+## Method branches and sibling phases
+
+Phase 3 and Phase 4 independently select an active method from the Phase 2
+catalog. Both freeze the exact method identity, version, and definition and route
+their work to the same durable method branch. Either phase can run first. A run
+can incorporate available prior summaries, role reports, protocol records, and
+supporting evidence from both sibling phases when those records belong to the
+same branch. Each Phase 3 and Phase 4 stage writes to an assigned run folder;
+Research Hub inventories and hashes that folder before the next stage reuses it.
+
+Phase 5 verifies an intact completed result from each of Phases 1 through 4.
+The Phase 3 and Phase 4 results must both match the selected method's stable ID,
+version, and definition digest. It cannot satisfy the requirement with a
+damaged result, a result from another method, or an incompatible method
+version or definition.
 
 ## Sealed manifests
 
-Every run has a sealed manifest at `.research-hub-control/<project>/runs/<phase>/<run_id>.manifest.json`.
+Each successfully prepared run has a manifest that identifies:
 
-### What it records
+- the run and phase;
+- the selected run plan;
+- the method branch, when applicable;
+- expected output locations;
+- hashes of the prompt and frozen inputs; and
+- the submitted summary location.
+
+A simplified example is:
 
 ```json
 {
   "run_id": "1539c04e-131a-...",
   "run_number": 4,
-  "output_root": ".../branches/spectral-graph-coupling/evaluations/run/04",
-  "summary_path": ".../phase-summaries/03-idea-evaluation/1539c04e....html",
-  "prompt_sha256": "a1b2c3...",
-  "snapshots": {
-    "playbooks": {"sha256": "d4e5f6..."},
-    "summaries": {"sha256": "789abc..."}
+  "phase_slug": "04-draft-assembly",
+  "phase": {
+    "slug": "04-draft-assembly",
+    "run_plan": "preliminary"
   },
   "method_selection": {
     "stable_id": "spectral-graph-coupling",
     "version": "v1"
-  }
+  },
+  "prompt_sha256": "a1b2c3...",
+  "summary_path": "phase-summaries/04-draft-assembly/1539c04e....html"
 }
 ```
 
-### Verification points
+Research Hub verifies the manifest and bounded file paths before agent work begins. It verifies submitted artifact identities again when the run finishes.
 
-- **At launch**: frozen inputs are hashed and compared against the manifest
-- **During the run**: the worker reads only from frozen `.context/` copies
-- **At submission**: output artifacts are validated against expected paths
-- **At approval**: the summary hash is recorded in a decision record
+## Preserved history and current synthesis
 
-If any frozen input changes after launch, verification fails. This makes every run's exact inputs auditable and reproducible.
+Run prompts, frozen inputs, manifests, logs, and submitted summaries are preserved as run-specific records.
 
-The `run_number` field is sealed in the manifest and stored in the run record at creation time. It survives phase slug merges — when two phases are consolidated (e.g. legacy `05-data-analysis` + `06-paper-writing` → `05-review-revision`), each run retains its original number rather than drifting to a positional index in the merged list.
+Some current synthesis files can change on a later run. Examples include an updated literature synthesis or a revised method definition. The older run records remain intact, so the current synthesis can be traced back to the runs that produced it.
 
-## Integrity guarantees
+See [Files and Research Records](./files-and-records) for the user-facing file map.
 
-1. **Frozen context** — at launch, all inputs are copied and hashed. The worker reads only frozen copies.
-2. **Sealed prompts** — the exact prompt text is hashed and recorded.
-3. **Hash-verified summaries** — downstream phases verify they consumed the exact same summary content.
-4. **Decision records** — every approval creates an immutable record of what was approved, when, and with what context.
-5. **Provenance chain** — you can trace any claim back to the exact run that produced it, and verify that run's inputs haven't changed.
+## Project lock
 
-## The launch lock
+Only one run can be active in a project at a time. This protects project state and prevents two phases from writing overlapping records concurrently.
 
-Only one run can be active per project at a time. The project lock (`project.lock`) prevents concurrent runs. The lock is held from launch through cleanup — if a worker fails or is cancelled, cleanup must complete before the next run starts.
+If a worker is cancelled or fails, Research Hub completes cleanup before releasing the lock. When automatic cleanup cannot be confirmed, the interface provides a recovery path that requires explicit manual verification.
 
-If automatic cleanup cannot be confirmed, the web UI lets you retry it or explicitly release the lock after manually verifying shutdown.
+## Completed records and user choices
+
+A completed run preserves material for inspection and later use. Completion
+does not start another run or make a scientific conclusion on the user's
+behalf.
+
+The user can inspect the summary and artifacts, rerun the same phase with new
+direction, start another eligible phase, or stop. Phase 2 publishes a valid
+method catalog and allows methods to be retired explicitly. Phases 3 and 4
+select methods at launch. Phase 5 verifies the required completed records and
+exact method identity before it can run.
+
+See [Review Results and Choose What Happens Next](../workflow/decisions).
 
 ## Security boundary
 
-Research Hub is a **local research tool**, not a multi-user service:
-- Binds to `127.0.0.1` by default; refuses non-loopback hosts
-- No user accounts or network authentication
-- CSRF protection on state-changing requests
-- Agent summaries served with restrictive CSP and browser sandbox
-- Agent output is **untrusted research material** — read critically before approval
+Research Hub is a local research tool, not a multi-user Web service.
 
-Do not put API keys or secrets in project briefs, playbooks, feedback, logs, or summaries. Hermes credentials stay in Hermes configuration or environment.
+The local Web UI does not imply local model execution. Research Hub passes the
+phase prompt and assembled run context through Hermes to the model provider
+configured for each profile. Agent tools may also contact external services.
+
+- It binds to `127.0.0.1` by default.
+- It has no user accounts or network authentication.
+- State-changing requests use CSRF protection.
+- Agent-generated HTML is served under a restrictive browser policy.
+- Agent output is untrusted scientific material and must be reviewed critically.
+
+Review the provider and tool data-handling policies before using confidential,
+clinical, genomic, or otherwise sensitive data. Do not put credentials or
+secrets in project briefs, instructions, logs, feedback, or summaries.
+
+For assisted control from another device, Research Hub must remain loopback-only.
+The remote connection terminates at a separate Hermes operator profile on the
+same host. See [Direct and Remote Operation](../operation-modes).
+
+## Maintainer map
+
+The main implementation areas are:
+
+| Location | Responsibility |
+|---|---|
+| `webapp.py` and `templates/` | Web routes and user interface |
+| `hub.py` | Configuration, registry, and project discovery |
+| `core/launch_*.py` | Run planning, frozen context, prompts, manifests, dispatch, and supervision |
+| `core/project_state.py` | Project state, run transitions, prerequisites, and staleness |
+| `config/phases/` | Phase and role instructions |
+| `config/souls/` | Durable role identities |
+| `bundled_skills/` | Pinned recommended Hermes skills |

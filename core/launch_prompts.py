@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import sys
 from pathlib import Path
@@ -21,11 +22,17 @@ from core import launch_plans
 import logging
 log = logging.getLogger(__name__)
 
+MAX_FROZEN_HISTORICAL_CONTEXT_FILES = 512
+MAX_FROZEN_HISTORICAL_CONTEXT_BYTES = 512 * 1024 * 1024
+_CONTEXT_USABLE_SCIENTIFIC_OUTCOMES = frozenset({"Complete", "Partial"})
+
+
 def _snapshot_run_inputs(
     project_dir: Path,
     phase: Mapping[str, Any],
     run_id: str,
     context_inputs: Sequence[Mapping[str, Any]],
+    selected_method: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Copy every prompt input into a run-scoped, immutable context folder."""
 
@@ -43,13 +50,17 @@ def _snapshot_run_inputs(
     if destination.exists() or destination.is_symlink():
         raise launch_common.LaunchError(f"Run context already exists: {destination}")
     destination.mkdir()
+    historical_context_files = 0
+    historical_context_bytes = 0
 
     def copy(
         source: Path,
         relative_name: str,
         *,
         max_bytes: int,
+        historical_context: bool = False,
     ) -> dict[str, str]:
+        nonlocal historical_context_files, historical_context_bytes
         if source.is_symlink():
             raise launch_common.LaunchError(f"Prompt input must not be a symbolic link: {source}")
         try:
@@ -61,6 +72,18 @@ def _snapshot_run_inputs(
             label="prompt input",
             max_bytes=max_bytes,
         )
+        if historical_context:
+            next_files = historical_context_files + 1
+            next_bytes = historical_context_bytes + len(payload)
+            if (
+                next_files > MAX_FROZEN_HISTORICAL_CONTEXT_FILES
+                or next_bytes > MAX_FROZEN_HISTORICAL_CONTEXT_BYTES
+            ):
+                raise launch_common.LaunchError(
+                    "Frozen historical context exceeds the 512-file or 512 MiB safety limit"
+                )
+            historical_context_files = next_files
+            historical_context_bytes = next_bytes
         target = launch_common._contained_file_destination(
             destination / relative_name,
             destination,
@@ -142,41 +165,649 @@ def _snapshot_run_inputs(
             source,
             relative_name,
             max_bytes=launch_common.MAX_SOURCE_SUMMARY_BYTES,
+            historical_context=True,
         )
         expected_digest = str(entry.get("sha256", "")).lower()
         if not expected_digest or snapshot["sha256"] != expected_digest:
             raise launch_common.LaunchError(
-                f"Approved context changed while the run was being frozen: "
+                f"Prior context changed while the run was being frozen: "
                 f"{entry['phase']} run {entry['run_id']}"
             )
         frozen_entry = {**dict(entry), **snapshot}
+        frozen_discussion: list[dict[str, Any]] = []
+        for discussion_index, discussion_input in enumerate(
+            entry.get("discussion", []), 1
+        ):
+            if not isinstance(discussion_input, Mapping):
+                raise launch_common.LaunchError(
+                    "Prior discussion inventory contains an invalid record"
+                )
+            try:
+                discussion_round = int(discussion_input.get("round", 0))
+                discussion_size = int(discussion_input.get("size", -1))
+            except (TypeError, ValueError) as exc:
+                raise launch_common.LaunchError(
+                    "Prior discussion inventory has invalid round or size metadata"
+                ) from exc
+            discussion_role = "".join(
+                character
+                for character in str(discussion_input.get("role", "report"))
+                if character.isascii() and (character.isalnum() or character in {"-", "_"})
+            ) or "report"
+            discussion_snapshot = copy(
+                project_dir / str(discussion_input.get("path", "")),
+                (
+                    f"discussion/{entry['phase']}-{entry['run_id']}/"
+                    f"round-{discussion_round:02d}-{discussion_role}-"
+                    f"{discussion_index:02d}.md"
+                ),
+                max_bytes=project_state.MAX_RUN_ARTIFACT_BYTES,
+                historical_context=True,
+            )
+            expected_discussion_digest = str(
+                discussion_input.get("sha256", "")
+            ).lower()
+            frozen_discussion_path = Path(discussion_snapshot["path"])
+            if (
+                discussion_round < 1
+                or discussion_size < 1
+                or not expected_discussion_digest
+                or discussion_snapshot["sha256"] != expected_discussion_digest
+                or frozen_discussion_path.stat().st_size != discussion_size
+            ):
+                raise launch_common.LaunchError(
+                    "Prior discussion changed while the run was being frozen: "
+                    f"{entry['phase']} run {entry['run_id']}"
+                )
+            frozen_discussion.append({
+                **dict(discussion_input),
+                **discussion_snapshot,
+                "round": discussion_round,
+                "role": str(discussion_input.get("role", "")),
+                "size": discussion_size,
+            })
+        frozen_entry["discussion"] = frozen_discussion
+        frozen_supporting: list[dict[str, Any]] = []
+        supporting_counts: dict[int, int] = {}
+        supporting_sizes: dict[int, int] = {}
+        for supporting_index, supporting_input in enumerate(
+            entry.get("supporting_artifacts", []), 1
+        ):
+            if not isinstance(supporting_input, Mapping):
+                raise launch_common.LaunchError(
+                    "Prior supporting artifact inventory contains an invalid record"
+                )
+            try:
+                supporting_round = int(supporting_input.get("round", 0))
+                supporting_size = int(supporting_input.get("size", -1))
+            except (TypeError, ValueError) as exc:
+                raise launch_common.LaunchError(
+                    "Prior supporting artifact has invalid round or size metadata"
+                ) from exc
+            source_path = str(supporting_input.get("path", "")).strip()
+            source_candidate = project_dir / source_path
+            if project_state._path_uses_symlink_below(source_candidate, project_dir):
+                raise launch_common.LaunchError(
+                    "Prior supporting artifact path uses a symbolic link or reparse point"
+                )
+            source_name = "".join(
+                character
+                if character.isascii()
+                and (character.isalnum() or character in {"-", "_", "."})
+                else "_"
+                for character in Path(source_path).name
+            )[:120] or "artifact"
+            supporting_snapshot = copy(
+                source_candidate,
+                (
+                    f"supporting/{entry['phase']}-{entry['run_id']}/"
+                    f"round-{supporting_round:02d}/"
+                    f"{supporting_index:03d}-{source_name}"
+                ),
+                max_bytes=project_state.MAX_RUN_ARTIFACT_BYTES,
+                historical_context=True,
+            )
+            expected_supporting_digest = str(
+                supporting_input.get("sha256", "")
+            ).lower()
+            frozen_supporting_path = Path(supporting_snapshot["path"])
+            if (
+                supporting_round < 1
+                or supporting_size < 1
+                or not expected_supporting_digest
+                or not hmac.compare_digest(
+                    supporting_snapshot["sha256"], expected_supporting_digest
+                )
+                or frozen_supporting_path.stat().st_size != supporting_size
+            ):
+                raise launch_common.LaunchError(
+                    "Prior supporting artifact changed while the run was being frozen: "
+                    f"{entry['phase']} run {entry['run_id']}"
+                )
+            supporting_counts[supporting_round] = (
+                supporting_counts.get(supporting_round, 0) + 1
+            )
+            supporting_sizes[supporting_round] = (
+                supporting_sizes.get(supporting_round, 0) + supporting_size
+            )
+            if (
+                supporting_counts[supporting_round]
+                > project_state.MAX_ROUND_SUPPORTING_FILES
+                or supporting_sizes[supporting_round]
+                > project_state.MAX_ROUND_SUPPORTING_BYTES
+            ):
+                raise launch_common.LaunchError(
+                    "Prior supporting artifact inventory exceeds a round safety limit"
+                )
+            frozen_supporting.append({
+                **supporting_snapshot,
+                "size": supporting_size,
+                "round": supporting_round,
+                "source_path": source_path,
+            })
+        frozen_entry["supporting_artifacts"] = frozen_supporting
+        frozen_protocol: list[dict[str, Any]] = []
+        protocol_source_paths: set[str] = set()
+        protocol_kind_counts: dict[str, int] = {}
+        protocol_file_count = 0
+        protocol_file_size = 0
+        for protocol_index, protocol_input in enumerate(
+            entry.get("protocol_artifacts", []), 1
+        ):
+            if not isinstance(protocol_input, Mapping) or set(protocol_input) != {
+                "path",
+                "sha256",
+                "size",
+                "kind",
+                "purpose",
+            }:
+                raise launch_common.LaunchError(
+                    "Prior protocol artifact inventory contains an invalid record"
+                )
+            protocol_size = protocol_input.get("size")
+            if isinstance(protocol_size, bool) or not isinstance(protocol_size, int):
+                raise launch_common.LaunchError(
+                    "Prior protocol artifact has invalid size metadata"
+                )
+            source_path = str(protocol_input.get("path", "")).strip()
+            expected_protocol_digest = str(
+                protocol_input.get("sha256", "")
+            ).strip().lower()
+            kind = str(protocol_input.get("kind", "")).strip()
+            purpose = str(protocol_input.get("purpose", "")).strip()
+            source_relative = Path(source_path)
+            maximum = (
+                project_state.MAX_PROTOCOL_CHECKPOINT_BYTES
+                if kind == "checkpoint"
+                else project_state.MAX_RUN_ARTIFACT_BYTES
+            )
+            if (
+                not source_path
+                or "\x00" in source_path
+                or source_relative.is_absolute()
+                or source_relative.as_posix() != source_path
+                or ".." in source_relative.parts
+                or source_path in protocol_source_paths
+                or len(expected_protocol_digest) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in expected_protocol_digest
+                )
+                or kind not in {"checkpoint", "protocol_file", "protocol_report"}
+                or not purpose
+                or len(purpose) > 1_000
+                or protocol_size < 1
+                or protocol_size > maximum
+            ):
+                raise launch_common.LaunchError(
+                    "Prior protocol artifact has invalid metadata"
+                )
+            source_candidate = project_dir / source_relative
+            if project_state._path_uses_symlink_below(source_candidate, project_dir):
+                raise launch_common.LaunchError(
+                    "Prior protocol artifact path uses a symbolic link or reparse point"
+                )
+            try:
+                source_candidate.resolve(strict=True).relative_to(project_dir.resolve())
+            except (OSError, ValueError) as exc:
+                raise launch_common.LaunchError(
+                    "Prior protocol artifact escaped the project directory"
+                ) from exc
+            protocol_source_paths.add(source_path)
+            protocol_kind_counts[kind] = protocol_kind_counts.get(kind, 0) + 1
+            if kind == "protocol_file":
+                protocol_file_count += 1
+                protocol_file_size += protocol_size
+            if (
+                protocol_kind_counts.get("checkpoint", 0) > 1
+                or protocol_kind_counts.get("protocol_report", 0) > 1
+                or protocol_file_count > project_state.MAX_PROTOCOL_CHECKPOINT_FILES
+                or protocol_file_size
+                > project_state.MAX_PROTOCOL_CHECKPOINT_AGGREGATE_BYTES
+            ):
+                raise launch_common.LaunchError(
+                    "Prior protocol artifact inventory exceeds a checkpoint safety limit"
+                )
+            source_name = "".join(
+                character
+                if character.isascii()
+                and (character.isalnum() or character in {"-", "_", "."})
+                else "_"
+                for character in source_relative.name
+            )[:120] or kind
+            protocol_snapshot = copy(
+                source_candidate,
+                (
+                    f"protocol/{entry['phase']}-{entry['run_id']}/"
+                    f"{protocol_index:03d}-{kind}-{source_name}"
+                ),
+                max_bytes=maximum,
+                historical_context=True,
+            )
+            frozen_protocol_path = Path(protocol_snapshot["path"])
+            if (
+                not hmac.compare_digest(
+                    protocol_snapshot["sha256"], expected_protocol_digest
+                )
+                or frozen_protocol_path.stat().st_size != protocol_size
+            ):
+                raise launch_common.LaunchError(
+                    "Prior protocol artifact changed while the run was being frozen: "
+                    f"{entry['phase']} run {entry['run_id']}"
+                )
+            frozen_protocol.append({
+                **protocol_snapshot,
+                "size": protocol_size,
+                "kind": kind,
+                "purpose": purpose,
+            })
+        frozen_entry["protocol_artifacts"] = frozen_protocol
         decision_input = entry.get("decision_record")
         if isinstance(decision_input, Mapping):
+            decision_size = decision_input.get("size")
+            if isinstance(decision_size, bool) or not isinstance(decision_size, int):
+                raise launch_common.LaunchError(
+                    "Prior decision record has invalid size metadata"
+                )
             decision_snapshot = copy(
                 project_dir / str(decision_input.get("path", "")),
                 f"decisions/{entry['phase']}-{entry['run_id']}.json",
                 max_bytes=launch_common.MAX_SOURCE_DECISION_BYTES,
+                historical_context=True,
             )
             expected_decision_digest = str(
                 decision_input.get("sha256", "")
             ).lower()
             if (
-                not expected_decision_digest
+                decision_size < 1
+                or decision_size > launch_common.MAX_SOURCE_DECISION_BYTES
+                or not expected_decision_digest
                 or decision_snapshot["sha256"] != expected_decision_digest
+                or Path(decision_snapshot["path"]).stat().st_size != decision_size
             ):
                 raise launch_common.LaunchError(
-                    "Approved decision record changed while the run was being frozen: "
+                    "Prior decision record changed while the run was being frozen: "
                     f"{entry['phase']} run {entry['run_id']}"
                 )
             decision_snapshot.update({
+                "size": decision_size,
                 "schema_version": decision_input.get("schema_version"),
                 "selected_scientific_object": decision_input.get(
                     "selected_scientific_object"
                 ),
+                "scientific_outcome": decision_input.get("scientific_outcome"),
             })
             frozen_entry["decision_record"] = decision_snapshot
         snapshots["summaries"].append(frozen_entry)
+
+    if selected_method is not None:
+        stable_id = str(selected_method.get("stable_id", "")).strip()
+        version = str(selected_method.get("version", "")).strip()
+        catalog_path = str(selected_method.get("path", "")).strip()
+        expected_digest = str(selected_method.get("sha256", "")).strip().lower()
+        if not stable_id or not version or not catalog_path or not expected_digest:
+            raise launch_common.LaunchError(
+                "The selected method has incomplete catalog metadata"
+            )
+        source = project_dir / catalog_path
+        try:
+            source.resolve(strict=True).relative_to(project_dir.resolve())
+        except (OSError, ValueError) as exc:
+            raise launch_common.LaunchError(
+                "The selected method definition escaped the project directory"
+            ) from exc
+        frozen_method = copy(
+            source,
+            "methods/selected-method.md",
+            max_bytes=project_state.MAX_CONTROL_FILE_BYTES,
+        )
+        if frozen_method["sha256"] != expected_digest:
+            raise launch_common.LaunchError(
+                "The selected method definition changed while the run was being frozen"
+            )
+        snapshots["selected_method"] = {
+            **frozen_method,
+            "stable_id": stable_id,
+            "version": version,
+            "label": str(selected_method.get("label", stable_id)),
+            "catalog_path": catalog_path,
+        }
     return snapshots
+
+
+def _sealed_run_method_selection(
+    project_dir: Path,
+    phase_slug: str,
+    run_id: str,
+) -> Mapping[str, Any] | None:
+    """Return a verified run's frozen method identity, if it has one."""
+
+    try:
+        manifest = launch_manifest._read_manifest(project_dir, phase_slug, run_id)
+    except (
+        KeyError,
+        OSError,
+        launch_common.LaunchError,
+        project_state.ProjectStateError,
+    ):
+        return None
+    selection = manifest.get("method_selection")
+    return selection if isinstance(selection, Mapping) else None
+
+
+def _sealed_run_method_definition_sha256(
+    project_dir: Path,
+    phase_slug: str,
+    run_id: str,
+) -> str:
+    """Return the verified digest of a run's frozen canonical method."""
+
+    try:
+        manifest = launch_manifest._read_manifest(project_dir, phase_slug, run_id)
+    except (
+        KeyError,
+        OSError,
+        launch_common.LaunchError,
+        project_state.ProjectStateError,
+    ):
+        return ""
+    snapshots = manifest.get("snapshots")
+    selected_method = (
+        snapshots.get("selected_method")
+        if isinstance(snapshots, Mapping)
+        else None
+    )
+    digest = (
+        str(selected_method.get("sha256", "")).strip().lower()
+        if isinstance(selected_method, Mapping)
+        else ""
+    )
+    if len(digest) != 64 or any(
+        character not in "0123456789abcdef" for character in digest
+    ):
+        return ""
+    return digest
+
+
+def _has_prior_method_run(
+    project_dir: Path,
+    phase_slug: str,
+    stable_id: str,
+) -> bool:
+    """Return whether this phase has any sealed run for the method branch."""
+
+    for run in reversed(project_state.get_runs(project_dir, phase_slug)):
+        run_id = str(run.get("run_id", "")).strip()
+        if not run_id:
+            continue
+        selection = _sealed_run_method_selection(project_dir, phase_slug, run_id)
+        if (
+            isinstance(selection, Mapping)
+            and str(selection.get("stable_id", "")) == stable_id
+        ):
+            return True
+    return False
+
+
+_CONTEXT_RESULT_STATUSES = frozenset({
+    "approved", "awaiting_review", "revision_requested", "superseded"
+})
+_CONTEXT_EVIDENCE_STATUS = {
+    "approved": "accepted",
+    "awaiting_review": "completed",
+    "revision_requested": "revision requested",
+    "superseded": "historical",
+}
+
+
+def _context_discussion_records(
+    run: Mapping[str, Any], manifest: Mapping[str, Any]
+) -> list[dict[str, Any]]:
+    """Return the sealed role reports that preserve a prior run's discussion."""
+
+    stages = list(manifest.get("phase", {}).get("stages", []))
+    records: list[dict[str, Any]] = []
+    for round_state in run.get("rounds", []):
+        if not isinstance(round_state, Mapping) or not round_state.get("completed"):
+            continue
+        try:
+            number = int(round_state.get("n", 0))
+        except (TypeError, ValueError):
+            continue
+        role = (
+            str(stages[number - 1].get("role", ""))
+            if 1 <= number <= len(stages) and isinstance(stages[number - 1], Mapping)
+            else ", ".join(str(item) for item in round_state.get("agents", []))
+        )
+        for artifact in round_state.get("artifacts", []):
+            if not isinstance(artifact, Mapping):
+                continue
+            path = str(artifact.get("path", "")).strip()
+            digest = str(artifact.get("sha256", "")).strip().lower()
+            try:
+                size = int(artifact.get("size", -1))
+            except (TypeError, ValueError):
+                continue
+            if (
+                not path
+                or len(digest) != 64
+                or any(character not in "0123456789abcdef" for character in digest)
+                or size < 1
+            ):
+                continue
+            records.append({
+                "path": path,
+                "sha256": digest,
+                "size": size,
+                "round": number,
+                "role": role,
+            })
+    return records
+
+
+def _context_supporting_artifact_records(
+    run: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Return separately sealed supporting files from completed rounds."""
+
+    records: list[dict[str, Any]] = []
+    for round_state in run.get("rounds", []):
+        if not isinstance(round_state, Mapping) or not round_state.get("completed"):
+            continue
+        try:
+            number = int(round_state.get("n", 0))
+        except (TypeError, ValueError):
+            continue
+        for artifact in round_state.get("supporting_artifacts", []):
+            if not isinstance(artifact, Mapping):
+                continue
+            path = str(artifact.get("path", "")).strip()
+            digest = str(artifact.get("sha256", "")).strip().lower()
+            try:
+                size = int(artifact.get("size", -1))
+            except (TypeError, ValueError):
+                continue
+            if (
+                not path
+                or len(digest) != 64
+                or any(character not in "0123456789abcdef" for character in digest)
+                or size < 1
+                or number < 1
+            ):
+                continue
+            records.append({
+                "path": path,
+                "sha256": digest,
+                "size": size,
+                "round": number,
+            })
+    return records
+
+
+def _context_protocol_artifact_records(
+    run: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Return the exact sealed Phase 4 protocol evidence inventory."""
+
+    checkpoint = run.get("protocol_checkpoint")
+    if checkpoint is None:
+        return []
+    if not isinstance(checkpoint, Mapping):
+        raise launch_common.LaunchError(
+            "Prior Phase 4 protocol checkpoint state is invalid"
+        )
+    checkpoint_data = checkpoint.get("data")
+    required_data_fields = {
+        "schema_version",
+        "phase_slug",
+        "run_id",
+        "main_results_generated",
+        "protocol_files",
+    }
+    if (
+        checkpoint.get("schema_version")
+        != project_state.PROTOCOL_CHECKPOINT_SCHEMA_VERSION
+        or not isinstance(checkpoint_data, Mapping)
+        or set(checkpoint_data) != required_data_fields
+        or checkpoint_data.get("schema_version")
+        != project_state.PROTOCOL_CHECKPOINT_SCHEMA_VERSION
+        or project_state._resolve_slug(str(checkpoint_data.get("phase_slug", "")))
+        != launch_common.DRAFT_ASSEMBLY_PHASE
+        or checkpoint_data.get("run_id") != run.get("run_id")
+        or checkpoint_data.get("main_results_generated") is not False
+    ):
+        raise launch_common.LaunchError(
+            "Prior Phase 4 protocol checkpoint has invalid schema or identity metadata"
+        )
+
+    records: list[dict[str, Any]] = []
+    source_paths: set[str] = set()
+
+    def add_record(
+        value: Mapping[str, Any],
+        *,
+        kind: str,
+        purpose: str,
+        maximum: int,
+    ) -> None:
+        path = str(value.get("path", "")).strip()
+        digest = str(value.get("sha256", "")).strip().lower()
+        size = value.get("size")
+        relative = Path(path)
+        if (
+            not path
+            or "\x00" in path
+            or relative.is_absolute()
+            or relative.as_posix() != path
+            or ".." in relative.parts
+            or path in source_paths
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+            or isinstance(size, bool)
+            or not isinstance(size, int)
+            or size < 1
+            or size > maximum
+            or not purpose
+            or len(purpose) > 1_000
+        ):
+            raise launch_common.LaunchError(
+                "Prior Phase 4 protocol artifact has invalid metadata"
+            )
+        source_paths.add(path)
+        records.append({
+            "path": path,
+            "sha256": digest,
+            "size": size,
+            "kind": kind,
+            "purpose": purpose,
+        })
+
+    add_record(
+        checkpoint,
+        kind="checkpoint",
+        purpose="Sealed Phase 4 protocol checkpoint",
+        maximum=project_state.MAX_PROTOCOL_CHECKPOINT_BYTES,
+    )
+    protocol_files = checkpoint_data.get("protocol_files")
+    if (
+        not isinstance(protocol_files, list)
+        or not protocol_files
+        or len(protocol_files) > project_state.MAX_PROTOCOL_CHECKPOINT_FILES
+    ):
+        raise launch_common.LaunchError(
+            "Prior Phase 4 protocol file inventory exceeds the current file limit"
+        )
+    aggregate = 0
+    for protocol_file in protocol_files:
+        if not isinstance(protocol_file, Mapping) or set(protocol_file) != {
+            "path",
+            "sha256",
+            "size",
+            "purpose",
+        }:
+            raise launch_common.LaunchError(
+                "Prior Phase 4 protocol file record has invalid fields"
+            )
+        size = protocol_file.get("size")
+        if isinstance(size, bool) or not isinstance(size, int):
+            raise launch_common.LaunchError(
+                "Prior Phase 4 protocol file has invalid size metadata"
+            )
+        purpose = str(protocol_file.get("purpose", "")).strip()
+        aggregate += size
+        if aggregate > project_state.MAX_PROTOCOL_CHECKPOINT_AGGREGATE_BYTES:
+            raise launch_common.LaunchError(
+                "Prior Phase 4 protocol files exceed the current aggregate limit"
+            )
+        add_record(
+            protocol_file,
+            kind="protocol_file",
+            purpose=purpose,
+            maximum=project_state.MAX_RUN_ARTIFACT_BYTES,
+        )
+
+    report = checkpoint.get("protocol_report")
+    if report is not None:
+        if (
+            not isinstance(report, Mapping)
+            or set(report) != {
+                "path",
+                "sha256",
+                "size",
+                "scientific_outcome",
+            }
+            or report.get("scientific_outcome") not in project_state.SCIENTIFIC_OUTCOMES
+        ):
+            raise launch_common.LaunchError(
+                "Prior Phase 4 protocol-stage report has invalid metadata"
+            )
+        add_record(
+            report,
+            kind="protocol_report",
+            purpose="Phase 4 protocol-stage scientific report",
+            maximum=project_state.MAX_RUN_ARTIFACT_BYTES,
+        )
+    return records
 
 
 def _trusted_context(
@@ -185,13 +816,15 @@ def _trusted_context(
     config: Mapping[str, Any],
     *,
     include_downstream: bool = False,
+    selected_method_id: str = "",
+    selected_method_version: str = "",
+    selected_method_sha256: str = "",
 ) -> list[dict[str, Any]]:
-    """Return approved run inputs, including the phase's prior baseline.
+    """Return frozen prior evidence, filtered to the selected method branch.
 
-    When ``include_downstream`` is true, approved summaries from *downstream*
-    (future) phases are also included.  These are marked as advisory context
-    so the agent can see where the current line of work fits into later results
-    the user already has, without treating them as trusted prerequisites.
+    Every intact completed same-branch result is included with its acceptance
+    status and sealed role reports. Results for another method are excluded.
+    Older definitions of the same stable method remain labeled history.
     """
 
     dependencies = launch_plans._dependencies(config)
@@ -199,113 +832,241 @@ def _trusted_context(
     phase = launch_plans._phase_config(config, phase_slug)
     optional = {str(item) for item in phase.get("context_from", [])}
     candidates = ancestors | optional | {phase_slug}
-    downstream = set()
+    downstream: set[str] = set()
     if include_downstream:
         downstream = _descendant_slugs(phase_slug, dependencies)
-        candidates = candidates | downstream
+        candidates |= downstream
     state = project_state.load(project_dir)
+    selected_method_id = str(selected_method_id).strip()
+    selected_method_version = str(selected_method_version).strip()
+    selected_method_sha256 = str(selected_method_sha256).strip().lower()
     entries: list[dict[str, Any]] = []
+
     for candidate in launch_plans._phase_slugs(config):
         if candidate not in candidates:
             continue
         phase_state = state.get("phases", {}).get(candidate, {})
-        if candidate != phase_slug and phase_state.get("stale"):
+        candidate_phase = launch_plans._phase_config(config, candidate)
+        branch_scoped = bool(selected_method_id) and launch_manifest.phase_requires_method_binding(
+            candidate_phase
+        )
+        if not branch_scoped and candidate != phase_slug and phase_state.get("stale"):
             continue
-        approved_id = phase_state.get("approved_run")
-        if not approved_id:
-            continue
-        try:
-            run = project_state.get_run(project_dir, candidate, approved_id)
-        except KeyError:
-            continue
-        if run.get("status") != "approved" or not run.get("final_summary"):
-            continue
-        if not project_state.run_integrity_report(
-            project_dir, candidate, approved_id
-        )["ok"]:
-            continue
-        summary = (project_dir / str(run["final_summary"])).resolve()
-        try:
-            summary.relative_to(project_dir)
-        except ValueError:
-            continue
-        try:
-            digest = launch_common._sha256_file(
-                summary,
-                max_bytes=launch_common.MAX_SOURCE_SUMMARY_BYTES,
-                label="approved context summary",
-                allow_empty=False,
-            )
-        except launch_common.LaunchError:
-            continue
-        recorded_digest = run.get("summary_sha256")
-        if recorded_digest and digest != recorded_digest:
-            # Never ingest altered evidence. Required-source integrity is also
-            # surfaced by the prerequisite report and needs a user override.
-            continue
-        decision_input = None
-        decision_record = run.get("decision_record")
-        if isinstance(decision_record, Mapping):
-            try:
-                decision_size = int(decision_record.get("size", -1))
-                _, decision_payload, decision_relative = launch_plans._source_file_payload(
-                    project_dir,
-                    str(decision_record.get("path", "")),
-                    str(decision_record.get("sha256", "")),
-                    expected_size=decision_size,
-                    label="approved context decision record",
-                    max_bytes=launch_common.MAX_SOURCE_DECISION_BYTES,
-                )
-                normalized_decision = project_state.validate_decision_record(
-                    json.loads(decision_payload.decode("utf-8"))
-                )
-            except (
-                launch_common.LaunchError,
-                UnicodeError,
-                ValueError,
-                json.JSONDecodeError,
-                project_state.ProjectStateError,
-            ):
-                decision_input = None
-            else:
+
+        source_runs: list[Mapping[str, Any]] = []
+        if branch_scoped:
+            for prior in reversed(phase_state.get("runs", [])):
                 if (
-                    normalized_decision.get("schema_version")
-                    == decision_record.get("schema_version")
-                    and normalized_decision == decision_record.get("data")
+                    not isinstance(prior, Mapping)
+                    or str(prior.get("status", "")) not in _CONTEXT_RESULT_STATUSES
+                    or not prior.get("final_summary")
                 ):
-                    selected = normalized_decision.get(
-                        "selected_scientific_object"
+                    continue
+                prior_id = str(prior.get("run_id", "")).strip()
+                selection = _sealed_run_method_selection(project_dir, candidate, prior_id)
+                if (
+                    isinstance(selection, Mapping)
+                    and str(selection.get("stable_id", "")) == selected_method_id
+                ):
+                    source_runs.append(prior)
+        else:
+            for prior in reversed(phase_state.get("runs", [])):
+                if (
+                    isinstance(prior, Mapping)
+                    and str(prior.get("status", "")) in {"approved", "awaiting_review"}
+                    and prior.get("final_summary")
+                ):
+                    source_runs.append(prior)
+
+        for run in source_runs:
+            run_id = str(run.get("run_id", "")).strip()
+            source_status = str(run.get("status", "")).strip()
+            if (
+                not run_id
+                or source_status not in _CONTEXT_RESULT_STATUSES
+                or not run.get("final_summary")
+            ):
+                continue
+            integrity = project_state.run_integrity_report(project_dir, candidate, run_id)
+            if not integrity.get("ok"):
+                continue
+            try:
+                manifest = launch_manifest._read_manifest(project_dir, candidate, run_id)
+            except (KeyError, OSError, ValueError, launch_common.LaunchError, project_state.ProjectStateError):
+                if branch_scoped:
+                    continue
+                manifest = {}
+            context_contract_current = bool(
+                not branch_scoped
+                or launch_manifest._manifest_schema_version(manifest) >= 11
+            )
+            summary = (project_dir / str(run["final_summary"])).resolve()
+            try:
+                summary.relative_to(project_dir)
+                digest = launch_common._sha256_file(
+                    summary,
+                    max_bytes=launch_common.MAX_SOURCE_SUMMARY_BYTES,
+                    label="prior context summary",
+                    allow_empty=False,
+                )
+            except (ValueError, launch_common.LaunchError):
+                continue
+            recorded_digest = str(run.get("summary_sha256") or "").lower()
+            if recorded_digest and not hmac.compare_digest(digest, recorded_digest):
+                continue
+
+            prior_method_selection = (
+                _sealed_run_method_selection(project_dir, candidate, run_id)
+                if branch_scoped
+                else None
+            )
+            prior_method_sha256 = (
+                _sealed_run_method_definition_sha256(project_dir, candidate, run_id)
+                if branch_scoped
+                else ""
+            )
+            same_method_version = bool(
+                prior_method_selection
+                and str(prior_method_selection.get("version", ""))
+                == selected_method_version
+            )
+            same_method_definition = bool(
+                context_contract_current
+                and same_method_version
+                and prior_method_sha256
+                and selected_method_sha256
+                and hmac.compare_digest(prior_method_sha256, selected_method_sha256)
+            )
+
+            decision_input = None
+            scientific_outcome = "Missing"
+            decision_record = run.get("decision_record")
+            if isinstance(decision_record, Mapping):
+                try:
+                    decision_size = int(decision_record.get("size", -1))
+                    _, decision_payload, decision_relative = launch_plans._source_file_payload(
+                        project_dir,
+                        str(decision_record.get("path", "")),
+                        str(decision_record.get("sha256", "")),
+                        expected_size=decision_size,
+                        label="prior context decision record",
+                        max_bytes=launch_common.MAX_SOURCE_DECISION_BYTES,
                     )
-                    decision_input = {
-                        "path": decision_relative,
-                        "sha256": hashlib.sha256(decision_payload).hexdigest(),
-                        "size": len(decision_payload),
-                        "schema_version": normalized_decision.get("schema_version"),
-                        "selected_scientific_object": (
-                            dict(selected) if isinstance(selected, Mapping) else None
-                        ),
-                    }
-        context_entry = {
-            "phase": candidate,
-            "run_id": str(approved_id),
-            "summary": summary.relative_to(project_dir).as_posix(),
-            "sha256": digest,
-            "kind": "prior_phase_baseline" if candidate == phase_slug else (
-                "downstream_advisory" if candidate in downstream else (
-                    "optional_approved_context"
+                    normalized_decision = project_state.validate_decision_record(
+                        json.loads(decision_payload.decode("utf-8"))
+                    )
+                except (
+                    launch_common.LaunchError,
+                    UnicodeError,
+                    ValueError,
+                    json.JSONDecodeError,
+                    project_state.ProjectStateError,
+                ):
+                    decision_input = None
+                else:
+                    if (
+                        normalized_decision.get("schema_version")
+                        == decision_record.get("schema_version")
+                        and normalized_decision == decision_record.get("data")
+                    ):
+                        selected = normalized_decision.get("selected_scientific_object")
+                        outcome = normalized_decision.get("scientific_outcome")
+                        scientific_outcome = (
+                            str(outcome)
+                            if outcome in project_state.SCIENTIFIC_OUTCOMES
+                            else "Missing"
+                        )
+                        decision_input = {
+                            "path": decision_relative,
+                            "sha256": hashlib.sha256(decision_payload).hexdigest(),
+                            "size": len(decision_payload),
+                            "schema_version": normalized_decision.get("schema_version"),
+                            "selected_scientific_object": (
+                                dict(selected) if isinstance(selected, Mapping) else None
+                            ),
+                            "scientific_outcome": scientific_outcome,
+                        }
+
+            if branch_scoped:
+                if candidate == phase_slug:
+                    context_kind = "prior_method_branch_result"
+                elif candidate in optional:
+                    context_kind = "peer_method_branch_result"
+                elif candidate in ancestors:
+                    context_kind = "branch_prerequisite_result"
+                else:
+                    context_kind = "downstream_method_branch_result"
+                if not same_method_definition:
+                    context_kind += "_history"
+            else:
+                context_kind = (
+                    "prior_phase_baseline"
+                    if candidate == phase_slug
+                    else "downstream_advisory"
+                    if candidate in downstream
+                    else "optional_accepted_context"
                     if candidate in optional
                     else "prerequisite"
                 )
-            ),
-            "trusted": (
-                candidate != phase_slug or not bool(phase_state.get("stale"))
-            ) and candidate not in downstream,
-        }
-        if decision_input is not None:
-            context_entry["decision_record"] = decision_input
-        entries.append(context_entry)
+            scientifically_usable = (
+                scientific_outcome in _CONTEXT_USABLE_SCIENTIFIC_OUTCOMES
+            )
+            trusted = bool(
+                scientifically_usable
+                and source_status == "approved"
+                and (not branch_scoped or same_method_definition)
+                and not bool(phase_state.get("stale"))
+                and candidate not in downstream
+            )
+            usable = bool(
+                scientifically_usable
+                and source_status in {"approved", "awaiting_review"}
+                and (not branch_scoped or same_method_definition)
+                and candidate not in downstream
+            )
+            evidence_status = _CONTEXT_EVIDENCE_STATUS[source_status]
+            if scientific_outcome == "Failed":
+                evidence_status = "scientific outcome Failed"
+            elif scientific_outcome == "Missing":
+                evidence_status = "scientific outcome Missing"
+            if branch_scoped and not context_contract_current:
+                evidence_status += "; lacks the current artifact inventory"
+            context_entry: dict[str, Any] = {
+                "phase": candidate,
+                "run_id": run_id,
+                "summary": summary.relative_to(project_dir).as_posix(),
+                "sha256": digest,
+                "kind": context_kind,
+                "trusted": trusted,
+                "usable": usable,
+                "source_status": source_status,
+                "scientific_outcome": scientific_outcome,
+                "evidence_status": evidence_status,
+                "discussion": _context_discussion_records(run, manifest),
+                "supporting_artifacts": (
+                    _context_supporting_artifact_records(run)
+                    if branch_scoped
+                    else []
+                ),
+                "protocol_artifacts": (
+                    _context_protocol_artifact_records(run)
+                    if branch_scoped
+                    and project_state._resolve_slug(candidate)
+                    == launch_common.DRAFT_ASSEMBLY_PHASE
+                    else []
+                ),
+            }
+            if branch_scoped and prior_method_selection:
+                context_entry["method_id"] = selected_method_id
+                context_entry["method_version"] = str(
+                    prior_method_selection.get("version", "")
+                )
+                if prior_method_sha256:
+                    context_entry["method_sha256"] = prior_method_sha256
+            if decision_input is not None:
+                context_entry["decision_record"] = decision_input
+            entries.append(context_entry)
     return entries
-
 
 def _ancestor_slugs(phase_slug: str, dependencies: Mapping[str, Sequence[str]]) -> set[str]:
     ancestors: set[str] = set()
@@ -414,6 +1175,19 @@ def _phase_four_protocol_checkpoint_block(
         )
         if not file_lines:
             raise launch_common.LaunchError("Phase 04 sealed checkpoint has no protocol files")
+        protocol_report_text = ""
+        if schema_version >= 7:
+            protocol_report = checkpoint.get("protocol_report")
+            if not isinstance(protocol_report, Mapping):
+                raise launch_common.LaunchError(
+                    "Phase 04 sealed checkpoint has no protocol-stage report"
+                )
+            protocol_report_text = (
+                "Read the sealed protocol-stage report before continuing: "
+                f"`{protocol_report.get('path', '')}`; SHA-256 "
+                f"`{protocol_report.get('sha256', '')}`; scientific outcome "
+                f"`{protocol_report.get('scientific_outcome', 'not recorded')}`."
+            )
         assigned_workspace = (
             launch_dispatch._planned_output(manifest, round_n, role).parent
             if schema_version >= 7
@@ -432,6 +1206,8 @@ at `{checkpoint.get('sealed_at', '')}`. Read and follow these immutable protocol
 files:
 
 {file_lines}
+
+{protocol_report_text}
 
 {task_direction}. Write code, saved results, figures, and the report only inside
 the assigned write-limited workspace `{assigned_workspace}`. Do not modify the
@@ -688,11 +1464,11 @@ run-scoped checkpoint is sealed. Do not create any additional task.
             "editing tool, not shell interpolation.\n"
             f"2. Record the round:\n```text\n{start}\n```\n"
             f"3. Dispatch only the tasks listed for this round. The helper injects the "
-            "user direction, frozen project brief, frozen approved summaries, prior-round "
+            "user direction, frozen project brief, frozen prior summaries and role reports, prior-round "
             "artifacts, role playbook, output path, and an idempotency key.\n\n"
             + "\n\n".join(task_blocks)
             + "\n\n4. Wait for every listed task to finish BEFORE proceeding to the "
-            "next step. Run this wait command in the FOREGROUND terminal — it "
+            "next step. Run this wait command in the FOREGROUND terminal - it "
             "blocks until all tasks complete:\n"
             f"```text\nhermes kanban --board {board_slug} watch --poll 30 "
             "--timeout 3600\n```\n"
@@ -889,11 +1665,35 @@ assessment or recommendation as mathematical evidence.
                     f"- {root / str(artifact.get('path', ''))} "
                     f"(SHA-256 {artifact.get('sha256', 'not recorded')})"
                 )
+        for artifact in prior_round.get("supporting_artifacts", []):
+            if isinstance(artifact, Mapping):
+                evidence_lines.append(
+                    f"- Supporting artifact {root / str(artifact.get('path', ''))} "
+                    f"(SHA-256 {artifact.get('sha256', 'not recorded')})"
+                )
     for summary in manifest.get("snapshots", {}).get("summaries", []):
         evidence_lines.append(
             f"- {summary.get('path')} from {summary.get('phase')} "
             f"(SHA-256 {summary.get('sha256', 'not recorded')})"
         )
+        for report in summary.get("discussion", []):
+            evidence_lines.append(
+                f"  - {report.get('path')}, round {report.get('round')}, "
+                f"{report.get('role') or 'role not recorded'} "
+                f"(SHA-256 {report.get('sha256', 'not recorded')})"
+            )
+        for artifact in summary.get("supporting_artifacts", []):
+            evidence_lines.append(
+                f"  - Supporting artifact {artifact.get('path')}, round "
+                f"{artifact.get('round')} "
+                f"(SHA-256 {artifact.get('sha256', 'not recorded')})"
+            )
+        for artifact in summary.get("protocol_artifacts", []):
+            evidence_lines.append(
+                f"  - {artifact.get('kind', 'protocol artifact')}: "
+                f"{artifact.get('path')} ({artifact.get('purpose', 'sealed protocol evidence')}; "
+                f"SHA-256 {artifact.get('sha256', 'not recorded')})"
+            )
     evidence = "\n".join(evidence_lines) if evidence_lines else "- None available"
     return f"""## Sealed proof-audit target
 
@@ -912,7 +1712,7 @@ END SEALED FINAL THEORY ARTIFACT
 {evidence}
 
 The embedded theory text and hash define the exact target. Treat the listed
-artifacts and summaries as the complete available evidence inventory. Do not
+artifacts, summaries, and role reports as the complete available evidence inventory. Do not
 edit the target or any evidence file.
 """
 
@@ -1045,8 +1845,11 @@ that source as already accepted.
 """
 
 
-def _method_selection_prompt_block(selection: Any) -> str:
-    """State the exact method identity without implying an unmade approval."""
+def _method_selection_prompt_block(
+    selection: Any,
+    selected_method_snapshot: Any = None,
+) -> str:
+    """State the exact user-selected method and its frozen definition."""
 
     if not isinstance(selection, Mapping):
         return ""
@@ -1054,11 +1857,15 @@ def _method_selection_prompt_block(selection: Any) -> str:
     if source == "approved_phase_02_selection":
         decision = selection.get("decision_record")
         provenance = (
-            "Approved Phase 02 selection from run "
+            "Legacy Phase 02-selected identity retained for compatibility with run "
             f"`{selection.get('source_run_id', '')}`. Frozen decision record: "
-            f"`{decision.get('path', '')}`; SHA-256 `{decision.get('sha256', '')}`."
+            f"`{decision.get('path', '')}`; SHA-256 `{decision.get('sha256', '')}`. "
+            "Current method-bound runs require an explicit user choice at launch."
             if isinstance(decision, Mapping)
-            else "Approved Phase 02 selection."
+            else (
+                "Legacy Phase 02-selected identity retained for compatibility. "
+                "Current method-bound runs require an explicit user choice at launch."
+            )
         )
     elif source == "run_specific_user_selection":
         provenance = (
@@ -1067,14 +1874,28 @@ def _method_selection_prompt_block(selection: Any) -> str:
         )
     else:
         raise launch_common.LaunchError("The frozen method selection has an invalid source")
-    return f"""## Exact method identity frozen for this run
+    definition_text = ""
+    if isinstance(selected_method_snapshot, Mapping):
+        definition_text = f"""
+- Frozen canonical definition: `{selected_method_snapshot.get('path', '')}`
+- Definition SHA-256: `{selected_method_snapshot.get('sha256', '')}`
+- Published catalog path at launch: `{selected_method_snapshot.get('catalog_path', '')}`
+"""
+    return f"""## Exact method frozen for this run
 
 - Stable method ID: `{selection.get('stable_id', '')}`
 - Method version: `{selection.get('version', '')}`
 - Provenance: {provenance}
+{definition_text}
+Read the frozen canonical definition before assigning or performing scientific
+work. It is the mathematical object for this run. Use its notation, assumptions,
+and scope exactly unless the analysis identifies a contradiction or gap. Do not
+substitute another method, infer a different version, or broaden its claims.
 
-Use this exact method identity throughout the run. Do not substitute a nearby
-variant, infer a different version from prose, or silently broaden its scope.
+The published `ideas/methods/` catalog is read-only outside Phase 2. No role may
+edit, retire, merge, or replace a catalog entry during this run. If the method
+definition is inadequate, report the exact deficiency so the user can decide
+whether to rerun Phase 2.
 """
 
 
@@ -1094,6 +1915,7 @@ def _build_lead_prompt(
     paper_review: Mapping[str, Any] | None = None,
     proof_audit_source: Mapping[str, Any] | None = None,
     method_selection: Mapping[str, Any] | None = None,
+    branch_readiness: Mapping[str, Any] | None = None,
     run_mode: str = "",
     output_root: Path | None = None,
 ) -> str:
@@ -1107,27 +1929,67 @@ def _build_lead_prompt(
         lead_soul_entry, "souls.research_lead"
     )
     missing = prerequisite_snapshot.get("blockers", [])
-    if missing:
+    if phase_slug == launch_common.PAPER_WRITING_PHASE:
+        if not isinstance(branch_readiness, Mapping) or not branch_readiness.get("ready"):
+            raise launch_common.LaunchError(
+                "The Phase 5 lead prompt has no verified same-branch completion record"
+            )
+        prerequisite_text = (
+            "Research Hub verified intact completed results from Phases 1 through 4. "
+            "The Phase 3 and Phase 4 results match the exact method ID, version, and definition frozen into this run."
+        )
+    elif missing:
         prerequisite_text = (
             "The user explicitly overrode missing or stale prerequisite context for: "
             + ", ".join(str(item) for item in missing)
             + ". State this limitation in the summary and do not invent the missing evidence."
         )
     else:
-        prerequisite_text = "All configured prerequisite results were approved and current at launch."
-    method_selection_text = _method_selection_prompt_block(method_selection)
+        prerequisite_text = "All configured prerequisite results were accepted and current at launch."
+    method_selection_text = _method_selection_prompt_block(
+        method_selection, snapshots.get("selected_method")
+    )
 
     summary_snapshots = snapshots.get("summaries", [])
     if summary_snapshots:
-        context_text = "\n".join(
-            f"- `{entry['path']}` from {entry['phase']} run `{entry['run_id']}` "
-            f"({entry.get('kind', 'context')}; "
-            f"{'trusted current input' if entry.get('trusted', True) else 'advisory context — for awareness, not as evidence to build upon'}; "
-            f"SHA-256 `{entry['sha256']}`)"
-            for entry in summary_snapshots
-        )
+        context_lines: list[str] = []
+        for entry in summary_snapshots:
+            if entry.get("trusted"):
+                evidence_label = "accepted current evidence"
+            elif entry.get("usable"):
+                evidence_label = "completed same-branch evidence, not an accepted baseline"
+            else:
+                evidence_label = (
+                    f"{entry.get('evidence_status', 'historical')} advisory evidence"
+                )
+            context_lines.append(
+                f"- Summary `{entry['path']}` from {entry['phase']} run "
+                f"`{entry['run_id']}` ({entry.get('kind', 'context')}; "
+                f"scientific outcome {entry.get('scientific_outcome', 'Missing')}; "
+                f"{evidence_label}; SHA-256 `{entry['sha256']}`)"
+            )
+            for report in entry.get("discussion", []):
+                context_lines.append(
+                    f"  - Role report `{report.get('path')}`, round "
+                    f"{report.get('round')}, {report.get('role') or 'role not recorded'}; "
+                    f"SHA-256 `{report.get('sha256', 'not recorded')}`"
+                )
+            for artifact in entry.get("supporting_artifacts", []):
+                context_lines.append(
+                    f"  - Supporting artifact `{artifact.get('path')}`, round "
+                    f"{artifact.get('round')}; SHA-256 "
+                    f"`{artifact.get('sha256', 'not recorded')}`"
+                )
+            for artifact in entry.get("protocol_artifacts", []):
+                context_lines.append(
+                    f"  - {artifact.get('kind', 'protocol artifact')} "
+                    f"`{artifact.get('path')}`: "
+                    f"{artifact.get('purpose', 'sealed protocol evidence')}; "
+                    f"SHA-256 `{artifact.get('sha256', 'not recorded')}`"
+                )
+        context_text = "\n".join(context_lines)
     else:
-        context_text = "- No approved, current ancestor summary is available for this run."
+        context_text = "- No completed prior summary or discussion report is available for this run."
 
     decision_path = decision_path or summary_path.with_suffix(".decision.json")
     phase_code = phase_slug.split("-", 1)[0]
@@ -1144,37 +2006,60 @@ def _build_lead_prompt(
         "--decision-record",
         str(decision_path),
     )
+    is_method_development = (
+        phase_slug == project_state.METHOD_DEVELOPMENT_PHASE
+    )
     decision_record_example = json.dumps(
         {
-            "schema_version": project_state.DECISION_RECORD_SCHEMA_VERSION,
-            "scientific_outcome": "Complete",
-            "decision_requested": "State the specific choice the user is being asked to make.",
-            "selected_scientific_object": (
-                {
-                    "kind": "method",
-                    "stable_id": "State the exact stable method ID.",
-                    "version": "State the exact method version.",
-                }
-                if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE
-                else None
+            "schema_version": (
+                project_state.PHASE_TWO_DECISION_RECORD_SCHEMA_VERSION
+                if is_method_development
+                else project_state.DECISION_RECORD_SCHEMA_VERSION
             ),
-            "recommended_user_action": "approve",
+            "scientific_outcome": "Complete",
+            "decision_requested": (
+                "Decide whether to proceed to Phase 03 or Phase 04, rerun Phase 02, "
+                "return to Phase 01, or defer further work."
+                if is_method_development
+                else "State the specific choice the user is being asked to make."
+            ),
+            "selected_scientific_object": None,
+            "recommended_user_action": (
+                "proceed" if is_method_development else "approve"
+            ),
             "recommendation": "State the team's recommendation and its scientific scope.",
             "main_evidence": [
                 "Give a result and identify its exact supporting artifact, table, figure, theorem, or citation."
             ],
             "principal_risk": "State the most consequential unresolved risk or limitation.",
             "smallest_decision_changer": "State the smallest additional result that would change the recommendation.",
-            "option_consequences": {
-                "approve": "State what becomes the accepted phase baseline.",
-                "approve_with_limitations": "State what qualified baseline is accepted and which limitation remains explicit downstream.",
-                "request_revision": "State the smallest revision needed before another decision.",
-                "rerun": "State what a new run would test differently.",
-                "defer": "State what remains unchanged while the result stays unapproved.",
-            },
+            "option_consequences": (
+                {
+                    "proceed": "Launch Phase 03 or Phase 04 later and choose one active method in that run form.",
+                    "rerun": "Launch another Phase 02 run with new instructions; the current menu remains visible until that run publishes.",
+                    "return_to_phase_1": "Run Phase 01 again to strengthen or update the literature basis before further method work.",
+                    "defer": "Take no further action; the current method menu remains available.",
+                }
+                if is_method_development
+                else {
+                    "approve": "State what becomes the accepted phase baseline.",
+                    "approve_with_limitations": "State what qualified baseline is accepted and which limitation remains explicit downstream.",
+                    "request_revision": "State the smallest revision needed before another decision.",
+                    "rerun": "State what a new run would test differently.",
+                    "defer": "State what remains unchanged while the result stays unapproved.",
+                }
+            ),
             "rerun_question": "State one exact scientific question for a possible rerun.",
-            "rerun_comparison": "State what changed from the approved run, or say this is the initial run.",
-            "proposed_baseline": "State the complete scientific conclusion and qualifications that approval would accept.",
+            "rerun_comparison": (
+                "State what changed from the current published menu, or say this is the initial run."
+                if is_method_development
+                else "State what changed from the approved run, or say this is the initial run."
+            ),
+            "proposed_baseline": (
+                "State the current method menu, scope, and qualifications published by this run."
+                if is_method_development
+                else "State the complete scientific conclusion and qualifications that approval would accept."
+            ),
             "scientific_record_changes": [
                 {
                     "statement_id": example_statement_id,
@@ -1220,6 +2105,83 @@ def _build_lead_prompt(
         indent=2,
         ensure_ascii=False,
     )
+    if is_method_development:
+        method_output_root = (
+            Path(output_root)
+            if output_root is not None
+            else project_dir
+            / str(phase.get("folder", ""))
+            / "run"
+            / f"{run_number:02d}"
+        )
+        method_menu_staging_path = (method_output_root / "method-menu").resolve()
+        method_menu_staging_text = f"""## Run-local method menu
+
+Work only in this run-local catalog:
+
+`{method_menu_staging_path}`
+
+It is initialized from the current published menu. Revise that complete copy,
+including unchanged and retired methods, and keep `_registry.yaml` synchronized.
+Do not write to `ideas/methods/`; the current menu must remain unchanged while
+this run is active. Submission validates and seals this directory. A Complete or
+Partial scientific outcome promotes it to the current menu after the worker
+exits. A Failed outcome preserves the existing menu."""
+        decision_action_contract = """For Phase 02, set `selected_scientific_object` to `null`. The method
+menu is published only for a Complete or Partial outcome.
+This record does not select a method or ask the user to approve one. Set
+`recommended_user_action` to
+`proceed`, `rerun`, `return_to_phase_1`, or `defer`. The user selects a method only when launching
+Phase 03 or Phase 04."""
+        baseline_contract = """The `proposed_baseline` must describe the complete
+method menu published by this run, including its scope and qualifications. It
+must not describe a selected method or something waiting for approval."""
+        summary_decision_sections = """1. **User Decision Brief:** whether to proceed to Phase 03 or Phase 04, rerun Phase 02,
+   return to Phase 01, or defer further work; the recommendation;
+   main evidence; principal risk; and the smallest result that would change it.
+2. **Comparison with the current menu:** methods added, revised, retained,
+   retired, or merged relative to the prior published run. State that this is
+   the initial menu when applicable.
+3. **Phase outcome:** Complete, Partial, or Failed, with attempted and completed
+   work, usable evidence, missing work and its cause, scientific consequence,
+   and next verification for Partial or Failed.
+4. **Scientific record changes:** the same statement IDs, operations, changed
+   fields, proposed values, evidence, reasons, lineage, and origins recorded in
+   the JSON file, without adding or omitting a change.
+5. **Published method menu:** every retained and retired method, its stable ID,
+   version, status, main rationale, and material qualification. Do not select
+   one method for the user."""
+        submission_instruction = """Then submit the completed run with this exact command. A valid Phase 02
+submission validates the run-local method menu. A Complete or Partial outcome
+publishes it automatically; a Failed outcome preserves the current menu. The
+run does not enter an approval queue:"""
+    else:
+        method_menu_staging_text = ""
+        decision_action_contract = """The recommended action must be one of
+`approve`, `approve_with_limitations`, `request_revision`, `rerun`, or `defer`.
+Set `selected_scientific_object` to `null`."""
+        baseline_contract = """The `proposed_baseline` must be self-contained and
+must state exactly what approval would accept, including its scope and
+qualifications."""
+        summary_decision_sections = """1. **User Decision Brief:** decision requested; most defensible conclusion and
+   recommendation; main evidence; principal risk; smallest result that would
+   change the recommendation; consequences of approve, approve with the stated
+   limitations, request revision, rerun, or defer; and the exact rerun question.
+2. **Comparison with the approved run:** what changed in the question, inputs,
+   methods, evidence, conclusions, or limitations relative to the prior
+   approved run. State that no approved comparison exists when applicable.
+3. **Phase outcome:** Complete, Partial, or Failed, with attempted and completed
+   work, usable evidence, missing work and its cause, scientific consequence,
+   and next verification for Partial or Failed.
+4. **Scientific record changes:** the same statement IDs, operations, changed
+   fields, proposed values, evidence, reasons, lineage, and origins recorded in
+   the JSON file, without adding or omitting a change.
+5. **Proposed scientific baseline:** the complete set of material scientific
+   statements, evidence, qualifications, and proposed changes if the run is
+   approved. State explicitly that approval accepts this proposed baseline as
+   a whole, while revision or rerun leaves the prior approved baseline unchanged."""
+        submission_instruction = "Then submit it for user review with this exact command:"
+
     task_plan = _task_instructions(
         project_dir, phase, run_id, run_number, rounds,
         board_slug=board_slug,
@@ -1266,7 +2228,7 @@ first-reading report has been preserved.
 - Assembled manuscript: `{paths['assembly']}`
 
 Write the complete assembled manuscript to the path above. This is the sole
-output of the assembly stage — there is no review or post-review variant.
+output of the assembly stage - there is no review or post-review variant.
 The user will review the assembled manuscript, then launch a review-revision
 run to audit and revise it.
 """
@@ -1352,44 +2314,44 @@ another theorist stage.
         and run_mode in launch_common.RUN_MODES
     ):
         if run_mode == launch_common.RUN_MODE_PRELIMINARY:
-            run_mode_text = """## User-selected preliminary run
+            run_mode_text = """## User-selected preliminary scope
 
-This is a PRELIMINARY implementation run. The goal is to confirm the method
-works in code, not to produce final paper-ready results. Focus narrowly:
+The user chose a focused implementation and diagnostic study. Phase 2 provides
+the authoritative method definition. Use any available same-branch Phase 3 or
+Phase 4 results and role reports, but do not require an earlier run in either
+phase.
 
-1. **Implement the method** — write working Python code that implements the
-   mathematical definition from the Phase 03 results. Not pseudocode, not a
-   description. Code that runs.
-2. **Diagnostic sanity checks only** — run simple known-answer tests that
-   confirm the implementation is correct (e.g., does the invariant measure
-   match for a Gaussian? do conservation laws hold? does the same seed produce
-   the same result?). Record the measured values in a JSON file.
-3. **Stop there.** Do NOT run the full benchmark study, do NOT compare against
-   baselines, do NOT generate publication figures. That is the comprehensive
-   run's job.
+1. The analyst first prespecifies the focused study, seals the protocol,
+   implements the method, and runs targeted known-answer, numerical-stability,
+   reproducibility, and feasibility checks.
+2. The theorist then audits fidelity to the method definition and interprets
+   the diagnostics against any available same-branch theory.
+3. The lead reads both reports and records what worked, what failed, specialist
+   disagreements, and the smallest next study that would change the conclusion.
 
-The user will review whether the implementation works. If it does, they will
-launch a comprehensive run to benchmark it against existing methods.
+Do not expand this scope into a full benchmark or publication-scale sensitivity
+study. The preliminary label describes scope only. It is not a prerequisite for
+a comprehensive run.
 """
-        else:  # comprehensive
-            run_mode_text = """## User-selected comprehensive run
+        else:
+            run_mode_text = """## User-selected comprehensive scope
 
-This is a COMPREHENSIVE benchmark run. A prior preliminary run already produced
-a working implementation in this branch — read it and build on it. The goal is
-to produce the comparison results needed for the paper draft:
+The user chose a full empirical study. This scope may be launched directly from
+the Phase 2 method definition. If a same-branch implementation or earlier Phase
+3 or Phase 4 result exists, inspect and build on it. If none exists, implement
+the method within this run.
 
-1. **Benchmark against existing methods** — compare the implemented method
-   against the relevant baselines across the settings that will appear in the
-   paper (convergence curves, ESS/s, rate estimation against proved bounds).
-2. **Multiple settings** — test across the parameter regimes the paper will
-   report (different dimensions, graph structures, step sizes, etc.).
-3. **Publication-quality tables and figures** — real measured numbers with
-   quantified uncertainty (MCSE, confidence intervals, replications).
-4. **Theorist audit** — do the measured rates match the proved bounds from
-   Phase 03? If theory and experiment disagree, identify why.
+1. The analyst first prespecifies and seals the study, then implements or checks
+   the method and performs the relevant benchmark, sensitivity, ablation, and
+   uncertainty analyses across scientifically meaningful regimes.
+2. The theorist then audits fidelity, assumptions, numerical evidence, and the
+   relation between empirical results and any available same-branch theory.
+3. The lead reads both reports and separates supported findings, discrepancies,
+   negative results, unresolved disagreements, and remaining limitations.
 
-Do not re-implement the method from scratch. The preliminary run's code is the
-starting point. If you find bugs, fix them and rerun the affected experiments.
+Report measured quantities with replication and uncertainty appropriate to the
+study. Do not assume that a preliminary run exists or that an earlier result is
+correct merely because it is available.
 """
     elif (
         phase_slug == launch_common.PAPER_WRITING_PHASE
@@ -1399,19 +2361,19 @@ starting point. If you find bugs, fix them and rerun the affected experiments.
         if run_mode == launch_common.RUN_MODE_ASSEMBLY:
             run_mode_text = """## User-selected assembly run
 
-This is an ASSEMBLY run. Your sole task is to combine the separate Phase 1–4
-artifacts into one coherent manuscript. This is the convergence point — the
+This is an ASSEMBLY run. Your sole task is to combine the separate Phase 1-4
+artifacts into one coherent manuscript. This is the convergence point - the
 first and only stage where the whole research thread becomes a single paper.
 
-1. **Introduction** — motivate the problem, state the contribution, position
+1. **Introduction** - motivate the problem, state the contribution, position
    against the Phase 01 literature.
-2. **Method** — use the Phase 02 method definition (the precise definition of
+2. **Method** - use the Phase 02 method definition (the precise definition of
    what was proposed).
-3. **Theory** — use the Phase 03 proved theorems with full proofs. Do not
+3. **Theory** - use the Phase 03 proved theorems with full proofs. Do not
    re-derive; use the theorist's actual output.
-4. **Experiments** — use the Phase 04 implementation, diagnostics, and
+4. **Experiments** - use the Phase 04 implementation, diagnostics, and
    benchmark results (tables, figures). Use the analyst's actual output.
-5. **Discussion** — synthesize open questions from Phases 3–4 and connections
+5. **Discussion** - synthesize open questions from Phases 3-4 and connections
    to broader literature.
 
 Reconcile notation, ensure claim consistency (intro claims must match what the
@@ -1425,7 +2387,7 @@ review-revision run.
             run_mode_text = """## User-selected review-revision run
 
 This is a REVIEW-REVISION run. A prior assembly run already produced a complete
-manuscript in this branch — read it. Your task has two stages:
+manuscript in this branch - read it. Your task has two stages:
 
 **Stage 1 (paper_reviewer):** Audit the assembled manuscript independently.
 Use the `stat-paper-reviewer` skill. Evaluate soundness, clarity, significance,
@@ -1471,6 +2433,8 @@ user. Your result must make the user's next decision easy to understand.
 
 {run_mode_text}
 
+{method_menu_staging_text}
+
 ## Frozen research lead identity and reasoning standards
 
 This embedded soul was copied from `{lead_soul_path}` and sealed into this lead
@@ -1492,15 +2456,17 @@ After reading the embedded soul, read these files completely:
 - `{snapshots['team']['norms']['path']}`
 - `{snapshots['setting']['path']}`
 
-Use these frozen summary inputs according to their labels. Trusted inputs are
-current evidence you build upon. Advisory context (downstream results, prior
-baselines) is for awareness — understand what was already achieved or decided
-in later phases, but do not treat it as evidence this run must reproduce:
+Use the frozen summaries, role reports, and supporting scientific artifacts
+according to their labels. Accepted current evidence defines an inherited
+baseline. Completed same-branch evidence
+can inform the analysis even when it is not accepted as a baseline. Historical
+or changed-definition results are advisory and must remain explicitly labeled:
 
 {context_text}
 
-Clearly distinguish inherited facts, historical baselines, advisory downstream
-results, new findings, uncertainty, and recommendations.
+Clearly distinguish accepted facts, completed but unaccepted results, historical
+results, new findings, uncertainty, disagreements, and recommendations. Carry
+unresolved specialist disagreements into the final summary so a rerun can address them.
 
 ## Execute this exact run plan
 
@@ -1524,11 +2490,10 @@ phase-specific scientific statement:
 ```
 
 The scientific outcome describes completion of the requested scientific work.
-It never approves or rejects the run. The recommended action must be one of
-`approve`, `approve_with_limitations`, `request_revision`, `rerun`, or `defer`.
-For Phase 02, `selected_scientific_object` must name exactly one method by stable
-ID and version, and `decision_requested` must repeat both values. For every other
-phase, set `selected_scientific_object` to `null`.
+It never approves or rejects the run.
+
+{decision_action_contract}
+
 Use an empty `scientific_record_changes` list when no material statement would
 change. For a status-only update, keep the statement ID and name only the fields
 that change. A material wording or scope change uses a new project-unique ID and
@@ -1537,8 +2502,9 @@ and scope stay unchanged. Use `withdraw` only for an existing ID and set its
 proposed formulation state to `Withdrawn`. For a contributor result, record the
 exact assigned role and `round N`, where N is its frozen round or stage number.
 For research-lead synthesis, use role `research_lead` and stage `summary`, as in
-the example. The `proposed_baseline` must be self-contained and must state
-exactly what approval would accept, including its scope and qualifications.
+the example.
+
+{baseline_contract}
 
 Then write a nonempty, self-contained HTML summary to this exact immutable path:
 
@@ -1546,23 +2512,7 @@ Then write a nonempty, self-contained HTML summary to this exact immutable path:
 
 Keep it concise and readable. Include:
 
-1. **User Decision Brief:** decision requested; most defensible conclusion and
-   recommendation; main evidence; principal risk; smallest result that would
-   change the recommendation; consequences of approve, approve with the stated
-   limitations, request revision, rerun, or defer; and the exact rerun question.
-2. **Comparison with the approved run:** what changed in the question, inputs, methods, evidence,
-   conclusions, or limitations relative to the prior approved run. State that
-   no approved comparison exists when applicable.
-3. **Phase outcome:** Complete, Partial, or Failed, with attempted and completed
-   work, usable evidence, missing work and its cause, scientific consequence,
-   and next verification for Partial or Failed.
-4. **Scientific record changes:** the same statement IDs, operations, changed
-   fields, proposed values, evidence, reasons, lineage, and origins recorded in
-   the JSON file, without adding or omitting a change.
-5. **Proposed scientific baseline:** the complete set of material scientific
-   statements, evidence, qualifications, and proposed changes if the run is
-   approved. State explicitly that approval accepts this proposed baseline as
-   a whole, while revision or rerun leaves the prior approved baseline unchanged.
+{summary_decision_sections}
 6. **Phase evidence:** main findings, disagreements, negative results,
    uncertainty, limitations, and exact links or paths to supporting outputs.
 
@@ -1574,14 +2524,14 @@ comparison, proposed baseline, or scientific record changes.
 Do not include scripts, forms, remote assets, or automatic navigation in the
 summary. The web UI will display it in a sandbox.
 
-Then submit it for user review with this exact command:
+{submission_instruction}
 
 ```text
 {complete}
 ```
 
-This command does not approve the run. Stop after it succeeds and wait for the
-user's decision in the web UI.
+This command never starts another phase. Stop after it succeeds. The user decides
+whether and when to launch a rerun or another phase in the web UI.
 """
 
 
@@ -1807,16 +2757,44 @@ def _review_bundle_sources(
             for summary in manifest.get("snapshots", {}).get("summaries", []):
                 if not isinstance(summary, Mapping):
                     continue
-                trust = (
-                    "trusted current input"
-                    if summary.get("trusted", True)
-                    else "comparison-only historical baseline"
-                )
+                if summary.get("trusted"):
+                    evidence_label = "accepted current summary"
+                elif summary.get("usable"):
+                    evidence_label = "completed same-branch summary"
+                else:
+                    evidence_label = (
+                        f"{summary.get('evidence_status', 'historical')} advisory summary"
+                    )
                 add(
                     Path(str(summary.get("path", ""))),
                     str(summary.get("sha256", "")),
-                    f"Frozen {trust} from {summary.get('phase', 'prior phase')}",
+                    f"Frozen {evidence_label} from {summary.get('phase', 'prior phase')}",
                 )
+                for report in summary.get("discussion", []):
+                    if not isinstance(report, Mapping):
+                        continue
+                    add(
+                        Path(str(report.get("path", ""))),
+                        str(report.get("sha256", "")),
+                        (
+                            f"Frozen role report from {summary.get('phase', 'prior phase')} "
+                            f"run {summary.get('run_id', '')}, round {report.get('round')}, "
+                            f"{report.get('role') or 'role not recorded'}"
+                        ),
+                    )
+                for artifact in summary.get("protocol_artifacts", []):
+                    if not isinstance(artifact, Mapping):
+                        continue
+                    add(
+                        Path(str(artifact.get("path", ""))),
+                        str(artifact.get("sha256", "")),
+                        (
+                            f"Frozen {artifact.get('kind', 'protocol artifact')} from "
+                            f"{summary.get('phase', 'prior phase')} run "
+                            f"{summary.get('run_id', '')}: "
+                            f"{artifact.get('purpose', 'sealed protocol evidence')}"
+                        ),
+                    )
 
     if proof_audit_stage:
         subtype = "proof_audit"

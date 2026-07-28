@@ -61,12 +61,19 @@ def _manifest_for_phase(phase: dict, tmp_path: Path) -> dict:
         "decision_path": str(summary.with_suffix(".decision.json")),
         "phase_plan_version": "a" * 64,
         "prerequisite_report_version": "b" * 64,
-        "hermes_root": "/tmp/hermes",
+        "hermes_root": str((tmp_path / "hermes").resolve()),
         "method_selection": None,
     }
     if launch_run.phase_requires_method_binding(phase) and not phase.get(
         "audit_only"
     ):
+        manifest["snapshots"]["selected_method"] = {
+            **leaf("selected-method.md"),
+            "stable_id": "contract-method",
+            "version": "v1",
+            "label": "Contract method",
+            "catalog_path": "ideas/methods/contract-method.md",
+        }
         manifest["method_selection"] = {
             "kind": "method",
             "stable_id": "contract-method",
@@ -136,8 +143,41 @@ def test_theory_plans_match_the_shipped_declaration(shipped_config: dict) -> Non
         ]
 
 
-def test_repurposed_phases_do_not_inherit_legacy_slug_behavior(
+def test_shipped_theory_and_experiment_phases_are_ordered_siblings(
     shipped_config: dict,
+) -> None:
+    phases = {phase["slug"]: phase for phase in shipped_config["phases"]}
+    theory = phases["03-idea-evaluation"]
+    experiments = phases["04-draft-assembly"]
+    paper = phases["05-review-revision"]
+
+    assert theory["pattern"] == "sequential"
+    assert theory["gated_by"] == ["02-method-development"]
+    assert theory["context_from"] == ["04-draft-assembly"]
+    assert theory["members"] == [
+        "theorist",
+        "data_scientist",
+        "research_lead",
+    ]
+    assert [stage["role"] for stage in theory["stages"]] == theory["members"]
+    assert theory["rounds"] == {"min": 3, "default": 3, "max": 3}
+
+    assert experiments["pattern"] == "sequential"
+    assert experiments["gated_by"] == ["02-method-development"]
+    assert experiments["context_from"] == ["03-idea-evaluation"]
+    assert experiments["protocol_checkpoint"] is True
+    assert experiments["members"] == [
+        "data_scientist",
+        "theorist",
+        "research_lead",
+    ]
+    assert [stage["role"] for stage in experiments["stages"]] == experiments["members"]
+    assert experiments["rounds"] == {"min": 3, "default": 3, "max": 3}
+
+    assert paper["gated_by"] == ["03-idea-evaluation", "04-draft-assembly"]
+
+
+def test_repurposed_phases_do_not_inherit_legacy_slug_behavior(    shipped_config: dict,
 ) -> None:
     """Parallel/debate phases on legacy slugs must behave as plain phases."""
 

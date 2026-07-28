@@ -6,126 +6,191 @@ slug: /workflow/phase-3
 
 # Phase 3: Theoretical Development
 
-Take the selected method from Phase 2 and **develop its theory rigorously**: prove theorems, establish rate bounds, assess computational feasibility, and position the contribution.
+Phase 3 determines which mathematical claims about a method are supported. It
+develops the main results, tests the logical structure of the arguments, and
+relates those results to computational evidence that Phase 4 can examine or may
+already have produced.
 
-## At a glance
+A useful Phase 3 result does not need to prove every desired claim. It must
+separate proved statements from conditional results, conjectures,
+counterexamples, and open questions.
 
-| | |
+## Before you launch
+
+The current Phase 2 catalog must contain at least one valid active method. The
+Phase 3 launch form shows the catalog as a read-only list. Retired or invalid
+entries remain visible for context but cannot be selected. Choose an active
+method to open its Phase 2 summary, mathematical definition, assumptions,
+status, and version before launching.
+
+| Your choice | What to decide |
 |---|---|
-| **Pattern** | Debate |
-| **Participants** | Theorist, Research Lead, Data Analyst |
-| **Rounds** | 2–3 (default 2) |
-| **Output** | `branches/<method>/evaluations/` |
-| **Method-bound** | Yes — output routes to the selected method's branch |
-| **Prerequisites** | Phase 2 (Method Development) |
+| **Method to study** | Choose any active method from the current Phase 2 catalog. Compare its definition, version, assumptions, and status before selecting it. |
+| **Theoretical focus** | State the central claim, difficult lemma, limiting regime, or assumption class that deserves attention. |
+| **Scope of the result** | Say whether you need a full theorem, a rigorous partial result, a counterexample, a complexity analysis, or a precise account of what remains open. |
 
-## How it works
+The selected method's canonical definition, stable identity, version, and
+content digest are frozen for this run. Every team member receives the same
+sealed definition. A later change to the Phase 2 catalog cannot silently change
+the mathematical object being studied. Selecting a method here does not alter
+its Phase 2 status and does not select it for every future run.
 
-### Round 1: Independent development
+Available results and discussion from earlier Phase 3 and Phase 4 runs on the
+exact same method branch are also supplied as prior evidence. Phase 4 evidence
+may motivate a theorem, expose a failure regime, or challenge an assumption, but
+it cannot replace a proof.
 
-Each role works independently on their aspect, **without reading each other's work**:
+Each stage keeps its report and any proof supplement, code, data, table, or
+figure inside its assigned run folder. Research Hub inventories and hashes these
+files when the stage finishes. Later Phase 3 and Phase 4 runs on the same branch
+receive frozen copies as part of the prior scientific record.
 
-- **Theorist**: derives and proves the main theorems. Produces **actual theorems with full proofs** — not just sketches. Establishes rate bounds (e.g., spectral gap lower bounds via Bakry–Émery Γ₂ calculus). Identifies every assumption, hidden or explicit.
-- **Data Analyst**: assesses **computational feasibility** — can this be implemented? At what cost? Evaluates numerical stability. Proposes concrete experiment designs that would validate or challenge the theory.
-- **Research Lead**: identifies the **contribution structure** — what was proved, what it means, how it positions. Structures the paper's narrative.
+A Complete Phase 2 publication satisfies the normal catalog prerequisite. A
+Partial publication is visible and its active methods can still be chosen, but
+you must explicitly override the incomplete prerequisite before launching
+Phase 3. Read the missing-work statement first and explain why theory should
+proceed despite that uncertainty.
 
-### Round 2+: Debate
+Your instructions can name claims that must not be made without proof,
+assumptions that are scientifically implausible, or computational constraints
+that matter for the intended application.
 
-Roles read each other's Round 1 work and **challenge** it:
+Launching Phase 3 authorizes only this phase. It does not establish its
+conclusions, start Phase 4, or prevent you from starting Phase 4 independently.
 
-- Does the theorist's proof actually hold? Where are the gaps?
-- Is the data scientist's cost assessment realistic?
-- Does the research lead's positioning accurately reflect what was proved?
+## What the team does
 
-Roles **concede** when persuaded (with reasoning) or **hold** their position (with reasoning). The goal is convergence toward a defensible set of claims. This debate structure is what makes Phase 3 different from Phase 2's cross-pollination — here, claims are directly challenged, not just built upon.
+Phase 3 is a fixed three-stage, cumulative discussion. The theorist performs the
+primary mathematical work. The analyst then stress-tests that work, and the lead
+prepares the decision summary.
 
-## Per-role responsibilities
+1. **Theorist.** States the mathematical object, assumptions, claims, and
+   regimes; derives lemmas and theorems; supplies proofs or explicit proof gaps;
+   and records counterexamples and unresolved questions.
+2. **Data Analyst.** Reads the theorist's report, checks computability, time and
+   memory complexity, numerical stability, edge cases, and empirical
+   distinguishability. The analyst identifies hidden assumptions or unsupported
+   proof steps and records where the computational analysis agrees or conflicts.
+3. **Research Lead.** Reads both reports, checks that each scientific claim has
+   an appropriate basis, relates the result to the literature and available
+   same-branch empirical evidence, and states the strongest defensible
+   conclusion.
 
-### Theorist
-- **Derive and prove** the main results for the selected method
-- Produce **actual theorems with full proofs** (Bakry–Émery Γ₂ derivation, spectral gap bounds, stationarity verification)
-- State all **assumptions** explicitly — which are standard, which are novel
-- Flag where the proof is **incomplete** or relies on conjecture
-- In debate rounds: defend proofs against critique, or concede gaps honestly
+All three roles receive the frozen method and available results and discussion
+from earlier Phase 3 and Phase 4 runs on the same branch. Within the current run,
+each later stage receives the reports from earlier stages. The lead preserves
+material objections, responses, and unresolved disagreements rather than
+averaging them away. If an earlier role needs to respond again, carry the issue
+into a rerun with focused instructions.
 
-### Data Analyst
-- Assess **computational cost**: per-step complexity, memory, scalability
-- Evaluate **numerical stability**: will the method blow up? Under what conditions?
-- Identify the **key algorithmic challenges** (e.g., divergence correction, sparsity management)
-- Propose **experiment designs**: what targets, what baselines, what would confirm or refute the theory
+## Evidence you should receive
 
-### Research Lead
-- Identify the **contribution structure**: what are the headline results?
-- **Position** against existing work from Phase 1 — how does this advance the field?
-- Structure the **paper's narrative**: what should the paper emphasize?
-- Assess **strength of evidence**: is this ready for a paper, or are there critical gaps?
+A strong Phase 3 result contains:
 
-## Output: method-bound branches
+1. **A fixed mathematical object.** The frozen method, notation, parameter
+   space, estimand or target, and relevant asymptotic regime are defined
+   consistently.
+2. **Explicit assumptions.** Each assumption is connected to the result that
+   uses it. Restrictions with scientific or computational consequences are
+   stated plainly.
+3. **A result register.** Each important claim is classified as one of:
+   - proved under stated assumptions;
+   - dependent on a named unresolved step;
+   - conjectured;
+   - contradicted by a counterexample or calculation;
+   - outside the scope of the run.
+4. **Proofs and dependencies.** The theorem and lemma statements match their
+   proofs, and imported results are cited with their conditions checked.
+5. **Computational consequences.** Time, memory, conditioning, stability, and
+   implementability are analyzed at the scale relevant to Phase 4.
+6. **A discussion record.** Material objections, responses, concessions, and
+   unresolved disagreements remain visible across the three ordered stages.
+7. **A synthesis for your decision.** The lead states what is established, what
+   is not established, and which empirical findings could challenge the
+   theory.
 
-Phase 3 is **method-bound**: its output routes to a per-method branch directory. This isolates each method's evaluation history.
+Simulation, numerical agreement, or repeated symbolic manipulation is not a
+proof. Conversely, failure to complete a proof is not a failed analysis when
+the gap and its consequences are identified precisely. A run marked Complete
+means that the authorized analysis was completed, not that every theorem is
+correct.
 
-```
-branches/
-└── spectral-graph-coupling/              ← the selected method
-    └── evaluations/
-        └── run/
-            ├── 01/                        ← Run 1
-            │   ├── .directives/
-            │   │   ├── round-01.md
-            │   │   └── round-02.md
-            │   ├── round-01/
-            │   │   ├── theorist.md        ← theorems with full proofs
-            │   │   ├── data_scientist.md  ← cost analysis + experiment design
-            │   │   └── research_lead.md   ← contribution structure + positioning
-            │   └── round-02/
-            │       └── ...                ← debate: challenges, concessions, convergence
-            ├── 02/                        ← Run 2 (if rerun)
-            │   └── ...
-            └── 04/                        ← Run 4 (audit/fix/extend of prior runs)
-                └── ...
-```
+## Review checklist
 
-### Why method branches?
+Before using the result, ask:
 
-Without branching, all methods' Phase 3 outputs would pile into the same `evaluations/run/` directory. Branches solve this:
+- Are the method identity and version the ones you intended to study?
+- Are the object of study, quantifiers, probability statements, and limiting
+  regime unambiguous?
+- Are all assumptions stated before they are used, and are they plausible for
+  the intended statistical, machine-learning, mathematical, or biological
+  setting?
+- Does every theorem say exactly what its proof establishes?
+- Are boundary cases, identifiability conditions, regularity conditions, and
+  failure regimes addressed?
+- Are citations to external theorems accurate, and are their hypotheses
+  verified here?
+- Are proof gaps labeled as gaps rather than hidden in phrases such as
+  "standard" or "straightforward"?
+- Does the computational analysis use the same frozen method and
+  parameterization as the mathematical analysis?
+- Are theoretical predictions stated in a form that Phase 4 can measure without
+  treating empirical agreement as mathematical validation?
+- Does the lead's summary narrow claims when the proof or computation is
+  incomplete?
 
-- Each method gets its own clean run history (`run/01/`, `run/02/`, ...)
-- A future Phase 4 run for method X reads only from method X's branch
-- Multiple methods can be evaluated in parallel without collision
+For a central or delicate theorem, human mathematical review remains important.
+The team's cross-check can expose errors, but it is not a formal proof
+verification guarantee.
 
-The method identity is **sealed** in the run manifest at launch — it cannot change mid-run:
+## How to use the result
 
-```json
-"method_selection": {
-  "stable_id": "spectral-graph-coupling",
-  "version": "v1",
-  "source": "approved_phase_02_selection"
-}
-```
+A completed Phase 3 run remains a separate scientific record. Read its summary,
+role reports, proofs, calculations, and supporting artifacts before deciding
+whether the material is adequate for your intended use.
 
-## Reruns
+### Use it in later work
 
-### Rerun protocol
+Completed, intact results and discussion may be supplied to later Phase 3 and
+Phase 4 runs on the same method branch. Phase 4 does not require Phase 3 and can
+be launched directly from the Phase 2 catalog. When compatible theory is
+available, the Phase 4 team can use it to define diagnostics and interpret
+results. Availability does not certify a proof or require later work to rely on
+it.
 
-1. **Audit**: read every prior round output for this method. For each existing theorem, proof, or assessment, identify what's correct, incomplete, wrong, or missing. Write the audit findings.
-2. **Fix**: correct errors, fill proof gaps, tighten claims. Build on prior work.
-3. **Add new material**: extend with sharper bounds, additional theorems, or deeper analysis. Incorporate the updated literature library if Phase 1 was also rerun.
-4. **Never replace**: prior run directories (`run/01/`, `run/02/`) stay sealed. The new run writes to `run/03/` or `run/04/`. The summary references both old and new material.
+### Rerun Phase 3
 
-### What triggers a Phase 3 rerun?
+Start another Phase 3 run when you want a different proof strategy, a stronger
+or weaker assumption class, a corrected theorem, a more explicit proof step, a
+new theoretical target, or a fresh analysis after the literature or method
+catalog changed. Choose an active method in the launch form and state exactly
+what the team should retain, challenge, or reconsider.
 
-- You want to prove a **sharper or different** bound
-- Phase 2 was rerun and produced an **enriched method** definition
-- Phase 1 was rerun with **new literature** that changes the positioning
-- The initial proofs had **gaps** identified during review
+Each rerun freezes its own method identity and version. Available results and
+discussion from earlier Phase 3 and Phase 4 runs on that exact branch remain
+available as context. Earlier records are not overwritten.
 
-## What Phase 3 produces for Phase 4
+### Return to another phase
 
-Phase 3's approved summary tells Phase 4:
-- What was **proved** (theorem statements and conditions)
-- The **rate bounds** and their derivation
-- The **computational assessment** (feasibility, cost, stability)
-- The **paper's narrative structure** (what to emphasize)
-- Any **open problems** the draft should acknowledge
+Return to Phase 2 when the method definition itself must change. Start or rerun
+Phase 4 when an empirical test could distinguish competing explanations, expose
+a failure regime, or evaluate a theoretical prediction. You decide when to
+start either run.
 
-Phase 4 then writes the paper based on this evidence.
+## Use in Phase 5
+
+Phase 5 requires an intact completed result from each of Phases 1 through 4.
+The Phase 3 and Phase 4 results must both match the selected method's stable ID,
+version, and definition digest. Phase 3 alone does not start Phase 5 or make the
+branch ready for manuscript assembly.
+
+If the Phase 2 catalog later revises, merges, or retires the method, the frozen
+Phase 3 record remains interpretable. Inspect any later work that used the
+changed method and decide whether the change requires another theory run.
+
+If a newer Phase 3 result materially changes an assumption or conclusion,
+recheck Phase 4 or Phase 5 material that relied on the earlier theory. The
+original result remains preserved with its original context.
+
+For artifact names, run records, and branch layout, see
+[Files and records](../reference/files-and-records).

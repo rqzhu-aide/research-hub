@@ -4,10 +4,10 @@ The state file is intentionally small and human-readable, but all writes go
 through this module.  A per-project, cross-process lock protects read/modify/
 write operations and each YAML update is committed with ``os.replace``.
 
-Runs are execution records.  A phase separately points at its accepted
+Runs are execution records. A phase separately points at its current trusted
 (``approved_run``) record, so starting or failing a rerun never destroys the
-last accepted result.  Downstream work becomes stale only when the user
-approves a replacement result, not when a rerun merely starts.
+last trusted result. Downstream work becomes stale only when a replacement is
+accepted or a completed Phase 02 run publishes an affected method revision.
 """
 
 from __future__ import annotations
@@ -29,12 +29,13 @@ from typing import Any, Iterator, Mapping, Sequence
 import yaml
 
 from core.filesystem_utils import metadata_is_link_or_reparse
+from core import method_menu
 
 import logging
 log = logging.getLogger(__name__)
 
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 PAPER_WRITING_PHASE = "05-review-revision"
 DRAFT_ASSEMBLY_PHASE = "04-draft-assembly"
@@ -57,6 +58,8 @@ REVIEW_BUNDLE_SCHEMA_VERSION = 1
 MAX_REVIEW_BUNDLE_BYTES = 16 * 1024 * 1024
 MAX_REVIEW_OUTPUT_BYTES = 2 * 1024 * 1024
 MAX_RUN_ARTIFACT_BYTES = 8 * 1024 * 1024
+MAX_ROUND_SUPPORTING_FILES = 64
+MAX_ROUND_SUPPORTING_BYTES = 64 * 1024 * 1024
 MAX_SUMMARY_BYTES = 4 * 1024 * 1024
 MAX_CONTROL_FILE_BYTES = 2 * 1024 * 1024
 MAX_STATE_FILE_BYTES = 16 * 1024 * 1024
@@ -68,24 +71,40 @@ MAX_LEGACY_MIGRATION_BYTES = 64 * 1024 * 1024
 MAX_LEGACY_MIGRATION_FILES = 2_000
 FILE_READ_CHUNK_BYTES = 256 * 1024
 DECISION_RECORD_SCHEMA_VERSION = 2
-SUPPORTED_DECISION_RECORD_SCHEMA_VERSIONS = frozenset({1, 2})
+PHASE_TWO_DECISION_RECORD_SCHEMA_VERSION = 3
+SUPPORTED_DECISION_RECORD_SCHEMA_VERSIONS = frozenset({1, 2, 3})
 MAX_DECISION_RECORD_BYTES = 128 * 1024
 MAX_DECISION_TEXT_LENGTH = 12_000
 MAX_DECISION_LIST_ITEMS = 12
 MAX_SCIENTIFIC_RECORD_CHANGES = 50
 SCIENTIFIC_OUTCOMES = frozenset({"Complete", "Partial", "Failed"})
-RECOMMENDED_USER_ACTIONS = frozenset({
+COMPLETED_SCIENTIFIC_OUTCOMES = frozenset({"Complete", "Partial"})
+COMPLETED_RESULT_STATUSES = frozenset({"approved", "awaiting_review"})
+APPROVAL_USER_ACTIONS = frozenset({
     "approve",
     "approve_with_limitations",
     "request_revision",
     "rerun",
     "defer",
 })
+PHASE_TWO_USER_ACTIONS = frozenset({
+    "proceed",
+    "rerun",
+    "return_to_phase_1",
+    "defer",
+})
+RECOMMENDED_USER_ACTIONS = APPROVAL_USER_ACTIONS | PHASE_TWO_USER_ACTIONS
 DECISION_OPTION_KEYS = frozenset({
     "approve",
     "approve_with_limitations",
     "request_revision",
     "rerun",
+    "defer",
+})
+PHASE_TWO_DECISION_OPTION_KEYS = frozenset({
+    "proceed",
+    "rerun",
+    "return_to_phase_1",
     "defer",
 })
 SCIENTIFIC_RECORD_OPERATIONS = frozenset({"add", "revise", "withdraw"})
@@ -805,6 +824,7 @@ def _new_phase() -> dict[str, Any]:
         "stale_at": None,
         "stale_reason": None,
         "stale_by_run": None,
+        "publication_readiness": None,
         "runs": [],
     }
 
@@ -1014,10 +1034,18 @@ def _rewrite_slug_path_strings(
     location.
     """
 
-    runs_old = f"/runs/{old_slug}/"
-    runs_new = f"/runs/{new_slug}/"
-    summaries_old = f"phase-summaries/{old_slug}/"
-    summaries_new = f"phase-summaries/{new_slug}/"
+    replacements = (
+        (f"/runs/{old_slug}/", f"/runs/{new_slug}/"),
+        (f"\\runs\\{old_slug}\\", f"\\runs\\{new_slug}\\"),
+        (
+            f"phase-summaries/{old_slug}/",
+            f"phase-summaries/{new_slug}/",
+        ),
+        (
+            f"phase-summaries\\{old_slug}\\",
+            f"phase-summaries\\{new_slug}\\",
+        ),
+    )
     if isinstance(value, dict):
         changed = False
         rewritten: dict[str, Any] = {}
@@ -1038,13 +1066,12 @@ def _rewrite_slug_path_strings(
             rewritten_list.append(new_item)
             changed = changed or item_changed
         return rewritten_list, changed
-    if isinstance(value, str) and (runs_old in value or summaries_old in value):
-        return (
-            value.replace(runs_old, runs_new).replace(
-                summaries_old, summaries_new
-            ),
-            True,
-        )
+    if isinstance(value, str):
+        rewritten_value = value
+        for old_path, new_path in replacements:
+            rewritten_value = rewritten_value.replace(old_path, new_path)
+        if rewritten_value != value:
+            return rewritten_value, True
     return value, False
 
 def _migrate_slug_aliases(
@@ -1081,7 +1108,7 @@ def _migrate_slug_aliases(
         # have legacy names from a previous incomplete migration.
         pass
     else:
-        # 1. Rename phase dict keys — merge instead of overwrite.
+        # 1. Rename phase dict keys; merge instead of overwrite.
         #    Multiple legacy slugs can map to the same new slug (e.g. both
         #    05-data-analysis and 06-paper-writing → 05-review-revision).
         #    Blind assignment would silently destroy one phase's history.
@@ -1106,7 +1133,7 @@ def _migrate_slug_aliases(
                     if key not in phases[new_slug] or not phases[new_slug][key]:
                         phases[new_slug][key] = value
             else:
-                # Type mismatch — keep the existing, log a warning.
+                # Type mismatch: keep the existing and log a warning.
                 phases[new_slug] = old_phase
 
     # 2. Rewrite dependencies
@@ -1178,7 +1205,7 @@ def _migrate_slug_aliases(
             new_runs.parent.mkdir(parents=True, exist_ok=True)
             if new_runs.exists():
                 # Merge: move individual files. Items that collide (target
-                # already exists) are quarantined instead of deleted — an
+                # already exists) are quarantined instead of deleted; an
                 # integrity-first system must never destroy sealed artifacts.
                 leftover: list[Path] = []
                 for item in old_runs.iterdir():
@@ -1240,7 +1267,7 @@ def _migrate_slug_aliases(
             if not manifest_file.is_file():
                 continue
             try:
-                # Bounded read — manifest files are control files, capped at
+                # Bounded read: manifest files are control files, capped at
                 # MAX_CONTROL_FILE_BYTES to match the module's read discipline.
                 file_size = manifest_file.stat().st_size
                 if file_size > MAX_CONTROL_FILE_BYTES:
@@ -1308,6 +1335,10 @@ def _migrate_slug_aliases(
 def _migrate(data: dict[str, Any]) -> dict[str, Any]:
     """Upgrade legacy state in place while retaining unknown and old fields."""
 
+    try:
+        source_schema_version = int(data.get("schema_version", 0))
+    except (TypeError, ValueError):
+        source_schema_version = 0
     data.setdefault("project", {})
     phases = data.setdefault("phases", {})
     if not isinstance(phases, dict):
@@ -1377,6 +1408,13 @@ def _migrate(data: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(run["submission_artifacts"], dict):
                 run["legacy_submission_artifacts"] = run["submission_artifacts"]
                 run["submission_artifacts"] = {}
+            run.setdefault("method_menu_seal", None)
+            run.setdefault("method_menu_changes", None)
+            run.setdefault("publication_kind", None)
+            run.setdefault("published_at", None)
+            run.setdefault("publication_outcome", None)
+            run.setdefault("publication_readiness", None)
+            run.setdefault("migration_warning", None)
             run.setdefault("decision_record", None)
             run.setdefault("protocol_checkpoint", None)
             run.setdefault("replacement_request", None)
@@ -1435,6 +1473,38 @@ def _migrate(data: dict[str, Any]) -> dict[str, Any]:
         phase.setdefault("stale_at", None)
         phase.setdefault("stale_reason", None)
         phase.setdefault("stale_by_run", None)
+        phase.setdefault("publication_readiness", None)
+
+    # Legacy Phase 02 submissions were produced under a different contract:
+    # they awaited approval and could encode a selected method. They are kept as
+    # immutable history, but are never promoted implicitly during a state read.
+    if source_schema_version < 7:
+        method_phase = phases.get(METHOD_DEVELOPMENT_PHASE)
+        if isinstance(method_phase, dict):
+            current_run_id = method_phase.get("approved_run")
+            for candidate in method_phase.get("runs", []):
+                if not isinstance(candidate, dict):
+                    continue
+                if candidate.get("status") != "awaiting_review":
+                    continue
+                timestamp = str(
+                    candidate.get("completed")
+                    or candidate.get("submitted_at")
+                    or candidate.get("ended_at")
+                    or _now_iso()
+                )
+                candidate["status"] = "superseded"
+                candidate["superseded_at"] = timestamp
+                candidate["superseded_by"] = current_run_id
+                candidate["migration_warning"] = {
+                    "code": "legacy_phase_two_result_not_published",
+                    "message": (
+                        "This legacy Phase 02 result awaited approval under the "
+                        "earlier method-selection contract. It remains historical "
+                        "and was not published automatically."
+                    ),
+                    "recorded_at": timestamp,
+                }
 
     _restore_legacy_active_process_pid(data)
     data["schema_version"] = SCHEMA_VERSION
@@ -1725,6 +1795,130 @@ def _normalize_existing_path(
     return relative.as_posix()
 
 
+def _same_directory_snapshot(
+    before: os.stat_result, after: os.stat_result
+) -> bool:
+    """Return whether a directory's identity and observable metadata stayed fixed."""
+
+    return bool(
+        os.path.samestat(before, after)
+        and before.st_mode == after.st_mode
+        and before.st_size == after.st_size
+        and before.st_nlink == after.st_nlink
+        and before.st_mtime_ns == after.st_mtime_ns
+        and before.st_ctime_ns == after.st_ctime_ns
+    )
+
+
+def discover_round_supporting_files(
+    project_dir: str | Path,
+    round_directory: str | Path,
+    *,
+    exclude: Sequence[str | Path] = (),
+) -> list[str]:
+    """Return bounded regular files below a round directory, excluding reports."""
+
+    root = Path(project_dir).resolve()
+    candidate = Path(round_directory)
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    lexical = Path(os.path.abspath(candidate))
+    if _path_uses_symlink_below(lexical, root):
+        raise StateValidationError(
+            "round artifact directory must not use symbolic links or reparse points"
+        )
+    try:
+        round_root = lexical.resolve(strict=True)
+        round_root.relative_to(root)
+        root_metadata = round_root.lstat()
+    except (OSError, ValueError) as exc:
+        raise StateValidationError(
+            "round artifact directory must be an existing directory inside the project"
+        ) from exc
+    if (
+        _metadata_is_link_or_reparse(root_metadata)
+        or not stat.S_ISDIR(root_metadata.st_mode)
+    ):
+        raise StateValidationError(
+            "round artifact directory must be a regular directory"
+        )
+
+    excluded = {
+        _normalize_existing_path(project_dir, path, nonempty_file=True)
+        for path in exclude
+    }
+    discovered: list[str] = []
+    total_size = 0
+    pending = [round_root]
+    while pending:
+        directory = pending.pop()
+        try:
+            before = directory.lstat()
+            with os.scandir(directory) as iterator:
+                entries = sorted(iterator, key=lambda item: item.name)
+        except OSError as exc:
+            raise StateValidationError(
+                f"round artifact directory could not be inspected: {directory}"
+            ) from exc
+        if _metadata_is_link_or_reparse(before) or not stat.S_ISDIR(before.st_mode):
+            raise StateValidationError(
+                f"round artifact directory contains a redirected directory: {directory}"
+            )
+        for entry in entries:
+            path = Path(entry.path)
+            try:
+                metadata = entry.stat(follow_symlinks=False)
+            except OSError as exc:
+                raise StateValidationError(
+                    f"round artifact entry could not be inspected: {path}"
+                ) from exc
+            if _metadata_is_link_or_reparse(metadata):
+                raise StateValidationError(
+                    "round artifact entry must not be a symbolic link or reparse "
+                    f"point: {path}"
+                )
+            if stat.S_ISDIR(metadata.st_mode):
+                pending.append(path)
+                continue
+            if not stat.S_ISREG(metadata.st_mode):
+                raise StateValidationError(
+                    f"round artifact entry must be a regular file: {path}"
+                )
+            normalized = _normalize_existing_path(project_dir, path)
+            if normalized in excluded:
+                continue
+            _, size = _hash_bounded_file(
+                root / normalized,
+                maximum=MAX_RUN_ARTIFACT_BYTES,
+                label="round supporting artifact",
+            )
+            discovered.append(normalized)
+            total_size += size
+            if len(discovered) > MAX_ROUND_SUPPORTING_FILES:
+                raise StateValidationError(
+                    "round contains too many supporting artifacts; "
+                    f"the limit is {MAX_ROUND_SUPPORTING_FILES}"
+                )
+            if total_size > MAX_ROUND_SUPPORTING_BYTES:
+                raise StateValidationError(
+                    "round supporting artifacts exceed the "
+                    f"{MAX_ROUND_SUPPORTING_BYTES:,}-byte aggregate safety limit"
+                )
+        try:
+            after = directory.lstat()
+        except OSError as exc:
+            raise StateValidationError(
+                f"round artifact directory changed while it was inspected: {directory}"
+            ) from exc
+        if (
+            _metadata_is_link_or_reparse(after)
+            or not _same_directory_snapshot(before, after)
+        ):
+            raise StateValidationError(
+                f"round artifact directory changed while it was inspected: {directory}"
+            )
+    return sorted(discovered)
+
 def _completed_round_count(run: Mapping[str, Any]) -> int:
     return sum(1 for round_ in run.get("rounds", []) if round_.get("completed"))
 
@@ -1771,6 +1965,72 @@ def _validate_recorded_artifacts(
                     f"round {round_.get('n')} artifact size changed after completion: {normalized}"
                 )
 
+        supporting = round_.get("supporting_artifacts", [])
+        if not isinstance(supporting, list) or any(
+            not isinstance(item, Mapping) for item in supporting
+        ):
+            raise StateValidationError(
+                f"round {round_.get('n')} supporting artifact inventory is invalid"
+            )
+        if len(supporting) > MAX_ROUND_SUPPORTING_FILES:
+            raise StateValidationError(
+                f"round {round_.get('n')} contains too many supporting artifacts"
+            )
+        supporting_paths = [str(item.get("path", "")) for item in supporting]
+        if (
+            len(set(supporting_paths)) != len(supporting_paths)
+            or set(supporting_paths) & set(outputs)
+        ):
+            raise StateValidationError(
+                f"round {round_.get('n')} supporting artifact paths are not distinct"
+            )
+        role_directories = {
+            (root / output).parent.resolve(strict=False) for output in outputs
+        }
+        if supporting and len(role_directories) != 1:
+            raise StateValidationError(
+                f"round {round_.get('n')} supporting artifacts have no unique round directory"
+            )
+        round_directory = next(iter(role_directories), None)
+        supporting_size = 0
+        for artifact in supporting:
+            if set(artifact) != {"path", "sha256", "size"}:
+                raise StateValidationError(
+                    f"round {round_.get('n')} supporting artifact record is invalid"
+                )
+            normalized = _normalize_existing_path(
+                project_dir, str(artifact.get("path", "")), nonempty_file=True
+            )
+            try:
+                (root / normalized).relative_to(round_directory)
+            except (TypeError, ValueError) as exc:
+                raise StateValidationError(
+                    f"round {round_.get('n')} supporting artifact escaped its round directory"
+                ) from exc
+            digest, size = _hash_bounded_file(
+                root / normalized,
+                maximum=MAX_RUN_ARTIFACT_BYTES,
+                label="round supporting artifact",
+            )
+            if digest != str(artifact.get("sha256", "")).lower():
+                raise StateValidationError(
+                    f"round {round_.get('n')} supporting artifact changed after completion: {normalized}"
+                )
+            try:
+                recorded_size = int(artifact.get("size", -1))
+            except (TypeError, ValueError) as exc:
+                raise StateValidationError(
+                    f"round {round_.get('n')} supporting artifact size record is invalid: {normalized}"
+                ) from exc
+            if recorded_size != size:
+                raise StateValidationError(
+                    f"round {round_.get('n')} supporting artifact size changed after completion: {normalized}"
+                )
+            supporting_size += size
+        if supporting_size > MAX_ROUND_SUPPORTING_BYTES:
+            raise StateValidationError(
+                f"round {round_.get('n')} supporting artifacts exceed the aggregate safety limit"
+            )
 
 def _validate_review_bundle_record(
     project_dir: str | Path,
@@ -2720,7 +2980,7 @@ def validate_decision_record(value: Any) -> dict[str, Any]:
     schema_version = value.get("schema_version")
     if schema_version not in SUPPORTED_DECISION_RECORD_SCHEMA_VERSIONS:
         raise StateValidationError(
-            "decision record schema_version must be 1 or 2"
+            "decision record schema_version must be 1, 2, or 3"
         )
     required = set(base_required)
     if schema_version >= 2:
@@ -2742,9 +3002,16 @@ def validate_decision_record(value: Any) -> dict[str, Any]:
             "decision record scientific_outcome must be Complete, Partial, or Failed"
         )
     recommended_action = value.get("recommended_user_action")
-    if recommended_action not in RECOMMENDED_USER_ACTIONS:
+    allowed_actions = (
+        PHASE_TWO_USER_ACTIONS
+        if schema_version == PHASE_TWO_DECISION_RECORD_SCHEMA_VERSION
+        else APPROVAL_USER_ACTIONS
+    )
+    if recommended_action not in allowed_actions:
+        allowed_text = ", ".join(sorted(allowed_actions))
         raise StateValidationError(
-            "decision record recommended_user_action is not recognized"
+            "decision record recommended_user_action must be one of: "
+            + allowed_text
         )
 
     evidence = value.get("main_evidence")
@@ -2762,14 +3029,19 @@ def validate_decision_record(value: Any) -> dict[str, Any]:
     ]
 
     consequences = value.get("option_consequences")
-    if not isinstance(consequences, Mapping) or set(consequences) != DECISION_OPTION_KEYS:
+    consequence_keys = (
+        PHASE_TWO_DECISION_OPTION_KEYS
+        if schema_version == PHASE_TWO_DECISION_RECORD_SCHEMA_VERSION
+        else DECISION_OPTION_KEYS
+    )
+    if not isinstance(consequences, Mapping) or set(consequences) != consequence_keys:
         raise StateValidationError(
-            "decision record option_consequences must contain exactly approve, "
-            "approve_with_limitations, request_revision, rerun, and defer"
+            "decision record option_consequences must contain exactly: "
+            + ", ".join(sorted(consequence_keys))
         )
     normalized_consequences = {
         key: _decision_text(consequences[key], f"option_consequences.{key}", maximum=2_000)
-        for key in sorted(DECISION_OPTION_KEYS)
+        for key in sorted(consequence_keys)
     }
 
     changes = value.get("scientific_record_changes")
@@ -3171,6 +3443,10 @@ def _validate_decision_record_context(
     """Bind every proposed scientific-record change to this exact run."""
 
     if manifest is None:
+        if data.get("schema_version") == PHASE_TWO_DECISION_RECORD_SCHEMA_VERSION:
+            raise StateValidationError(
+                "decision record schema 3 requires a current Phase 02 manifest"
+            )
         return
     phase_slug = str(manifest.get("phase_slug", "")).strip()
     run_id = str(manifest.get("run_id", "")).strip()
@@ -3182,23 +3458,41 @@ def _validate_decision_record_context(
         manifest_schema = int(manifest.get("schema_version", 1))
     except (TypeError, ValueError) as exc:
         raise StateValidationError("run manifest schema version is invalid") from exc
-    if manifest_schema >= 7 and data.get("schema_version") != 2:
-        raise StateValidationError(
-            "schema-7 runs require decision record schema 2"
-        )
+    decision_schema = data.get("schema_version")
     selected_object = data.get("selected_scientific_object")
-    if phase_slug == METHOD_DEVELOPMENT_PHASE and manifest_schema >= 7:
-        if not isinstance(selected_object, Mapping):
+    is_new_method_menu = (
+        phase_slug == METHOD_DEVELOPMENT_PHASE and manifest_schema >= 9
+    )
+    if is_new_method_menu:
+        if decision_schema != PHASE_TWO_DECISION_RECORD_SCHEMA_VERSION:
             raise StateValidationError(
-                "Phase 02 decision record must name one selected method ID and version"
+                "current Phase 02 runs require decision record schema 3"
             )
-        stable_id = str(selected_object.get("stable_id", ""))
-        version = str(selected_object.get("version", ""))
-        decision_requested = str(data.get("decision_requested", ""))
-        if stable_id not in decision_requested or version not in decision_requested:
+        if selected_object is not None:
             raise StateValidationError(
-                "Phase 02 decision_requested must repeat the selected method ID and version"
+                "Phase 02 publishes a method menu and must not select one method"
             )
+    else:
+        if decision_schema == PHASE_TWO_DECISION_RECORD_SCHEMA_VERSION:
+            raise StateValidationError(
+                "decision record schema 3 is reserved for current Phase 02 runs"
+            )
+        if manifest_schema >= 7 and decision_schema != DECISION_RECORD_SCHEMA_VERSION:
+            raise StateValidationError(
+                "schema-7 and later runs require decision record schema 2"
+            )
+        if phase_slug == METHOD_DEVELOPMENT_PHASE and manifest_schema >= 7:
+            if not isinstance(selected_object, Mapping):
+                raise StateValidationError(
+                    "legacy Phase 02 decision record must name one selected method ID and version"
+                )
+            stable_id = str(selected_object.get("stable_id", ""))
+            version = str(selected_object.get("version", ""))
+            decision_requested = str(data.get("decision_requested", ""))
+            if stable_id not in decision_requested or version not in decision_requested:
+                raise StateValidationError(
+                    "legacy Phase 02 decision_requested must repeat the selected method ID and version"
+                )
     phase = manifest.get("phase")
     if not isinstance(phase, Mapping):
         if manifest_schema < 5:
@@ -3386,7 +3680,18 @@ def _report_from_data(
             None,
         )
         stale = bool(phase.get("stale"))
-        satisfied = approved is not None and approved.get("status") == "approved" and not stale
+        partial_publication = bool(
+            prerequisite == METHOD_DEVELOPMENT_PHASE
+            and isinstance(approved, Mapping)
+            and approved.get("publication_kind") == "method_menu"
+            and approved.get("publication_readiness") == "partial"
+        )
+        satisfied = (
+            approved is not None
+            and approved.get("status") == "approved"
+            and not stale
+            and not partial_publication
+        )
         integrity_error = False
         integrity_detail = ""
         if satisfied and project_dir is not None:
@@ -3408,6 +3713,8 @@ def _report_from_data(
             reason = "approved run reference is invalid"
         elif stale:
             reason = "approved result is stale"
+        elif partial_publication:
+            reason = "published Phase 02 method menu is scientifically partial"
         elif integrity_error:
             reason = "approved evidence is missing or changed"
         else:
@@ -3424,6 +3731,199 @@ def _report_from_data(
     blockers = [item["phase"] for item in requirements if not item["satisfied"]]
     return {
         "phase": phase_slug,
+        "satisfied": not blockers,
+        "blockers": blockers,
+        "requirements": requirements,
+        "checked_at": _now_iso(),
+    }
+
+
+def _scientific_outcome(run: Mapping[str, Any]) -> str:
+    record = run.get("decision_record")
+    data = record.get("data") if isinstance(record, Mapping) else None
+    outcome = data.get("scientific_outcome") if isinstance(data, Mapping) else None
+    return str(outcome) if outcome in SCIENTIFIC_OUTCOMES else ""
+
+
+def _completed_result_from_phase(
+    phase: Mapping[str, Any],
+    phase_slug: str,
+    project_dir: str | Path | None,
+) -> tuple[Mapping[str, Any] | None, str]:
+    """Return the newest scientifically usable, intact result for one phase."""
+
+    integrity_detail = ""
+    saw_scientific_failure = False
+    for run in reversed(phase.get("runs", [])):
+        if (
+            not isinstance(run, Mapping)
+            or str(run.get("status", "")) not in COMPLETED_RESULT_STATUSES
+            or not run.get("submitted_at")
+            or not run.get("final_summary")
+        ):
+            continue
+        if _scientific_outcome(run) not in COMPLETED_SCIENTIFIC_OUTCOMES:
+            saw_scientific_failure = True
+            continue
+        if project_dir is not None:
+            try:
+                _validate_run_integrity(
+                    project_dir,
+                    phase_slug,
+                    run,
+                    require_summary=True,
+                )
+            except (OSError, ProjectStateError) as exc:
+                integrity_detail = str(exc)
+                continue
+        return run, ""
+    if integrity_detail:
+        return None, integrity_detail
+    if saw_scientific_failure:
+        return None, "the completed run has a Failed or missing scientific outcome"
+    return None, "no completed result"
+
+
+def _completion_report_from_data(
+    data: Mapping[str, Any],
+    phase_slug: str,
+    dependencies: Mapping[str, Sequence[str]],
+    project_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    """Report completed scientific results without requiring user approval."""
+
+    requirements: list[dict[str, Any]] = []
+    for prerequisite in dependencies.get(phase_slug, []):
+        phase = data.get("phases", {}).get(prerequisite, {})
+        result, integrity_detail = _completed_result_from_phase(
+            phase, prerequisite, project_dir
+        )
+        result_id = str(result.get("run_id", "")) if result else None
+        outcome = _scientific_outcome(result) if result else ""
+        if result is not None:
+            reason = "completed and intact"
+        elif integrity_detail and integrity_detail != "no completed result":
+            reason = integrity_detail
+        else:
+            reason = "no completed result"
+        requirements.append({
+            "phase": prerequisite,
+            "satisfied": result is not None,
+            "completed_run": result_id,
+            "approved_run": phase.get("approved_run"),
+            "stale": bool(phase.get("stale")),
+            "phase_status": phase.get("status", "pending"),
+            "scientific_outcome": outcome,
+            "reason": reason,
+            "integrity_detail": (
+                integrity_detail
+                if result is None and integrity_detail != "no completed result"
+                else ""
+            ),
+        })
+    blockers = [item["phase"] for item in requirements if not item["satisfied"]]
+    return {
+        "phase": phase_slug,
+        "policy": "completed_results",
+        "satisfied": not blockers,
+        "blockers": blockers,
+        "requirements": requirements,
+        "checked_at": _now_iso(),
+    }
+
+def _normalize_required_completed_runs(
+    required_completed_runs: Mapping[str, str],
+) -> dict[str, str]:
+    """Normalize an exact phase-to-run prerequisite mapping."""
+
+    if not isinstance(required_completed_runs, Mapping):
+        raise StateValidationError("required_completed_runs must be a mapping")
+    normalized: dict[str, str] = {}
+    for raw_phase, raw_run_id in required_completed_runs.items():
+        if not isinstance(raw_phase, str) or not isinstance(raw_run_id, str):
+            raise StateValidationError(
+                "required_completed_runs must map phase names to exact run IDs"
+            )
+        phase_slug = _resolve_slug(raw_phase.strip())
+        run_id = raw_run_id.strip()
+        if not phase_slug or not run_id or "\x00" in phase_slug or "\x00" in run_id:
+            raise StateValidationError(
+                "required_completed_runs contains an empty or invalid phase or run ID"
+            )
+        existing = normalized.get(phase_slug)
+        if existing is not None and existing != run_id:
+            raise StateValidationError(
+                f"required_completed_runs names conflicting runs for {phase_slug}"
+            )
+        normalized[phase_slug] = run_id
+    return normalized
+
+
+def _required_completed_report_from_data(
+    data: Mapping[str, Any],
+    phase_slug: str,
+    required_completed_runs: Mapping[str, str],
+    project_dir: str | Path | None,
+) -> dict[str, Any]:
+    """Report whether each exact prerequisite run remains scientifically usable."""
+
+    requirements: list[dict[str, Any]] = []
+    normalized = _normalize_required_completed_runs(required_completed_runs)
+    for prerequisite, required_run_id in normalized.items():
+        phase = data.get("phases", {}).get(prerequisite, {})
+        run = next(
+            (
+                candidate
+                for candidate in phase.get("runs", [])
+                if isinstance(candidate, Mapping)
+                and str(candidate.get("run_id", "")) == required_run_id
+            ),
+            None,
+        )
+        outcome = _scientific_outcome(run) if isinstance(run, Mapping) else ""
+        integrity_detail = ""
+        satisfied = False
+        if run is None:
+            reason = "the exact completed run is no longer recorded"
+        elif str(run.get("status", "")) not in COMPLETED_RESULT_STATUSES:
+            reason = "the exact completed run is no longer approved or awaiting review"
+        elif not run.get("submitted_at") or not run.get("final_summary"):
+            reason = "the exact completed run has no submitted final summary"
+        elif outcome not in COMPLETED_SCIENTIFIC_OUTCOMES:
+            reason = "the exact completed run has a Failed or missing scientific outcome"
+        elif project_dir is None:
+            satisfied = True
+            reason = "exact completed result is recorded; integrity was not evaluated"
+        else:
+            try:
+                _validate_run_integrity(
+                    project_dir,
+                    prerequisite,
+                    run,
+                    require_summary=True,
+                )
+            except (OSError, ProjectStateError) as exc:
+                integrity_detail = str(exc)
+                reason = integrity_detail
+            else:
+                satisfied = True
+                reason = "completed and intact"
+        requirements.append({
+            "phase": prerequisite,
+            "satisfied": satisfied,
+            "completed_run": required_run_id,
+            "approved_run": phase.get("approved_run"),
+            "stale": bool(phase.get("stale")),
+            "phase_status": phase.get("status", "pending"),
+            "scientific_outcome": outcome,
+            "reason": reason,
+            "integrity_detail": integrity_detail,
+        })
+    blockers = [item["phase"] for item in requirements if not item["satisfied"]]
+    return {
+        "phase": phase_slug,
+        "required_completed_runs": dict(normalized),
+        "policy": "required_completed_runs",
         "satisfied": not blockers,
         "blockers": blockers,
         "requirements": requirements,
@@ -3448,11 +3948,40 @@ def _approval_context_report_from_data(
         for item in snapshot.get("requirements", [])
         if isinstance(item, Mapping) and item.get("phase")
     }
+    snapshot_required_runs = snapshot.get("required_completed_runs")
+    exact_completion_policy = bool(
+        snapshot.get("policy") == "required_completed_runs"
+        or isinstance(snapshot_required_runs, Mapping)
+    )
+    completion_policy = bool(
+        snapshot.get("policy") == "completed_results"
+        and not exact_completion_policy
+    )
+    if exact_completion_policy:
+        required_completed_runs = (
+            _normalize_required_completed_runs(snapshot_required_runs)
+            if isinstance(snapshot_required_runs, Mapping)
+            else {
+                prerequisite: str(item.get("completed_run", "")).strip()
+                for prerequisite, item in launch_requirements.items()
+                if str(item.get("completed_run", "")).strip()
+            }
+        )
+        current_report = _required_completed_report_from_data(
+            data,
+            phase_slug,
+            required_completed_runs,
+            project_dir,
+        )
+    elif completion_policy:
+        current_report = _completion_report_from_data(
+            data, phase_slug, dependencies, project_dir
+        )
+    else:
+        current_report = _report_from_data(data, phase_slug, dependencies, project_dir)
     current_requirements = {
         str(item.get("phase")): item
-        for item in _report_from_data(
-            data, phase_slug, dependencies, project_dir
-        ).get("requirements", [])
+        for item in current_report.get("requirements", [])
         if isinstance(item, Mapping) and item.get("phase")
     }
 
@@ -3467,11 +3996,21 @@ def _approval_context_report_from_data(
             "reason": reason,
         })
 
-    for prerequisite in dependencies.get(phase_slug, []):
+    prerequisite_phases = (
+        tuple(launch_requirements)
+        if exact_completion_policy
+        else dependencies.get(phase_slug, [])
+    )
+    for prerequisite in prerequisite_phases:
         source_phase = data.get("phases", {}).get(prerequisite, {})
-        current_id = source_phase.get("approved_run")
-        current_stale = bool(source_phase.get("stale"))
         launched = launch_requirements.get(prerequisite)
+        current_requirement = current_requirements.get(prerequisite, {})
+        identity_field = (
+            "completed_run"
+            if completion_policy or exact_completion_policy
+            else "approved_run"
+        )
+        current_id = current_requirement.get(identity_field)
         if launched is None:
             add_change(
                 prerequisite,
@@ -3480,7 +4019,40 @@ def _approval_context_report_from_data(
                 "the prerequisite version was not recorded at launch",
             )
             continue
-        launch_id = launched.get("approved_run")
+        launch_id = launched.get(identity_field)
+        if exact_completion_policy:
+            if current_id != launch_id:
+                add_change(
+                    prerequisite,
+                    launch_id,
+                    current_id,
+                    "the exact completed prerequisite run changed after launch",
+                )
+            elif not current_requirement.get("satisfied"):
+                add_change(
+                    prerequisite,
+                    launch_id,
+                    current_id,
+                    "the exact completed prerequisite evidence is missing or changed",
+                )
+            continue
+        if completion_policy:
+            if current_id != launch_id:
+                add_change(
+                    prerequisite,
+                    launch_id,
+                    current_id,
+                    "the completed prerequisite result changed after launch",
+                )
+            elif not current_requirement.get("satisfied"):
+                add_change(
+                    prerequisite,
+                    launch_id,
+                    current_id,
+                    "the completed prerequisite evidence is missing or changed",
+                )
+            continue
+        current_stale = bool(source_phase.get("stale"))
         launch_stale = bool(launched.get("stale"))
         if current_id != launch_id:
             add_change(
@@ -3514,7 +4086,67 @@ def _approval_context_report_from_data(
             continue
         source_phase = data.get("phases", {}).get(source_name, {})
         launch_id = entry.get("run_id")
-        current_id = source_phase.get("approved_run")
+        if exact_completion_policy:
+            current_run = next(
+                (
+                    candidate
+                    for candidate in source_phase.get("runs", [])
+                    if isinstance(candidate, Mapping)
+                    and str(candidate.get("run_id", "")) == str(launch_id or "")
+                ),
+                None,
+            )
+            current_id = (
+                str(current_run.get("run_id", ""))
+                if isinstance(current_run, Mapping)
+                else None
+            )
+            integrity_changed = current_run is None
+            if not integrity_changed and project_dir is not None:
+                try:
+                    _validate_run_integrity(
+                        project_dir,
+                        source_name,
+                        current_run,
+                        require_summary=True,
+                    )
+                    summary_path = _normalize_existing_path(
+                        project_dir,
+                        current_run.get("final_summary", ""),
+                        summary=True,
+                    )
+                    digest, _ = _hash_bounded_file(
+                        Path(project_dir).resolve() / summary_path,
+                        maximum=MAX_SUMMARY_BYTES,
+                        label="frozen context summary",
+                    )
+                    integrity_changed = (
+                        summary_path != str(entry.get("summary", "")).strip()
+                        or digest != str(entry.get("sha256", "")).lower()
+                        or digest
+                        != str(current_run.get("summary_sha256", "")).lower()
+                    )
+                except (OSError, ProjectStateError):
+                    integrity_changed = True
+            if integrity_changed:
+                add_change(
+                    source_name,
+                    launch_id,
+                    current_id,
+                    "the frozen context source evidence is missing or changed",
+                )
+            continue
+        if completion_policy:
+            current_result, _ = _completed_result_from_phase(
+                source_phase, source_name, project_dir
+            )
+            current_id = (
+                str(current_result.get("run_id", ""))
+                if current_result is not None
+                else None
+            )
+        else:
+            current_id = source_phase.get("approved_run")
         integrity_changed = False
         if current_id == launch_id and project_dir is not None:
             current_run = next(
@@ -3526,7 +4158,20 @@ def _approval_context_report_from_data(
                 None,
             )
             try:
-                if current_run is None or current_run.get("status") != "approved":
+                allowed_statuses = (
+                    COMPLETED_RESULT_STATUSES
+                    if completion_policy
+                    else frozenset({"approved"})
+                )
+                if (
+                    current_run is None
+                    or current_run.get("status") not in allowed_statuses
+                    or (
+                        completion_policy
+                        and _scientific_outcome(current_run)
+                        not in COMPLETED_SCIENTIFIC_OUTCOMES
+                    )
+                ):
                     integrity_changed = True
                 else:
                     _validate_run_integrity(
@@ -3541,7 +4186,7 @@ def _approval_context_report_from_data(
                     digest, _ = _hash_bounded_file(
                         Path(project_dir).resolve() / summary_path,
                         maximum=MAX_SUMMARY_BYTES,
-                        label="approved context summary",
+                        label="completed context summary",
                     )
                     integrity_changed = (
                         digest != str(entry.get("sha256", "")).lower()
@@ -3550,12 +4195,18 @@ def _approval_context_report_from_data(
                     )
             except (OSError, ProjectStateError):
                 integrity_changed = True
-        if current_id != launch_id or bool(source_phase.get("stale")):
+        if current_id != launch_id or (
+            not completion_policy and bool(source_phase.get("stale"))
+        ):
             add_change(
                 source_name,
                 launch_id,
                 current_id,
-                "an approved context source changed or became stale after launch",
+                (
+                    "a completed context source changed after launch"
+                    if completion_policy
+                    else "an approved context source changed or became stale after launch"
+                ),
             )
         elif integrity_changed:
             add_change(
@@ -3596,13 +4247,27 @@ def reserve_run(
     replace_awaiting_review_note: str | None = None,
     replace_awaiting_review_run_id: str | None = None,
     expected_prerequisite_report_version: str | None = None,
+    completed_results: bool = False,
+    required_completed_runs: Mapping[str, str] | None = None,
 ) -> str:
     """Atomically reserve the project's sole active execution and return its ID.
 
-    Unsatisfied prerequisites require explicit override metadata.  The exact
+    Unsatisfied prerequisites require explicit override metadata. The exact
     prerequisite report and override are snapshotted on the run so the UI can
-    explain the user's decision later.
+    explain the user's decision later. ``completed_results`` uses completed,
+    intact scientific results instead of user approval as the dependency rule.
+    ``required_completed_runs`` binds the report to exact completed run IDs.
     """
+
+    if completed_results and required_completed_runs is not None:
+        raise StateValidationError(
+            "completed_results and required_completed_runs are mutually exclusive"
+        )
+    normalized_required_runs = (
+        _normalize_required_completed_runs(required_completed_runs)
+        if required_completed_runs is not None
+        else None
+    )
 
     if isinstance(rounds_requested, bool):
         raise StateValidationError("rounds_requested must be a positive integer")
@@ -3668,9 +4333,21 @@ def reserve_run(
             data["dependencies"] = normalized_dependencies
         else:
             normalized_dependencies = _normalize_dependencies(data.get("dependencies", {}))
-        report = _report_from_data(
-            data, phase_slug, normalized_dependencies, project_dir
-        )
+        if normalized_required_runs is not None:
+            report = _required_completed_report_from_data(
+                data,
+                phase_slug,
+                normalized_required_runs,
+                project_dir,
+            )
+        elif completed_results:
+            report = _completion_report_from_data(
+                data, phase_slug, normalized_dependencies, project_dir
+            )
+        else:
+            report = _report_from_data(
+                data, phase_slug, normalized_dependencies, project_dir
+            )
 
         normalized_override: dict[str, Any] | None = None
         if override_metadata is not None:
@@ -3685,9 +4362,21 @@ def reserve_run(
             normalized_override.setdefault("actor", "user")
             normalized_override["recorded_at"] = _now_iso()
             normalized_override["blockers"] = list(report["blockers"])
-        if report["blockers"] and normalized_override is None:
+        if report["blockers"] and normalized_required_runs is not None:
             raise StateConflict(
-                "prerequisites are not approved and current: " + ", ".join(report["blockers"])
+                "exact completed prerequisites are missing or changed: "
+                + ", ".join(report["blockers"])
+            )
+        if report["blockers"] and normalized_override is None:
+            if normalized_required_runs is not None:
+                required_state = "bound to intact exact completed runs"
+            elif completed_results:
+                required_state = "completed and intact"
+            else:
+                required_state = "approved and current"
+            raise StateConflict(
+                f"prerequisites are not {required_state}: "
+                + ", ".join(report["blockers"])
             )
         if expected_prerequisite_report_version is not None:
             submitted_version = str(expected_prerequisite_report_version).strip()
@@ -3726,6 +4415,13 @@ def reserve_run(
             "manifest_sha256": None,
             "review_target": None,
             "submission_artifacts": {},
+            "method_menu_seal": None,
+            "method_menu_changes": None,
+            "publication_kind": None,
+            "published_at": None,
+            "publication_outcome": None,
+            "publication_readiness": None,
+            "migration_warning": None,
             "decision_record": None,
             "replacement_request": replacement_request,
             "timeout_minutes": None,
@@ -3803,7 +4499,7 @@ def set_run_context(
     run_ref: str | int,
     entries: Sequence[Mapping[str, Any]],
 ) -> None:
-    """Freeze the exact approved summaries used as cross-phase inputs.
+    """Freeze exact completed summaries used as cross-phase inputs.
 
     Each entry contains ``phase``, ``run_id``, ``summary``, and ``sha256``.
     The referenced run and file are checked, including the content hash.  An
@@ -3836,10 +4532,24 @@ def set_run_context(
                 raise StateValidationError(
                     f"context references an unknown run: {source_phase}/{source_run_id}"
                 ) from exc
-            if source_run.get("status") != "approved":
+            source_status = str(source_run.get("status", ""))
+            if source_status not in {
+                "approved", "awaiting_review", "revision_requested", "superseded"
+            }:
                 raise StateValidationError(
-                    f"context run is not approved: {source_phase}/{source_run_id}"
+                    f"context run has no completed result: {source_phase}/{source_run_id}"
                 )
+            try:
+                _validate_run_integrity(
+                    project_dir,
+                    source_phase,
+                    source_run,
+                    require_summary=True,
+                )
+            except (OSError, ProjectStateError) as exc:
+                raise StateValidationError(
+                    f"context run evidence is unavailable: {source_phase}/{source_run_id}"
+                ) from exc
             summary_path = _normalize_existing_path(
                 project_dir, entry.get("summary", ""), summary=True
             )
@@ -3850,7 +4560,7 @@ def set_run_context(
             digest, _ = _hash_bounded_file(
                 Path(project_dir).resolve() / summary_path,
                 maximum=MAX_SUMMARY_BYTES,
-                label="approved context summary",
+                label="completed context summary",
             )
             if supplied_hash != digest:
                 raise StateValidationError(
@@ -3859,7 +4569,7 @@ def set_run_context(
             recorded_digest = source_run.get("summary_sha256")
             if recorded_digest and recorded_digest != digest:
                 raise StateValidationError(
-                    f"approved summary changed after approval: {source_phase}/{source_run_id}"
+                    f"completed summary changed after submission: {source_phase}/{source_run_id}"
                 )
             if not recorded_digest:
                 # Establish an integrity baseline when migrating a legacy approved run.
@@ -3869,6 +4579,7 @@ def set_run_context(
                 "run_id": source_run_id,
                 "summary": summary_path,
                 "sha256": digest,
+                "status_at_selection": source_status,
             })
 
         existing = run.get("context_inputs", [])
@@ -4261,8 +4972,18 @@ def complete_round(
     run_ref: str | int,
     round_n: int,
     outputs: Sequence[str | Path] | None = None,
-) -> None:
-    """Complete the open round after validating every artifact path."""
+    *,
+    supporting_outputs: Sequence[str | Path] | None = None,
+    discover_supporting: bool = False,
+) -> int:
+    """Complete the open round and seal role reports and supporting files."""
+
+    if not isinstance(discover_supporting, bool):
+        raise StateValidationError("discover_supporting must be a boolean")
+    if discover_supporting and supporting_outputs is not None:
+        raise StateValidationError(
+            "discover_supporting and supporting_outputs are mutually exclusive"
+        )
 
     with _project_lock(project_dir):
         data = _migrate(_read_unlocked(project_dir))
@@ -4307,9 +5028,101 @@ def complete_round(
                 "sha256": digest,
                 "size": size,
             })
+        root = Path(project_dir).resolve()
+        round_directories = {
+            (root / output).parent.resolve(strict=False) for output in normalized
+        }
+        if discover_supporting:
+            if len(round_directories) != 1:
+                raise StateValidationError(
+                    "supporting discovery requires one unambiguous round directory"
+                )
+            supplied_supporting = discover_round_supporting_files(
+                project_dir,
+                next(iter(round_directories)),
+                exclude=normalized,
+            )
+        else:
+            supplied_supporting = list(supporting_outputs or ())
+        if len(supplied_supporting) > MAX_ROUND_SUPPORTING_FILES:
+            raise StateValidationError(
+                "round contains too many supporting artifacts; "
+                f"the limit is {MAX_ROUND_SUPPORTING_FILES}"
+            )
+        supporting = [
+            _normalize_existing_path(project_dir, output, nonempty_file=True)
+            for output in supplied_supporting
+        ]
+        if len(set(supporting)) != len(supporting):
+            raise StateValidationError("round supporting artifact files must be unique")
+        if set(supporting) & set(normalized):
+            raise StateValidationError(
+                "role reports and supporting artifacts must be recorded separately"
+            )
+        if supporting and len(round_directories) != 1:
+            raise StateValidationError(
+                "supporting artifacts require one unambiguous round directory"
+            )
+        round_directory = next(iter(round_directories), None)
+        round_["supporting_artifacts"] = []
+        supporting_size = 0
+        for path in supporting:
+            try:
+                (root / path).relative_to(round_directory)
+            except (TypeError, ValueError) as exc:
+                raise StateValidationError(
+                    "supporting artifact escaped its round directory"
+                ) from exc
+            digest, size = _hash_bounded_file(
+                root / path,
+                maximum=MAX_RUN_ARTIFACT_BYTES,
+                label="round supporting artifact",
+            )
+            supporting_size += size
+            if supporting_size > MAX_ROUND_SUPPORTING_BYTES:
+                raise StateValidationError(
+                    "round supporting artifacts exceed the "
+                    f"{MAX_ROUND_SUPPORTING_BYTES:,}-byte aggregate safety limit"
+                )
+            round_["supporting_artifacts"].append({
+                "path": path,
+                "sha256": digest,
+                "size": size,
+            })
+        if discover_supporting:
+            rediscovered = discover_round_supporting_files(
+                project_dir,
+                round_directory,
+                exclude=normalized,
+            )
+            if rediscovered != sorted(supporting):
+                raise StateValidationError(
+                    "round supporting artifact inventory changed while it was sealed"
+                )
+            sealed_by_path = {
+                str(record["path"]): record
+                for record in round_["supporting_artifacts"]
+            }
+            for path in rediscovered:
+                digest, size = _hash_bounded_file(
+                    root / path,
+                    maximum=MAX_RUN_ARTIFACT_BYTES,
+                    label="round supporting artifact rescan",
+                )
+                record = sealed_by_path.get(path)
+                if (
+                    record is None
+                    or digest != str(record.get("sha256", "")).lower()
+                    or size != int(record.get("size", -1))
+                ):
+                    raise StateValidationError(
+                        "round supporting artifact changed while it was sealed: "
+                        f"{path}"
+                    )
         round_["completed"] = _now_iso()
         _refresh_derived_state(data)
         _save_unlocked(project_dir, data)
+        return len(supporting)
 
 
 def stage_run_submission(
@@ -4378,6 +5191,32 @@ def stage_run_submission(
         run["decision_record"] = _seal_decision_record(
             project_dir, manifest, decision_record
         )
+        if (
+            phase_slug == METHOD_DEVELOPMENT_PHASE
+            and _manifest_schema_version(manifest) >= 9
+        ):
+            if not isinstance(manifest, Mapping):
+                raise StateValidationError(
+                    "current Phase 02 submission requires a sealed run manifest"
+                )
+            output_root = str(manifest.get("output_root", "")).strip()
+            if not output_root:
+                raise StateValidationError(
+                    "current Phase 02 manifest has no output directory"
+                )
+            try:
+                sealed_menu = method_menu.seal_staged_menu(
+                    project_dir, output_root
+                )
+            except (OSError, ValueError) as exc:
+                raise StateValidationError(
+                    f"Phase 02 staged method menu is invalid: {exc}"
+                ) from exc
+            if not isinstance(sealed_menu, Mapping):
+                raise StateValidationError(
+                    "Phase 02 staged method menu seal is invalid"
+                )
+            run["method_menu_seal"] = copy.deepcopy(dict(sealed_menu))
         timestamp = _now_iso()
         run["final_summary"] = normalized_summary
         summary_digest, _ = _hash_bounded_file(
@@ -4392,6 +5231,226 @@ def stage_run_submission(
         _save_unlocked(project_dir, data)
 
 
+def _phase_two_scientific_outcome(run: Mapping[str, Any]) -> str:
+    record = run.get("decision_record")
+    data = record.get("data") if isinstance(record, Mapping) else None
+    outcome = data.get("scientific_outcome") if isinstance(data, Mapping) else None
+    if outcome not in SCIENTIFIC_OUTCOMES:
+        raise StateValidationError(
+            "current Phase 02 submission has no valid scientific outcome"
+        )
+    return str(outcome)
+
+
+def _promotion_changed_method_ids(
+    promotion: Mapping[str, Any],
+) -> set[str] | None:
+    """Return changed method IDs, or ``None`` when the diff is unavailable."""
+
+    for key in ("changed_stable_ids", "changed_ids"):
+        values = promotion.get(key)
+        if isinstance(values, list) and all(
+            isinstance(value, str) and value.strip() for value in values
+        ):
+            return {value.strip() for value in values}
+    changes = promotion.get("changes")
+    if isinstance(changes, Mapping):
+        return {
+            str(stable_id).strip()
+            for stable_id in changes
+            if str(stable_id).strip()
+        }
+    if isinstance(changes, list):
+        result: set[str] = set()
+        for change in changes:
+            if not isinstance(change, Mapping):
+                return None
+            stable_id = str(change.get("stable_id", "")).strip()
+            if not stable_id:
+                return None
+            result.add(stable_id)
+        return result
+    return None
+
+
+def _method_menu_change_record(
+    promotion: Mapping[str, Any], changed_ids: set[str] | None
+) -> dict[str, Any]:
+    """Keep the scientific diff while excluding opaque rollback state."""
+
+    record: dict[str, Any] = {
+        "changed_stable_ids": sorted(changed_ids) if changed_ids is not None else None,
+    }
+    changes = promotion.get("changes")
+    if isinstance(changes, (Mapping, list)):
+        record["changes"] = copy.deepcopy(changes)
+    return record
+
+
+def _approved_method_identity(
+    project_dir: str | Path,
+    phase_slug: str,
+    phase: Mapping[str, Any],
+) -> str | None:
+    approved_id = phase.get("approved_run")
+    if not isinstance(approved_id, str) or not approved_id:
+        return None
+    approved = next(
+        (
+            candidate
+            for candidate in phase.get("runs", [])
+            if isinstance(candidate, Mapping)
+            and candidate.get("run_id") == approved_id
+            and candidate.get("status") == "approved"
+        ),
+        None,
+    )
+    if approved is None:
+        return None
+    try:
+        manifest = _validate_recorded_manifest(
+            project_dir, phase_slug, approved
+        )
+    except (OSError, ProjectStateError):
+        return None
+    selection = manifest.get("method_selection") if isinstance(manifest, Mapping) else None
+    if not isinstance(selection, Mapping):
+        return None
+    stable_id = str(selection.get("stable_id", "")).strip()
+    return stable_id or None
+
+
+def _stale_changed_method_descendants_unlocked(
+    project_dir: str | Path,
+    data: dict[str, Any],
+    run_id: str | None,
+    timestamp: str,
+    changed_ids: set[str] | None,
+    *,
+    reason_override: str | None = None,
+    conservative_on_unknown: bool = True,
+) -> list[str]:
+    """Stale only branches affected by the new menu, then cascade."""
+
+    if changed_ids == set():
+        return []
+    dependencies = _normalize_dependencies(data.get("dependencies", {}))
+    reverse: dict[str, list[str]] = {}
+    for dependent, prerequisites in dependencies.items():
+        for prerequisite in prerequisites:
+            reverse.setdefault(prerequisite, []).append(dependent)
+
+    queue = [
+        (phase_slug, False)
+        for phase_slug in reverse.get(METHOD_DEVELOPMENT_PHASE, [])
+    ]
+    visited: dict[str, bool] = {}
+    staled: list[str] = []
+    while queue:
+        phase_slug, forced = queue.pop(0)
+        if visited.get(phase_slug) is True:
+            continue
+        if visited.get(phase_slug) is False and not forced:
+            continue
+        visited[phase_slug] = forced
+        phase = data.get("phases", {}).get(phase_slug)
+        identity = None
+        affected = forced
+        reason = "an upstream result depends on an affected method"
+        if not affected and isinstance(phase, Mapping) and phase.get("approved_run"):
+            identity = _approved_method_identity(project_dir, phase_slug, phase)
+            if identity is None and conservative_on_unknown:
+                affected = True
+                reason = "the approved run has no verifiable sealed method identity"
+            elif identity is not None and (changed_ids is None or identity in changed_ids):
+                affected = True
+                reason = (
+                    reason_override
+                    or f"method {identity} changed in the published Phase 02 menu"
+                )
+
+        if affected and isinstance(phase, dict) and phase.get("approved_run"):
+            phase["stale"] = True
+            phase["stale_at"] = timestamp
+            phase["stale_reason"] = reason
+            phase["stale_by_run"] = run_id
+            staled.append(phase_slug)
+
+        for descendant in reverse.get(phase_slug, []):
+            queue.append((descendant, affected))
+    return staled
+
+
+def mark_method_dependents_stale(
+    project_dir: str | Path,
+    stable_id: str,
+    *,
+    reason: str,
+    stale_by_run: str | None = None,
+) -> list[str]:
+    """Stale approved results bound to one retired or revised method."""
+
+    normalized_id = str(stable_id).strip()
+    normalized_reason = str(reason).strip()
+    if not normalized_id:
+        raise StateValidationError("method stable ID must be nonempty")
+    if not normalized_reason:
+        raise StateValidationError("method staleness reason must be nonempty")
+    with _project_lock(project_dir):
+        data = _migrate(_read_unlocked(project_dir))
+        staled = _stale_changed_method_descendants_unlocked(
+            project_dir,
+            data,
+            stale_by_run,
+            _now_iso(),
+            {normalized_id},
+            reason_override=normalized_reason,
+            conservative_on_unknown=False,
+        )
+        _refresh_derived_state(data)
+        _save_unlocked(project_dir, data)
+        return staled
+
+
+def _publish_method_menu_run_unlocked(
+    phase: dict[str, Any],
+    run: dict[str, Any],
+    timestamp: str,
+    scientific_outcome: str,
+    change_record: Mapping[str, Any],
+) -> None:
+    """Make a completed Phase 02 run the current published menu."""
+
+    old_published_id = phase.get("approved_run")
+    if old_published_id and old_published_id != run["run_id"]:
+        old = next(
+            (
+                candidate
+                for candidate in phase.get("runs", [])
+                if candidate.get("run_id") == old_published_id
+            ),
+            None,
+        )
+        if isinstance(old, dict) and old.get("status") == "approved":
+            old["status"] = "superseded"
+            old["superseded_at"] = timestamp
+            old["superseded_by"] = run["run_id"]
+
+    readiness = "ready" if scientific_outcome == "Complete" else "partial"
+    run["status"] = "approved"
+    run["published_at"] = timestamp
+    run["publication_kind"] = "method_menu"
+    run["publication_outcome"] = scientific_outcome
+    run["publication_readiness"] = readiness
+    run["method_menu_changes"] = copy.deepcopy(dict(change_record))
+    phase["approved_run"] = run["run_id"]
+    phase["publication_readiness"] = readiness
+    phase["stale"] = False
+    phase["stale_at"] = None
+    phase["stale_reason"] = None
+    phase["stale_by_run"] = None
+
+
 def finalize_run_submission(
     project_dir: str | Path,
     phase_slug: str,
@@ -4399,12 +5458,7 @@ def finalize_run_submission(
     *,
     expected_pid: int | None = None,
 ) -> bool:
-    """Move a submitted run to review only after its worker has exited.
-
-    Returning ``False`` means cancellation or another terminal transition won
-    the state lock. This keeps the user's kill switch available until no
-    unattended lead process remains.
-    """
+    """Finalize a submission after its worker exits."""
 
     if expected_pid is not None and (
         isinstance(expected_pid, bool) or not isinstance(expected_pid, int) or expected_pid <= 0
@@ -4412,7 +5466,7 @@ def finalize_run_submission(
         raise StateValidationError("expected PID must be a positive integer")
     with _project_lock(project_dir):
         data = _migrate(_read_unlocked(project_dir))
-        _, run, _ = _resolve_run(data, phase_slug, run_ref)
+        phase, run, _ = _resolve_run(data, phase_slug, run_ref)
         if run.get("status") != "submitting":
             return False
         if expected_pid is not None and run.get("process_pid") != expected_pid:
@@ -4422,14 +5476,106 @@ def finalize_run_submission(
         _validate_run_integrity(
             project_dir, phase_slug, run, require_summary=True
         )
+        manifest = _validate_recorded_manifest(project_dir, phase_slug, run)
         timestamp = _now_iso()
-        run["status"] = "awaiting_review"
         run["completed"] = timestamp
         run["ended_at"] = timestamp
-        _refresh_derived_state(data)
-        _save_unlocked(project_dir, data)
-        return True
+        publishes_method_menu = bool(
+            phase_slug == METHOD_DEVELOPMENT_PHASE
+            and _manifest_schema_version(manifest) >= 9
+        )
+        if not publishes_method_menu:
+            if phase_slug == METHOD_DEVELOPMENT_PHASE:
+                run["status"] = "superseded"
+                run["superseded_at"] = timestamp
+                run["superseded_by"] = phase.get("approved_run")
+                run["migration_warning"] = {
+                    "code": "legacy_phase_two_result_not_published",
+                    "message": (
+                        "This legacy Phase 02 result completed under the earlier "
+                        "method-selection contract. It remains historical and "
+                        "was not published automatically."
+                    ),
+                    "recorded_at": timestamp,
+                }
+            else:
+                run["status"] = "awaiting_review"
+            _refresh_derived_state(data)
+            _save_unlocked(project_dir, data)
+            return True
 
+        scientific_outcome = _phase_two_scientific_outcome(run)
+        if scientific_outcome == "Failed":
+            run["status"] = "failed"
+            run["publication_outcome"] = "Failed"
+            run["publication_readiness"] = "failed"
+            run["method_menu_changes"] = None
+            _refresh_derived_state(data)
+            _save_unlocked(project_dir, data)
+            return True
+
+        if not isinstance(manifest, Mapping):
+            raise StateValidationError(
+                "current Phase 02 publication requires a sealed run manifest"
+            )
+        seal = run.get("method_menu_seal")
+        if not isinstance(seal, Mapping):
+            raise StateValidationError(
+                "current Phase 02 publication has no sealed staged menu"
+            )
+        output_root = str(manifest.get("output_root", "")).strip()
+        promotion: Mapping[str, Any] | None = None
+        try:
+            promotion = method_menu.promote_staged_menu(
+                project_dir, output_root, seal
+            )
+        except (OSError, ValueError) as exc:
+            raise StateValidationError(
+                f"Phase 02 staged method menu could not be published: {exc}"
+            ) from exc
+        if not isinstance(promotion, Mapping):
+            raise StateValidationError(
+                "Phase 02 method-menu promotion record is invalid"
+            )
+
+        changed_ids = _promotion_changed_method_ids(promotion)
+        change_record = _method_menu_change_record(promotion, changed_ids)
+        try:
+            _publish_method_menu_run_unlocked(
+                phase,
+                run,
+                timestamp,
+                scientific_outcome,
+                change_record,
+            )
+            _stale_changed_method_descendants_unlocked(
+                project_dir,
+                data,
+                str(run["run_id"]),
+                timestamp,
+                changed_ids,
+            )
+            _refresh_derived_state(data)
+            _save_unlocked(project_dir, data)
+        except Exception:
+            try:
+                method_menu.rollback_method_menu_promotion(
+                    project_dir, promotion
+                )
+            except Exception as rollback_error:
+                log.critical(
+                    "Phase 02 menu rollback failed after state finalization error: %s",
+                    rollback_error,
+                )
+            raise
+        try:
+            method_menu.commit_method_menu_promotion(project_dir, promotion)
+        except Exception as cleanup_error:
+            log.warning(
+                "Published Phase 02 menu backup could not be removed: %s",
+                cleanup_error,
+            )
+        return True
 
 def submit_run_for_review(
     project_dir: str | Path,
@@ -4904,12 +6050,29 @@ def prerequisite_report(
     dependencies: Mapping[str, Sequence[str]] | None = None,
     *,
     gating: Mapping[str, Sequence[str]] | None = None,
+    completed_results: bool = False,
+    required_completed_runs: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
+    if completed_results and required_completed_runs is not None:
+        raise StateValidationError(
+            "completed_results and required_completed_runs are mutually exclusive"
+        )
     data = load(project_dir)
     supplied = dependencies if dependencies is not None else gating
     normalized = _normalize_dependencies(
         supplied if supplied is not None else data.get("dependencies", {})
     )
+    if required_completed_runs is not None:
+        return _required_completed_report_from_data(
+            data,
+            phase_slug,
+            _normalize_required_completed_runs(required_completed_runs),
+            project_dir,
+        )
+    if completed_results:
+        return _completion_report_from_data(
+            data, phase_slug, normalized, project_dir
+        )
     return _report_from_data(data, phase_slug, normalized, project_dir)
 
 

@@ -643,30 +643,38 @@ def test_locked_launch_rejects_a_stale_phase_plan_version(
         )
 
 
-def test_method_selection_freezes_the_approved_phase_two_decision() -> None:
-    selection = launcher._method_selection_for_run(
-        {"slug": launcher.IDEA_EVALUATION_PHASE},
-        _approved_method_snapshots(),
-        "",
-        "",
-    )
+def test_phase_three_rechecks_the_catalog_version_inside_the_launch_lock(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
 
-    assert selection == {
-        "kind": "method",
-        "stable_id": "adaptive-score-test",
-        "version": "v1.2",
-        "source": "approved_phase_02_selection",
-        "source_phase": launcher.project_state.METHOD_DEVELOPMENT_PHASE,
-        "source_run_id": "phase-02-approved",
-        "decision_record": {
-            "path": "decisions/02-method-development-phase-02-approved.json",
-            "sha256": "b" * 64,
-            "schema_version": 2,
-        },
-    }
+    with pytest.raises(
+        launcher.LaunchError,
+        match="catalog changed after launch was requested",
+    ):
+        launcher._launch_run_locked(
+            project,
+            1,
+            launcher.IDEA_EVALUATION_PHASE,
+            run_specific_method_id="method-a",
+            run_specific_method_version="v1",
+            run_specific_method_sha256="a" * 64,
+            expected_method_menu_version="0" * 64,
+        )
 
 
-def test_run_specific_method_identity_overrides_the_approved_selection() -> None:
+def test_method_bound_run_requires_a_run_specific_user_choice() -> None:
+    with pytest.raises(launcher.LaunchError, match="Choose an active method"):
+        launcher._method_selection_for_run(
+            {"slug": launcher.IDEA_EVALUATION_PHASE},
+            _approved_method_snapshots(),
+            "",
+            "",
+        )
+
+
+def test_run_specific_method_identity_is_frozen_for_the_run() -> None:
     selection = launcher._method_selection_for_run(
         {"slug": launcher.DRAFT_ASSEMBLY_PHASE},
         _approved_method_snapshots(),
@@ -695,7 +703,7 @@ def test_run_specific_method_identity_overrides_the_approved_selection() -> None
 def test_standard_method_phases_reject_a_missing_method_identity(
     phase_slug: str,
 ) -> None:
-    with pytest.raises(launcher.LaunchError, match="exact method identity"):
+    with pytest.raises(launcher.LaunchError, match="Choose an active method"):
         launcher._method_selection_for_run(
             {"slug": phase_slug},
             {"summaries": []},
@@ -727,23 +735,35 @@ def test_audit_only_phase_three_requires_no_method_selection() -> None:
         )
 
 
+def _legacy_approved_method_selection() -> dict[str, object]:
+    return {
+        "kind": "method",
+        "stable_id": "adaptive-score-test",
+        "version": "v1.2",
+        "source": "approved_phase_02_selection",
+        "source_phase": launcher.project_state.METHOD_DEVELOPMENT_PHASE,
+        "source_run_id": "phase-02-approved",
+        "decision_record": {
+            "path": "decisions/02-method-development-phase-02-approved.json",
+            "sha256": "b" * 64,
+            "schema_version": 2,
+        },
+    }
+
+
 @pytest.mark.parametrize("field", ["path", "sha256"])
-def test_manifest_method_selection_rejects_decision_provenance_mismatch(
+def test_legacy_manifest_method_selection_rejects_provenance_mismatch(
     field: str,
 ) -> None:
     snapshots = _approved_method_snapshots()
-    selection = launcher._method_selection_for_run(
-        {"slug": launcher.IDEA_EVALUATION_PHASE},
-        snapshots,
-        "",
-        "",
-    )
-    assert selection is not None
-    mismatched = json.loads(json.dumps(selection))
-    mismatched["decision_record"][field] = (
+    mismatched = _legacy_approved_method_selection()
+    decision_record = mismatched["decision_record"]
+    assert isinstance(decision_record, dict)
+    decision_record[field] = (
         "decisions/a-different-decision.json" if field == "path" else "c" * 64
     )
     manifest = {
+        "schema_version": 8,
         "phase_slug": launcher.IDEA_EVALUATION_PHASE,
         "phase": {"slug": launcher.IDEA_EVALUATION_PHASE},
         "snapshots": snapshots,
@@ -751,6 +771,19 @@ def test_manifest_method_selection_rejects_decision_provenance_mismatch(
     }
 
     with pytest.raises(launcher.LaunchError, match="frozen decision record"):
+        launcher._validated_manifest_method_selection(manifest)
+
+
+def test_schema_nine_manifest_rejects_a_legacy_phase_two_selection() -> None:
+    manifest = {
+        "schema_version": 9,
+        "phase_slug": launcher.IDEA_EVALUATION_PHASE,
+        "phase": {"slug": launcher.IDEA_EVALUATION_PHASE},
+        "snapshots": _approved_method_snapshots(),
+        "method_selection": _legacy_approved_method_selection(),
+    }
+
+    with pytest.raises(launcher.LaunchError, match="chosen by the user"):
         launcher._validated_manifest_method_selection(manifest)
 
 
@@ -852,6 +885,71 @@ def test_v2_snapshot_schema_requires_complete_hashed_inputs() -> None:
     with pytest.raises(launcher.LaunchError, match="path and sha256"):
         launcher._validate_manifest_snapshot_schema(missing_summary_path)
 
+
+def test_frozen_summary_accepts_the_exact_supporting_artifact_shape() -> None:
+    manifest = _schema_v2_manifest()
+    manifest["snapshots"]["summaries"][0]["supporting_artifacts"] = [{
+        "path": "/frozen/supporting/round-01/001-diagnostics.csv",
+        "sha256": "c" * 64,
+        "size": 128,
+        "round": 1,
+        "source_path": "branches/method-a/results/diagnostics.csv",
+    }]
+
+    launcher._validate_manifest_snapshot_schema(manifest)
+
+
+@pytest.mark.parametrize(
+    "supporting_artifacts",
+    [
+        "not-a-list",
+        [{
+            "path": "/frozen/supporting/file.csv",
+            "sha256": "c" * 64,
+            "size": 8,
+            "round": 1,
+        }],
+        [{
+            "path": "/frozen/supporting/file.csv",
+            "sha256": "c" * 64,
+            "size": 8,
+            "round": 1,
+            "source_path": "results/file.csv",
+            "unexpected": True,
+        }],
+        [{
+            "path": "/frozen/supporting/file.csv",
+            "sha256": "c" * 64,
+            "size": 0,
+            "round": 1,
+            "source_path": "results/file.csv",
+        }],
+        [{
+            "path": "/frozen/supporting/file.csv",
+            "sha256": "c" * 64,
+            "size": 8,
+            "round": 0,
+            "source_path": "results/file.csv",
+        }],
+        [{
+            "path": "/frozen/supporting/file.csv",
+            "sha256": "c" * 64,
+            "size": 8,
+            "round": 1,
+            "source_path": "",
+        }],
+    ],
+)
+def test_frozen_summary_rejects_malformed_supporting_artifact_records(
+    supporting_artifacts: object,
+) -> None:
+    manifest = _schema_v2_manifest()
+    manifest["snapshots"]["summaries"][0][
+        "supporting_artifacts"
+    ] = supporting_artifacts
+
+    with pytest.raises(launcher.LaunchError, match=r"supporting[_ ]artifact"):
+        launcher._validate_manifest_snapshot_schema(manifest)
 
 def test_v1_manifest_retains_legacy_snapshot_read_behavior() -> None:
     launcher._validate_manifest_snapshot_schema(
@@ -1066,6 +1164,7 @@ def test_trusted_context_includes_baseline_and_optional_but_not_stale_nonself(
         }
         phases[slug] = {
             "approved_run": run_id,
+            "runs": [runs[(slug, run_id)]],
             "stale": slug in {"02-method", "04-old-context"},
         }
     config = {
@@ -1101,13 +1200,1078 @@ def test_trusted_context_includes_baseline_and_optional_but_not_stale_nonself(
     by_phase = {entry["phase"]: entry for entry in context}
     assert set(by_phase) == {"01-literature", "02-method", "03-data"}
     assert by_phase["01-literature"]["kind"] == "prerequisite"
-    assert by_phase["03-data"]["kind"] == "optional_approved_context"
+    assert by_phase["03-data"]["kind"] == "optional_accepted_context"
     assert by_phase["02-method"]["kind"] == "prior_phase_baseline"
     assert by_phase["02-method"]["trusted"] is False
     assert "04-old-context" not in by_phase
     for entry in context:
         summary = project / str(entry["summary"])
         assert entry["sha256"] == hashlib.sha256(summary.read_bytes()).hexdigest()
+
+
+def test_trusted_context_uses_only_the_selected_method_branch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    phase_slug = launcher.IDEA_EVALUATION_PHASE
+    run_a = "run-method-a"
+    run_b = "run-method-b"
+    runs = {}
+    for run_id, method_id, status in (
+        (run_a, "method-a", "awaiting_review"),
+        (run_b, "method-b", "approved"),
+    ):
+        summary = project / f"{run_id}.html"
+        summary.write_text(f"<p>{method_id}</p>", encoding="utf-8")
+        decision = project / f"{run_id}.decision.json"
+        decision_data = _valid_decision_record()
+        decision.write_text(json.dumps(decision_data), encoding="utf-8")
+        runs[run_id] = {
+            "run_id": run_id,
+            "status": status,
+            "final_summary": summary.name,
+            "decision_record": {
+                "path": decision.relative_to(project).as_posix(),
+                "sha256": hashlib.sha256(decision.read_bytes()).hexdigest(),
+                "size": len(decision.read_bytes()),
+                "schema_version": 1,
+                "data": launcher.project_state.validate_decision_record(
+                    decision_data
+                ),
+            },
+        }
+    phase_state = {
+        "approved_run": run_b,
+        "stale": False,
+        "runs": [runs[run_a], runs[run_b]],
+    }
+    config = {
+        "phases": [{
+            "slug": phase_slug,
+            "pattern": "sequential",
+            "method_binding": True,
+            "gated_by": [],
+        }]
+    }
+    monkeypatch.setattr(
+        launcher.project_state,
+        "load",
+        lambda _project: {"phases": {phase_slug: phase_state}},
+    )
+    monkeypatch.setattr(
+        launcher.project_state,
+        "get_run",
+        lambda _project, _phase, run_id: runs[run_id],
+    )
+    monkeypatch.setattr(
+        launcher.project_state,
+        "run_integrity_report",
+        lambda *_args: {"ok": True, "reason": ""},
+    )
+    monkeypatch.setattr(
+        launcher.launch_prompts.launch_manifest,
+        "_read_manifest",
+        lambda *_args: {"schema_version": 11, "phase": {"stages": []}},
+    )
+    selections = {
+        run_a: {"stable_id": "method-a", "version": "v1"},
+        run_b: {"stable_id": "method-b", "version": "v1"},
+    }
+    monkeypatch.setattr(
+        launcher.launch_prompts,
+        "_sealed_run_method_selection",
+        lambda _project, _phase, run_id: selections[run_id],
+    )
+    method_digests = {run_a: "a" * 64, run_b: "b" * 64}
+    monkeypatch.setattr(
+        launcher.launch_prompts,
+        "_sealed_run_method_definition_sha256",
+        lambda _project, _phase, run_id: method_digests[run_id],
+    )
+
+    context = launcher._trusted_context(
+        project,
+        phase_slug,
+        config,
+        selected_method_id="method-a",
+        selected_method_version="v1",
+        selected_method_sha256="a" * 64,
+    )
+
+    assert len(context) == 1
+    assert context[0]["run_id"] == run_a
+    assert context[0]["kind"] == "prior_method_branch_result"
+    assert context[0]["source_status"] == "awaiting_review"
+    assert context[0]["trusted"] is False
+    assert context[0]["usable"] is True
+    assert context[0]["method_id"] == "method-a"
+    assert context[0]["method_sha256"] == "a" * 64
+
+    changed_definition = launcher._trusted_context(
+        project,
+        phase_slug,
+        config,
+        selected_method_id="method-a",
+        selected_method_version="v1",
+        selected_method_sha256="c" * 64,
+    )
+    assert changed_definition[0]["kind"] == "prior_method_branch_result_history"
+    assert changed_definition[0]["usable"] is False
+
+
+def test_sibling_results_and_role_discussion_are_frozen_for_the_same_branch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = (tmp_path / "project").resolve()
+    project.mkdir()
+    phase_three = launcher.IDEA_EVALUATION_PHASE
+    phase_four = launcher.DRAFT_ASSEMBLY_PHASE
+    method_id = "method-a"
+    method_digest = "a" * 64
+    runs_by_phase: dict[str, list[dict[str, object]]] = {
+        phase_three: [],
+        phase_four: [],
+    }
+    manifests: dict[tuple[str, str], dict[str, object]] = {}
+    selections: dict[tuple[str, str], dict[str, str]] = {}
+    definition_digests: dict[tuple[str, str], str] = {}
+    report_text: dict[str, str] = {}
+    protocol_text: dict[str, str] = {}
+
+    for phase, run_id, selected_id, status, role in (
+        (phase_three, "theory-a", method_id, "awaiting_review", "theorist"),
+        (phase_four, "experiment-a", method_id, "approved", "data_scientist"),
+        (phase_four, "experiment-b", "method-b", "approved", "data_scientist"),
+    ):
+        summary = project / "phase-summaries" / phase / f"{run_id}.html"
+        summary.parent.mkdir(parents=True, exist_ok=True)
+        summary.write_text(f"<p>{run_id}</p>", encoding="utf-8")
+        report = project / "branch-artifacts" / f"{run_id}.md"
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(f"{role} discussion for {run_id}", encoding="utf-8")
+        report_text[run_id] = report.read_text(encoding="utf-8")
+        artifact = {
+            "path": report.relative_to(project).as_posix(),
+            "sha256": hashlib.sha256(report.read_bytes()).hexdigest(),
+            "size": len(report.read_bytes()),
+        }
+        run = {
+            "run_id": run_id,
+            "status": status,
+            "final_summary": summary.relative_to(project).as_posix(),
+            "summary_sha256": hashlib.sha256(summary.read_bytes()).hexdigest(),
+            "rounds": [{
+                "n": 1,
+                "completed": True,
+                "artifacts": [artifact],
+            }],
+        }
+        decision = project / "branch-artifacts" / f"{run_id}.decision.json"
+        decision_data = _valid_decision_record()
+        decision.write_text(json.dumps(decision_data), encoding="utf-8")
+        run["decision_record"] = {
+            "path": decision.relative_to(project).as_posix(),
+            "sha256": hashlib.sha256(decision.read_bytes()).hexdigest(),
+            "size": len(decision.read_bytes()),
+            "schema_version": 1,
+            "data": launcher.project_state.validate_decision_record(
+                decision_data
+            ),
+        }
+        if phase == phase_four and run_id == "experiment-a":
+            protocol = project / "branch-artifacts" / "experiment-a-protocol.yaml"
+            protocol.write_text(
+                "replications: 200\nseed: 42\n",
+                encoding="utf-8",
+            )
+            protocol_text[run_id] = protocol.read_text(encoding="utf-8")
+            protocol_record = {
+                "path": protocol.relative_to(project).as_posix(),
+                "sha256": hashlib.sha256(protocol.read_bytes()).hexdigest(),
+                "size": len(protocol.read_bytes()),
+                "purpose": "Fix the replication count and random seed.",
+            }
+            checkpoint_data = {
+                "schema_version": (
+                    launcher.project_state.PROTOCOL_CHECKPOINT_SCHEMA_VERSION
+                ),
+                "phase_slug": phase_four,
+                "run_id": run_id,
+                "main_results_generated": False,
+                "protocol_files": [protocol_record],
+            }
+            checkpoint = project / "branch-artifacts" / "experiment-a-checkpoint.json"
+            checkpoint.write_text(json.dumps(checkpoint_data), encoding="utf-8")
+            run["protocol_checkpoint"] = {
+                "schema_version": (
+                    launcher.project_state.PROTOCOL_CHECKPOINT_SCHEMA_VERSION
+                ),
+                "path": checkpoint.relative_to(project).as_posix(),
+                "sha256": hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
+                "size": len(checkpoint.read_bytes()),
+                "data": checkpoint_data,
+            }
+        runs_by_phase[phase].append(run)
+        manifests[(phase, run_id)] = {
+            "schema_version": launcher.MANIFEST_SCHEMA_VERSION,
+            "phase": {"stages": [{"role": role}]},
+        }
+        selections[(phase, run_id)] = {
+            "stable_id": selected_id,
+            "version": "v1",
+        }
+        definition_digests[(phase, run_id)] = (
+            method_digest if selected_id == method_id else "b" * 64
+        )
+
+    config = {
+        "phases": [
+            {
+                "slug": phase_three,
+                "pattern": "sequential",
+                "method_binding": True,
+                "gated_by": [],
+                "context_from": [phase_four],
+            },
+            {
+                "slug": phase_four,
+                "pattern": "sequential",
+                "method_binding": True,
+                "gated_by": [],
+                "context_from": [phase_three],
+            },
+        ]
+    }
+    state_data = {
+        "phases": {
+            phase: {"stale": False, "runs": runs}
+            for phase, runs in runs_by_phase.items()
+        }
+    }
+    monkeypatch.setattr(launcher.project_state, "load", lambda _project: state_data)
+    monkeypatch.setattr(
+        launcher.project_state,
+        "run_integrity_report",
+        lambda *_args: {"ok": True, "reason": ""},
+    )
+    monkeypatch.setattr(
+        launcher.launch_prompts.launch_manifest,
+        "_read_manifest",
+        lambda _project, phase, run_id: manifests[(phase, run_id)],
+    )
+    monkeypatch.setattr(
+        launcher.launch_prompts,
+        "_sealed_run_method_selection",
+        lambda _project, phase, run_id: selections[(phase, run_id)],
+    )
+    monkeypatch.setattr(
+        launcher.launch_prompts,
+        "_sealed_run_method_definition_sha256",
+        lambda _project, phase, run_id: definition_digests[(phase, run_id)],
+    )
+
+    context = launcher._trusted_context(
+        project,
+        phase_three,
+        config,
+        selected_method_id=method_id,
+        selected_method_version="v1",
+        selected_method_sha256=method_digest,
+    )
+
+    assert {entry["run_id"] for entry in context} == {"theory-a", "experiment-a"}
+    assert "experiment-b" not in {entry["run_id"] for entry in context}
+    peer = next(entry for entry in context if entry["run_id"] == "experiment-a")
+    assert peer["kind"] == "peer_method_branch_result"
+    assert peer["discussion"][0]["role"] == "data_scientist"
+    assert {item["kind"] for item in peer["protocol_artifacts"]} == {
+        "checkpoint",
+        "protocol_file",
+    }
+    protocol_input = next(
+        item for item in peer["protocol_artifacts"] if item["kind"] == "protocol_file"
+    )
+    assert protocol_input["purpose"] == (
+        "Fix the replication count and random seed."
+    )
+
+    (project / "setting.md").write_text("project", encoding="utf-8")
+    team_dir = tmp_path / "team"
+    team_dir.mkdir()
+    (team_dir / "charter.md").write_text("charter", encoding="utf-8")
+    (team_dir / "norms.md").write_text("norms", encoding="utf-8")
+    souls_dir = tmp_path / "souls"
+    souls_dir.mkdir()
+    (souls_dir / "research_lead.md").write_text("lead soul", encoding="utf-8")
+    (souls_dir / "theorist.md").write_text("theorist soul", encoding="utf-8")
+    phases_dir = tmp_path / "phases"
+    phase_dir = phases_dir / phase_three
+    phase_dir.mkdir(parents=True)
+    for name in ("_lead.md", "_phase.md", "theorist.md"):
+        (phase_dir / name).write_text(name, encoding="utf-8")
+    monkeypatch.setattr(launcher.launch_common, "TEAM_DIR", team_dir)
+    monkeypatch.setattr(launcher.launch_common, "SOULS_DIR", souls_dir)
+    monkeypatch.setattr(launcher.launch_common, "PHASES_DIR", phases_dir)
+
+    snapshots = launcher._snapshot_run_inputs(
+        project,
+        {"slug": phase_three, "members": ["theorist"]},
+        "sibling-context",
+        context,
+    )
+
+    assert len(snapshots["summaries"]) == 2
+    frozen_by_run = {entry["run_id"]: entry for entry in snapshots["summaries"]}
+    for run_id in ("theory-a", "experiment-a"):
+        frozen = frozen_by_run[run_id]
+        assert Path(frozen["path"]).is_relative_to(
+            launcher.run_context_dir(project, phase_three, "sibling-context")
+        )
+        assert len(frozen["discussion"]) == 1
+        role_report = frozen["discussion"][0]
+        assert Path(role_report["path"]).read_text(encoding="utf-8") == report_text[run_id]
+        assert Path(role_report["path"]).is_relative_to(
+            launcher.run_context_dir(project, phase_three, "sibling-context")
+        )
+    frozen_protocol = next(
+        item
+        for item in frozen_by_run["experiment-a"]["protocol_artifacts"]
+        if item["kind"] == "protocol_file"
+    )
+    assert Path(frozen_protocol["path"]).read_text(encoding="utf-8") == (
+        protocol_text["experiment-a"]
+    )
+    assert Path(frozen_protocol["path"]).is_relative_to(
+        launcher.run_context_dir(project, phase_three, "sibling-context")
+    )
+
+
+_PHASE_FIVE_REQUIRED_PHASES = (
+    "01-literature-review",
+    launcher.project_state.METHOD_DEVELOPMENT_PHASE,
+    launcher.IDEA_EVALUATION_PHASE,
+    launcher.DRAFT_ASSEMBLY_PHASE,
+)
+
+
+def _install_phase_five_scientific_result_fixtures(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    outcomes: dict[str, str],
+    *,
+    manifest_schema_version: int | None = None,
+) -> dict[str, str]:
+    manifest_version = manifest_schema_version or launcher.MANIFEST_SCHEMA_VERSION
+    method = {
+        "stable_id": "method-a",
+        "version": "v1",
+        "sha256": "a" * 64,
+    }
+    runs: dict[str, list[dict[str, object]]] = {}
+    manifests: dict[tuple[str, str], dict[str, object]] = {}
+
+    for phase_slug in _PHASE_FIVE_REQUIRED_PHASES:
+        run_id = f"{phase_slug}-result"
+        run, _summary, decision = _source_submission(
+            project,
+            phase_slug,
+            run_id,
+        )
+        decision_data = _valid_decision_record()
+        decision_data["scientific_outcome"] = outcomes[phase_slug]
+        decision.write_text(json.dumps(decision_data, indent=2), encoding="utf-8")
+        run["decision_record"] = {
+            "path": decision.relative_to(project).as_posix(),
+            "sha256": hashlib.sha256(decision.read_bytes()).hexdigest(),
+            "size": len(decision.read_bytes()),
+            "schema_version": 1,
+            "data": launcher.project_state.validate_decision_record(decision_data),
+        }
+        runs[phase_slug] = [run]
+        if phase_slug in {
+            launcher.IDEA_EVALUATION_PHASE,
+            launcher.DRAFT_ASSEMBLY_PHASE,
+        }:
+            manifests[(phase_slug, run_id)] = {
+                "schema_version": manifest_version,
+                "phase_slug": phase_slug,
+                "phase": {
+                    "slug": phase_slug,
+                    "pattern": "sequential",
+                    "method_binding": True,
+                },
+                "method_selection": {
+                    "kind": "method",
+                    "stable_id": method["stable_id"],
+                    "version": method["version"],
+                    "source": "run_specific_user_selection",
+                    "source_phase": None,
+                    "source_run_id": None,
+                    "decision_record": None,
+                },
+                "snapshots": {"selected_method": dict(method)},
+            }
+    monkeypatch.setattr(
+        launcher.project_state,
+        "load",
+        lambda _project: {
+            "phases": {phase: {"runs": phase_runs} for phase, phase_runs in runs.items()}
+        },
+    )
+    monkeypatch.setattr(
+        launcher.project_state,
+        "get_runs",
+        lambda _project, phase_slug: runs[phase_slug],
+    )
+    monkeypatch.setattr(
+        launcher.project_state,
+        "run_integrity_report",
+        lambda *_args: {"ok": True, "reason": ""},
+    )
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "_read_manifest",
+        lambda _project, phase_slug, run_id: manifests[(phase_slug, run_id)],
+    )
+    return method
+
+def _phase_five_context_config() -> dict[str, object]:
+    phase_one = "01-literature-review"
+    phase_two = launcher.project_state.METHOD_DEVELOPMENT_PHASE
+    phase_three = launcher.IDEA_EVALUATION_PHASE
+    phase_four = launcher.DRAFT_ASSEMBLY_PHASE
+    return {
+        "phases": [
+            {"slug": phase_one, "gated_by": [], "method_binding": False},
+            {"slug": phase_two, "gated_by": [phase_one], "method_binding": False},
+            {
+                "slug": phase_three,
+                "gated_by": [phase_two],
+                "method_binding": True,
+            },
+            {
+                "slug": phase_four,
+                "gated_by": [phase_two],
+                "method_binding": True,
+            },
+            {
+                "slug": launcher.PAPER_WRITING_PHASE,
+                "gated_by": [phase_one, phase_two, phase_three, phase_four],
+                "method_binding": True,
+            },
+        ]
+    }
+
+
+@pytest.mark.parametrize("scientific_outcome", ["Complete", "Partial"])
+def test_phase_five_readiness_accepts_complete_or_partial_scientific_results(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    scientific_outcome: str,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    method = _install_phase_five_scientific_result_fixtures(
+        project,
+        monkeypatch,
+        {
+            phase_slug: scientific_outcome
+            for phase_slug in _PHASE_FIVE_REQUIRED_PHASES
+        },
+    )
+
+    readiness = launcher.phase_five_branch_readiness(project, method)
+
+    assert readiness["ready"] is True
+    assert all(item["satisfied"] for item in readiness["requirements"])
+
+
+@pytest.mark.parametrize("failed_phase", _PHASE_FIVE_REQUIRED_PHASES)
+def test_phase_five_readiness_rejects_a_failed_scientific_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failed_phase: str,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    outcomes = {
+        phase_slug: "Complete"
+        for phase_slug in _PHASE_FIVE_REQUIRED_PHASES
+    }
+    outcomes[failed_phase] = "Failed"
+    method = _install_phase_five_scientific_result_fixtures(
+        project,
+        monkeypatch,
+        outcomes,
+    )
+
+    readiness = launcher.phase_five_branch_readiness(project, method)
+    requirement = next(
+        item
+        for item in readiness["requirements"]
+        if item["phase"] == failed_phase
+    )
+
+    assert readiness["ready"] is False
+    assert requirement["satisfied"] is False
+    assert requirement["result"] is None
+
+def test_schema_ten_branch_results_are_readable_history_but_do_not_unlock_phase_five(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    method = _install_phase_five_scientific_result_fixtures(
+        project,
+        monkeypatch,
+        {
+            phase_slug: "Complete"
+            for phase_slug in _PHASE_FIVE_REQUIRED_PHASES
+        },
+        manifest_schema_version=10,
+    )
+
+    readiness = launcher.phase_five_branch_readiness(project, method)
+    requirements = {
+        item["phase"]: item for item in readiness["requirements"]
+    }
+    assert readiness["ready"] is False
+    assert requirements[launcher.IDEA_EVALUATION_PHASE]["satisfied"] is False
+    assert requirements[launcher.DRAFT_ASSEMBLY_PHASE]["satisfied"] is False
+
+    context = launcher._trusted_context(
+        project,
+        launcher.PAPER_WRITING_PHASE,
+        _phase_five_context_config(),
+        selected_method_id=method["stable_id"],
+        selected_method_version=method["version"],
+        selected_method_sha256=method["sha256"],
+    )
+    branch_history = [
+        entry
+        for entry in context
+        if entry["phase"] in {
+            launcher.IDEA_EVALUATION_PHASE,
+            launcher.DRAFT_ASSEMBLY_PHASE,
+        }
+    ]
+    assert {entry["phase"] for entry in branch_history} == {
+        launcher.IDEA_EVALUATION_PHASE,
+        launcher.DRAFT_ASSEMBLY_PHASE,
+    }
+    assert all(entry["usable"] is False for entry in branch_history)
+    assert all(entry["trusted"] is False for entry in branch_history)
+    assert all(entry["kind"].endswith("_history") for entry in branch_history)
+
+
+def test_failed_scientific_context_is_retained_as_unusable_advisory_history(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    outcomes = {
+        phase_slug: "Complete"
+        for phase_slug in _PHASE_FIVE_REQUIRED_PHASES
+    }
+    outcomes[launcher.IDEA_EVALUATION_PHASE] = "Failed"
+    method = _install_phase_five_scientific_result_fixtures(
+        project, monkeypatch, outcomes
+    )
+
+    context = launcher._trusted_context(
+        project,
+        launcher.PAPER_WRITING_PHASE,
+        _phase_five_context_config(),
+        selected_method_id=method["stable_id"],
+        selected_method_version=method["version"],
+        selected_method_sha256=method["sha256"],
+    )
+    failed = next(
+        entry
+        for entry in context
+        if entry["phase"] == launcher.IDEA_EVALUATION_PHASE
+    )
+    assert failed["scientific_outcome"] == "Failed"
+    assert failed["usable"] is False
+    assert failed["trusted"] is False
+    assert "failed" in failed["evidence_status"].lower()
+
+
+def test_phase_five_branch_readiness_requires_exact_intact_sibling_results(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    phase_three = launcher.IDEA_EVALUATION_PHASE
+    phase_four = launcher.DRAFT_ASSEMBLY_PHASE
+    method = {
+        "stable_id": "method-a",
+        "version": "v1",
+        "sha256": "a" * 64,
+    }
+
+    def manifest_for(stable_id: str, version: str, digest: str) -> dict[str, object]:
+        return {
+            "schema_version": launcher.MANIFEST_SCHEMA_VERSION,
+            "phase_slug": phase_three,
+            "phase": {
+                "slug": phase_three,
+                "pattern": "sequential",
+                "method_binding": True,
+            },
+            "method_selection": {
+                "kind": "method",
+                "stable_id": stable_id,
+                "version": version,
+                "source": "run_specific_user_selection",
+                "source_phase": None,
+                "source_run_id": None,
+                "decision_record": None,
+            },
+            "snapshots": {
+                "selected_method": {
+                    "stable_id": stable_id,
+                    "version": version,
+                    "sha256": digest,
+                }
+            },
+        }
+
+    runs = {
+        "01-literature-review": [{
+            "run_id": "literature",
+            "status": "approved",
+            "submitted_at": "2026-07-27T00:00:00+00:00",
+            "final_summary": "literature.html",
+            "decision_record": {"data": {"scientific_outcome": "Complete"}},
+        }],
+        "02-method-development": [{
+            "run_id": "method-menu",
+            "status": "awaiting_review",
+            "submitted_at": "2026-07-27T00:00:00+00:00",
+            "final_summary": "method-menu.html",
+            "decision_record": {"data": {"scientific_outcome": "Complete"}},
+        }],
+        phase_three: [{
+            "run_id": "theory-a",
+            "status": "awaiting_review",
+            "submitted_at": "2026-07-27T00:00:00+00:00",
+            "final_summary": "theory-a.html",
+            "decision_record": {"data": {"scientific_outcome": "Complete"}},
+        }],
+        phase_four: [{
+            "run_id": "experiment-b",
+            "status": "approved",
+            "submitted_at": "2026-07-27T00:00:00+00:00",
+            "final_summary": "experiment-b.html",
+            "decision_record": {"data": {"scientific_outcome": "Complete"}},
+        }],
+    }
+    manifests = {
+        (phase_three, "theory-a"): manifest_for("method-a", "v1", "a" * 64),
+        (phase_four, "experiment-b"): manifest_for("method-b", "v1", "b" * 64),
+    }
+    manifests[(phase_four, "experiment-b")]["phase"] = {
+        "slug": phase_four,
+        "pattern": "sequential",
+        "method_binding": True,
+    }
+    invalid_runs: set[str] = set()
+    monkeypatch.setattr(
+        launcher.project_state,
+        "get_runs",
+        lambda _project, phase: runs[phase],
+    )
+    monkeypatch.setattr(
+        launcher.project_state,
+        "run_integrity_report",
+        lambda _project, _phase, run_id: {"ok": run_id not in invalid_runs},
+    )
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "_read_manifest",
+        lambda _project, phase, run_id: manifests[(phase, run_id)],
+    )
+
+    mixed = launcher.phase_five_branch_readiness(project, method)
+    assert mixed["ready"] is False
+    assert [item["satisfied"] for item in mixed["requirements"]] == [
+        True,
+        True,
+        True,
+        False,
+    ]
+
+    runs[phase_four].append({
+        "run_id": "experiment-a",
+        "status": "approved",
+        "submitted_at": "2026-07-27T01:00:00+00:00",
+        "final_summary": "experiment-a.html",
+        "decision_record": {"data": {"scientific_outcome": "Complete"}},
+    })
+    manifests[(phase_four, "experiment-a")] = manifest_for(
+        "method-a", "v1", "a" * 64
+    )
+    manifests[(phase_four, "experiment-a")]["phase"] = {
+        "slug": phase_four,
+        "pattern": "sequential",
+        "method_binding": True,
+    }
+    ready = launcher.phase_five_branch_readiness(project, method)
+    assert ready["ready"] is True
+    assert {
+        requirement["result"]["run_id"]
+        for requirement in ready["requirements"]
+    } == {"literature", "method-menu", "theory-a", "experiment-a"}
+
+    invalid_runs.add("experiment-a")
+    assert launcher.phase_five_branch_readiness(project, method)["ready"] is False
+    invalid_runs.clear()
+    selected_method = manifests[(phase_four, "experiment-a")]["snapshots"][
+        "selected_method"
+    ]
+    selected_method["sha256"] = "c" * 64
+    assert launcher.phase_five_branch_readiness(project, method)["ready"] is False
+
+    selected_method["sha256"] = "a" * 64
+    selected_method["version"] = "v2"
+    manifests[(phase_four, "experiment-a")]["method_selection"]["version"] = "v2"
+    assert launcher.phase_five_branch_readiness(project, method)["ready"] is False
+
+
+def test_phase_five_launch_hard_gate_runs_before_reservation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    method_dir = project / "ideas" / "methods"
+    method_dir.mkdir(parents=True)
+    method_file = method_dir / "method-a.md"
+    method_file.write_text(
+        "---\n"
+        "stable_id: method-a\n"
+        "version: v1\n"
+        "label: Method A\n"
+        "status: recommended\n"
+        "number: 1\n"
+        "---\n\n"
+        "# Method A\n\nExact definition.\n",
+        encoding="utf-8",
+    )
+    entry, error = launcher.method_menu.find_selectable_entry(project, "method-a")
+    assert error is None and entry is not None
+    phase = {
+        "slug": launcher.PAPER_WRITING_PHASE,
+        "name": "Paper",
+        "pattern": "sequential",
+        "method_binding": True,
+        "gated_by": [
+            launcher.IDEA_EVALUATION_PHASE,
+            launcher.DRAFT_ASSEMBLY_PHASE,
+        ],
+        "folder": "draft/revised/",
+        "members": ["research_lead"],
+        "run_modes": {
+            "plans": ["assembly", "review_revision"],
+            "default": "assembly",
+        },
+        "stages": [{"role": "research_lead"}],
+    }
+    config = {"hub": {}, "agents": [], "phases": [phase]}
+    monkeypatch.setattr(
+        launcher.launch_plans,
+        "_load_hub_config",
+        lambda: config,
+    )
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "phase_five_branch_readiness",
+        lambda _project, _method: {
+            "ready": False,
+            "blockers": ["Phase 4 implementation and experiments"],
+        },
+    )
+    reserved = False
+
+    def reserve(*_args, **_kwargs):
+        nonlocal reserved
+        reserved = True
+        raise AssertionError("Phase 5 must not reserve a blocked run")
+
+    monkeypatch.setattr(launcher.project_state, "reserve_run", reserve)
+
+    with pytest.raises(
+        launcher.LaunchError,
+        match="completed, intact results from every previous phase",
+    ):
+        launcher._launch_run_locked(
+            project,
+            1,
+            launcher.PAPER_WRITING_PHASE,
+            run_mode="assembly",
+            run_specific_method_id="method-a",
+            run_specific_method_version="v1",
+            run_specific_method_sha256=str(entry["sha256"]),
+            expected_method_menu_version=(
+                launcher.method_menu.catalog_version(project)
+            ),
+        )
+
+    assert reserved is False
+
+def test_valid_phase_five_launch_uses_completion_prerequisites_without_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    method_dir = project / "ideas" / "methods"
+    method_dir.mkdir(parents=True)
+    method_file = method_dir / "method-a.md"
+    method_file.write_text(
+        "---\n"
+        "stable_id: method-a\n"
+        "version: v1\n"
+        "label: Method A\n"
+        "status: recommended\n"
+        "number: 1\n"
+        "---\n\n"
+        "# Method A\n\nExact definition.\n",
+        encoding="utf-8",
+    )
+    entry, error = launcher.method_menu.find_selectable_entry(project, "method-a")
+    assert error is None and entry is not None
+    phase = {
+        "slug": launcher.PAPER_WRITING_PHASE,
+        "name": "Paper",
+        "pattern": "sequential",
+        "method_binding": True,
+        "gated_by": [
+            "01-literature-review",
+            launcher.project_state.METHOD_DEVELOPMENT_PHASE,
+            launcher.IDEA_EVALUATION_PHASE,
+            launcher.DRAFT_ASSEMBLY_PHASE,
+        ],
+        "folder": "draft/revised/",
+        "members": ["research_lead"],
+        "run_modes": {
+            "plans": ["assembly", "review_revision"],
+            "default": "assembly",
+        },
+        "stages": [{"role": "research_lead"}],
+    }
+    config = {"hub": {}, "agents": [], "phases": [phase]}
+    dependencies = {
+        launcher.PAPER_WRITING_PHASE: [
+            "01-literature-review",
+            launcher.project_state.METHOD_DEVELOPMENT_PHASE,
+            launcher.IDEA_EVALUATION_PHASE,
+            launcher.DRAFT_ASSEMBLY_PHASE,
+        ]
+    }
+    required_completed_runs = {
+        "01-literature-review": "literature-ready",
+        launcher.project_state.METHOD_DEVELOPMENT_PHASE: "method-menu-ready",
+        launcher.IDEA_EVALUATION_PHASE: "theory-ready",
+        launcher.DRAFT_ASSEMBLY_PHASE: "experiment-ready",
+    }
+    hermes_root = tmp_path / "hermes"
+    prerequisite_calls: list[dict[str, object]] = []
+    reserved: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        launcher.launch_plans,
+        "_load_hub_config",
+        lambda: config,
+    )
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "phase_five_branch_readiness",
+        lambda _project, _method: {
+            "ready": True,
+            "method_id": "method-a",
+            "method_version": "v1",
+            "method_sha256": str(entry["sha256"]),
+            "requirements": [
+                {
+                    "phase": "01-literature-review",
+                    "label": "Phase 1 literature review",
+                    "satisfied": True,
+                    "result": {
+                        "phase": "01-literature-review",
+                        "run_id": required_completed_runs["01-literature-review"],
+                        "status": "awaiting_review",
+                        "scientific_outcome": "Complete",
+                    },
+                },
+                {
+                    "phase": launcher.project_state.METHOD_DEVELOPMENT_PHASE,
+                    "label": "Phase 2 method development",
+                    "satisfied": True,
+                    "result": {
+                        "phase": launcher.project_state.METHOD_DEVELOPMENT_PHASE,
+                        "run_id": required_completed_runs[
+                            launcher.project_state.METHOD_DEVELOPMENT_PHASE
+                        ],
+                        "status": "approved",
+                        "scientific_outcome": "Complete",
+                    },
+                },
+                *[
+                    {
+                        "phase": phase_slug,
+                        "label": label,
+                        "satisfied": True,
+                        "result": {
+                            "phase": phase_slug,
+                            "run_id": required_completed_runs[phase_slug],
+                            "status": "awaiting_review",
+                            "scientific_outcome": "Complete",
+                            "method_id": "method-a",
+                            "method_version": "v1",
+                            "method_sha256": str(entry["sha256"]),
+                        },
+                    }
+                    for phase_slug, label in (
+                        (
+                            launcher.IDEA_EVALUATION_PHASE,
+                            "Phase 3 theoretical development",
+                        ),
+                        (
+                            launcher.DRAFT_ASSEMBLY_PHASE,
+                            "Phase 4 implementation and experiments",
+                        ),
+                    )
+                ],
+            ],
+            "blockers": [],
+        },
+    )
+    monkeypatch.setattr(
+        launcher.profile_skills,
+        "resolve_hermes_root",
+        lambda: hermes_root,
+    )
+    monkeypatch.setattr(
+        launcher.launch_plans,
+        "_recommended_skills_snapshot",
+        lambda *_args, **_kwargs: {},
+    )
+    monkeypatch.setattr(
+        launcher.launch_plans,
+        "launch_plan_version",
+        lambda *_args, **_kwargs: "f" * 64,
+    )
+    monkeypatch.setattr(
+        launcher.launch_plans,
+        "_role_profiles",
+        lambda _config: {"research_lead": "lead"},
+    )
+    monkeypatch.setattr(
+        launcher,
+        "_preflight",
+        lambda *_args, **_kwargs: ("hermes", hermes_root),
+    )
+    monkeypatch.setattr(
+        launcher.launch_plans,
+        "_dependencies",
+        lambda _config: dependencies,
+    )
+    monkeypatch.setattr(
+        launcher.project_state,
+        "load",
+        lambda _project: {"project": {"name": "Project"}},
+    )
+    monkeypatch.setattr(
+        launcher,
+        "_workspace_board_slug",
+        lambda *_args: "board",
+    )
+    monkeypatch.setattr(launcher, "_ensure_board", lambda *_args, **_kwargs: None)
+
+    def prerequisite_report(*_args, **kwargs):
+        prerequisite_calls.append(dict(kwargs))
+        return {
+            "satisfied": True,
+            "blockers": [],
+            "requirements": [
+                {
+                    "phase": phase_slug,
+                    "satisfied": True,
+                    "completed_run": run_id,
+                }
+                for phase_slug, run_id in required_completed_runs.items()
+            ],
+        }
+
+    def reserve(*_args, **kwargs):
+        reserved.update(kwargs)
+        raise launcher.LaunchError("reservation captured")
+
+    monkeypatch.setattr(
+        launcher.project_state,
+        "prerequisite_report",
+        prerequisite_report,
+    )
+    monkeypatch.setattr(
+        launcher.project_state,
+        "decision_report_version",
+        lambda *_args: "d" * 64,
+    )
+    monkeypatch.setattr(
+        launcher.launch_prompts,
+        "_has_prior_method_run",
+        lambda *_args: False,
+    )
+    monkeypatch.setattr(launcher.project_state, "reserve_run", reserve)
+
+    changed_required_runs = {
+        **required_completed_runs,
+        launcher.DRAFT_ASSEMBLY_PHASE: "experiment-replaced",
+    }
+    with pytest.raises(
+        launcher.LaunchError,
+        match="exact Phase 1 to Phase 4 results changed",
+    ):
+        launcher._launch_run_locked(
+            project,
+            1,
+            launcher.PAPER_WRITING_PHASE,
+            run_mode="assembly",
+            run_specific_method_id="method-a",
+            run_specific_method_version="v1",
+            run_specific_method_sha256=str(entry["sha256"]),
+            expected_method_menu_version=launcher.method_menu.catalog_version(project),
+            required_completed_runs=changed_required_runs,
+        )
+
+    with pytest.raises(launcher.LaunchError, match="reservation captured"):
+        launcher._launch_run_locked(
+            project,
+            1,
+            launcher.PAPER_WRITING_PHASE,
+            run_mode="assembly",
+            run_specific_method_id="method-a",
+            run_specific_method_version="v1",
+            run_specific_method_sha256=str(entry["sha256"]),
+            expected_method_menu_version=launcher.method_menu.catalog_version(project),
+            required_completed_runs=required_completed_runs,
+        )
+
+    assert prerequisite_calls == [{
+        "required_completed_runs": required_completed_runs,
+    }]
+    assert reserved["required_completed_runs"] == required_completed_runs
+    assert reserved.get("completed_results", False) is False
+    assert reserved["override_metadata"] is None
+    assert reserved["dependencies"] == dependencies
 
 
 def test_context_snapshot_rejects_a_source_changed_during_copy(
@@ -1272,6 +2436,69 @@ def test_snapshot_freezes_member_and_research_lead_souls(
         "phase": {"members": ["theorist"]},
         "snapshots": snapshots,
     })
+
+
+def test_snapshot_freezes_the_selected_method_definition(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = (tmp_path / "project").resolve()
+    project.mkdir()
+    (project / "setting.md").write_text("project", encoding="utf-8")
+    team_dir = tmp_path / "team"
+    team_dir.mkdir()
+    (team_dir / "charter.md").write_text("charter", encoding="utf-8")
+    (team_dir / "norms.md").write_text("norms", encoding="utf-8")
+    souls_dir = tmp_path / "souls"
+    souls_dir.mkdir()
+    (souls_dir / "research_lead.md").write_text("lead soul", encoding="utf-8")
+    (souls_dir / "theorist.md").write_text("theorist soul", encoding="utf-8")
+    phases_dir = tmp_path / "phases"
+    phase_dir = phases_dir / launcher.IDEA_EVALUATION_PHASE
+    phase_dir.mkdir(parents=True)
+    for name in ("_lead.md", "_phase.md", "theorist.md"):
+        (phase_dir / name).write_text(name, encoding="utf-8")
+    method = project / "ideas" / "methods" / "method-a.md"
+    method.parent.mkdir(parents=True)
+    method.write_text("# Method A\n\n$T_n \\Rightarrow T$\n", encoding="utf-8")
+    method_digest = hashlib.sha256(method.read_bytes()).hexdigest()
+    monkeypatch.setattr(launcher.launch_common, "TEAM_DIR", team_dir)
+    monkeypatch.setattr(launcher.launch_common, "SOULS_DIR", souls_dir)
+    monkeypatch.setattr(launcher.launch_common, "PHASES_DIR", phases_dir)
+
+    snapshots = launcher._snapshot_run_inputs(
+        project,
+        {"slug": launcher.IDEA_EVALUATION_PHASE, "members": ["theorist"]},
+        "method-freeze",
+        [],
+        selected_method={
+            "stable_id": "method-a",
+            "version": "v1",
+            "label": "Method A",
+            "path": "ideas/methods/method-a.md",
+            "sha256": method_digest,
+        },
+    )
+
+    frozen = snapshots["selected_method"]
+    assert frozen["stable_id"] == "method-a"
+    assert frozen["version"] == "v1"
+    assert frozen["sha256"] == method_digest
+    assert Path(frozen["path"]).read_text(encoding="utf-8") == method.read_text(
+        encoding="utf-8"
+    )
+    block = launcher._method_selection_prompt_block(
+        {
+            "kind": "method",
+            "stable_id": "method-a",
+            "version": "v1",
+            "source": "run_specific_user_selection",
+        },
+        frozen,
+    )
+    assert str(frozen["path"]) in block
+    assert method_digest in block
+    assert "read-only outside Phase 2" in block
 
 
 def test_frozen_soul_text_rejects_post_snapshot_mutation(tmp_path: Path) -> None:
@@ -2493,6 +3720,7 @@ def test_lead_prompt_embeds_frozen_research_lead_soul(tmp_path: Path) -> None:
         {"blockers": []},
         snapshots,
         project / "phase-summaries" / "05-review-revision" / "run-id.html",
+        branch_readiness={"ready": True, "requirements": []},
     )
 
     assert "Lead with the research question." in prompt
@@ -2535,6 +3763,68 @@ def test_lead_prompt_embeds_frozen_research_lead_soul(tmp_path: Path) -> None:
     assert "The scientific outcome describes completion" in prompt
 
 
+def test_phase_two_lead_prompt_publishes_a_menu_without_selecting_a_method(
+    tmp_path: Path,
+) -> None:
+    project = (tmp_path / "project").resolve()
+    project.mkdir()
+    lead_soul = tmp_path / "research_lead.md"
+    lead_soul.write_text("Develop several candidate methods.", encoding="utf-8")
+    snapshots = {
+        "setting": {"path": str(tmp_path / "setting.md")},
+        "team": {
+            "charter": {"path": str(tmp_path / "charter.md")},
+            "norms": {"path": str(tmp_path / "norms.md")},
+        },
+        "souls": {
+            "research_lead": {
+                "path": str(lead_soul),
+                "sha256": hashlib.sha256(lead_soul.read_bytes()).hexdigest(),
+            }
+        },
+        "playbooks": {
+            "_lead.md": {"path": str(tmp_path / "_lead.md")},
+            "_phase.md": {"path": str(tmp_path / "_phase.md")},
+        },
+        "summaries": [],
+    }
+    phase = {
+        "slug": launcher.project_state.METHOD_DEVELOPMENT_PHASE,
+        "name": "Method Development",
+        "pattern": "debate",
+        "folder": "ideas",
+        "members": ["research_lead"],
+        "rounds": {"min": 1, "default": 1, "max": 2},
+    }
+
+    prompt = launcher._build_lead_prompt(
+        project,
+        phase,
+        {"research_lead": "lead-profile"},
+        "board",
+        "phase-two-run",
+        1,
+        1,
+        "",
+        {"blockers": []},
+        snapshots,
+        project
+        / "phase-summaries"
+        / launcher.project_state.METHOD_DEVELOPMENT_PHASE
+        / "phase-two-run.html",
+    )
+
+    decision_example = json.loads(
+        prompt.split("```json\n", 1)[1].split("\n```", 1)[0]
+    )
+    assert decision_example["selected_scientific_object"] is None
+    assert decision_example["recommended_user_action"] == "proceed"
+    assert "Work only in this run-local catalog" in prompt
+    assert "Complete or Partial outcome" in prompt
+    assert "Failed outcome preserves the current menu" in prompt
+    assert "does not select a method" in prompt
+    assert "must name exactly one method" not in prompt
+
 def test_completed_round_artifact_is_revalidated_before_a_later_round(
     tmp_path: Path,
 ) -> None:
@@ -2573,6 +3863,12 @@ def test_dispatch_task_builds_full_context_and_records_exact_task_id(
     theorist_soul.write_text(
         "Name every assumption and its role.", encoding="utf-8"
     )
+    frozen_protocol = frozen_dir / "experiment-protocol.yaml"
+    frozen_protocol.write_text(
+        "replications: 200\nseed: 42\n",
+        encoding="utf-8",
+    )
+    frozen_protocol_digest = hashlib.sha256(frozen_protocol.read_bytes()).hexdigest()
     theorist_soul_digest = hashlib.sha256(theorist_soul.read_bytes()).hexdigest()
     phase_slug = "02-method"
     run_id = "12345678-run"
@@ -2621,13 +3917,32 @@ def test_dispatch_task_builds_full_context_and_records_exact_task_id(
                     "phase": "01-literature",
                     "run_id": "lit-approved",
                     "path": str(project / "frozen" / "literature.html"),
+                    "sha256": "a" * 64,
                     "trusted": True,
                 },
                 {
                     "phase": phase_slug,
                     "run_id": "method-prior",
                     "path": str(project / "frozen" / "method-prior.html"),
+                    "sha256": "b" * 64,
                     "trusted": False,
+                },
+                {
+                    "phase": launcher.DRAFT_ASSEMBLY_PHASE,
+                    "run_id": "experiment-prior",
+                    "path": str(project / "frozen" / "experiment.html"),
+                    "sha256": "c" * 64,
+                    "trusted": False,
+                    "usable": True,
+                    "protocol_artifacts": [{
+                        "kind": "protocol_file",
+                        "path": str(frozen_protocol),
+                        "sha256": frozen_protocol_digest,
+                        "size": len(frozen_protocol.read_bytes()),
+                        "purpose": (
+                            "Fix the replication count and random seed."
+                        ),
+                    }],
                 },
             ],
         },
@@ -2720,8 +4035,15 @@ def test_dispatch_task_builds_full_context_and_records_exact_task_id(
     assert str(theorist_soul) in brief
     assert "Name every assumption and its role." in brief
     assert theorist_soul_digest in brief
-    assert "01-literature run lit-approved (trusted current input)" in brief
-    assert "02-method run method-prior (historical baseline)" in brief
+    assert "01-literature run lit-approved" in brief
+    assert "accepted current evidence" in brief
+    assert "02-method run method-prior" in brief
+    assert "historical advisory evidence" in brief
+    assert "04-draft-assembly run experiment-prior" in brief
+    assert "Frozen protocol_file" in brief
+    assert str(frozen_protocol) in brief
+    assert frozen_protocol_digest in brief
+    assert "Fix the replication count and random seed." in brief
     assert str(project / "method" / "run" / "01" / "round-01" / "theorist.md") in brief
     assert str(output_root / "round-02" / "theorist.md") in brief
 
@@ -2912,6 +4234,170 @@ def test_complete_round_requires_done_tasks_and_exact_planned_outputs(
     assert completed == [(project, phase_slug, run_id, 1, expected)]
 
 
+def test_checked_phase_three_completion_discovers_and_seals_nested_supporting_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = (tmp_path / "project").resolve()
+    project.mkdir()
+    phase_slug = launcher.IDEA_EVALUATION_PHASE
+    dependencies = {phase_slug: []}
+    launcher.project_state.init(
+        project,
+        "project-001",
+        "example",
+        "Example",
+        phase_slugs=[phase_slug],
+        dependencies=dependencies,
+    )
+    run_id = launcher.project_state.reserve_run(
+        project,
+        phase_slug,
+        "supporting artifact discovery",
+        dependencies=dependencies,
+    )
+    launcher.project_state.set_process_pid(project, phase_slug, run_id, 7311)
+    launcher.project_state.start_round(
+        project, phase_slug, run_id, "Develop the theory.", ["theorist"], 1
+    )
+
+    output_root = project / "branches" / "method-a" / "theory" / "run" / "01"
+    role_report = output_root / "round-01" / "theorist.md"
+    code = output_root / "round-01" / "code" / "derive.py"
+    data = output_root / "round-01" / "data" / "diagnostic.csv"
+    role_report.parent.mkdir(parents=True)
+    code.parent.mkdir()
+    data.parent.mkdir()
+    role_report.write_text("Scientific completion outcome: Complete\n", encoding="utf-8")
+    code.write_text("value = 3\n", encoding="utf-8")
+    data.write_text("case,error\nbase,0.01\n", encoding="utf-8")
+
+    brief = (
+        launcher.project_state.state_dir(project)
+        / "runs"
+        / phase_slug
+        / "theorist.task.md"
+    )
+    brief.parent.mkdir(parents=True, exist_ok=True)
+    brief.write_text("# Frozen theorist task\n", encoding="utf-8")
+    real_get_run = launcher.project_state.get_run
+    dispatched_run = real_get_run(project, phase_slug, run_id)
+    dispatched_run["rounds"][0]["tasks"] = [{
+        "role": "theorist",
+        "task_id": "theory-task",
+        "brief_path": str(brief),
+        "brief_sha256": hashlib.sha256(brief.read_bytes()).hexdigest(),
+    }]
+    manifest = {
+        "run_id": run_id,
+        "rounds_requested": 1,
+        "output_root": str(output_root),
+        "phase": {
+            "pattern": "sequential",
+            "members": ["theorist", "research_lead"],
+            "stages": [{"role": "theorist"}],
+        },
+    }
+    monkeypatch.setattr(
+        launcher.launch_manifest, "_read_manifest", lambda *_args: manifest
+    )
+    monkeypatch.setattr(
+        launcher.launch_manifest, "_verify_frozen_inputs", lambda *_args: None
+    )
+    monkeypatch.setattr(
+        launcher.project_state, "get_run", lambda *_args: dispatched_run
+    )
+    monkeypatch.setattr(
+        launcher.launch_dispatch,
+        "_show_task",
+        lambda _manifest, _task_id: {"status": "done"},
+    )
+
+    supporting_count = launcher._complete_round_checked(
+        project, phase_slug, run_id, 1, [role_report]
+    )
+
+    assert supporting_count == 2
+    completed = real_get_run(project, phase_slug, run_id)["rounds"][0]
+    role_relative = role_report.relative_to(project).as_posix()
+    assert completed["outputs"] == [role_relative]
+    assert completed["artifacts"] == [{
+        "path": role_relative,
+        "sha256": hashlib.sha256(role_report.read_bytes()).hexdigest(),
+        "size": len(role_report.read_bytes()),
+    }]
+    expected_supporting = {
+        path.relative_to(project).as_posix(): {
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "size": len(path.read_bytes()),
+        }
+        for path in (code, data)
+    }
+    assert {
+        record["path"]: {
+            "sha256": record["sha256"],
+            "size": record["size"],
+        }
+        for record in completed["supporting_artifacts"]
+    } == expected_supporting
+    assert not (
+        {record["path"] for record in completed["supporting_artifacts"]}
+        & set(completed["outputs"])
+    )
+
+
+def test_run_integrity_rejects_changed_sealed_supporting_artifact(
+    tmp_path: Path,
+) -> None:
+    project = (tmp_path / "project").resolve()
+    project.mkdir()
+    phase_slug = launcher.IDEA_EVALUATION_PHASE
+    dependencies = {phase_slug: []}
+    launcher.project_state.init(
+        project,
+        "project-001",
+        "example",
+        "Example",
+        phase_slugs=[phase_slug],
+        dependencies=dependencies,
+    )
+    run_id = launcher.project_state.reserve_run(
+        project,
+        phase_slug,
+        "supporting artifact integrity",
+        dependencies=dependencies,
+    )
+    launcher.project_state.set_process_pid(project, phase_slug, run_id, 7312)
+    launcher.project_state.start_round(
+        project, phase_slug, run_id, "Check the calculation.", ["theorist"], 1
+    )
+    round_directory = project / "theory" / "run" / "01" / "round-01"
+    role_report = round_directory / "theorist.md"
+    supporting = round_directory / "code" / "calculation.py"
+    role_report.parent.mkdir(parents=True)
+    supporting.parent.mkdir()
+    role_report.write_text("Scientific completion outcome: Complete\n", encoding="utf-8")
+    supporting.write_text("answer = 42\n", encoding="utf-8")
+    launcher.project_state.complete_round(
+        project,
+        phase_slug,
+        run_id,
+        1,
+        [role_report],
+        supporting_outputs=[supporting],
+    )
+
+    assert launcher.project_state.run_integrity_report(
+        project, phase_slug, run_id
+    )["ok"] is True
+    supporting.write_text("answer = 41\n", encoding="utf-8")
+
+    integrity = launcher.project_state.run_integrity_report(
+        project, phase_slug, run_id
+    )
+    assert integrity["ok"] is False
+    assert "supporting artifact changed after completion" in integrity["reason"]
+
 def test_reconciliation_preserves_a_racing_terminal_state_before_cleanup(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3010,7 +4496,10 @@ def test_reconciliation_preserves_an_active_run_when_identity_is_unavailable(
         "_load_hub_config",
         lambda: {"hub": {"run_timeout_minutes": 120}},
     )
-    monkeypatch.setattr(launcher.os, "kill", lambda _pid, _signal: None)
+    monkeypatch.setattr(
+        launcher.launch_process,
+        "_pid_is_alive", lambda *_args, **_kwargs: True,
+    )
     monkeypatch.setattr(
         launcher.launch_process,
         "_process_identity", lambda _pid: None)
@@ -3276,10 +4765,12 @@ def test_later_phase_four_tasks_receive_the_verified_protocol_identity(
     checkpoint = project / "numerical" / "run" / "01" / "protocol-checkpoint.json"
     protocol_root = checkpoint.parent / "protocol"
     protocol_path = protocol_root / "study-design.yaml"
+    protocol_report = protocol_root / "protocol-stage.md"
     manifest = {
-        "schema_version": 6,
+        "schema_version": launcher.MANIFEST_SCHEMA_VERSION,
         "phase_slug": launcher.DRAFT_ASSEMBLY_PHASE,
         "run_id": "phase-four-run",
+        "output_root": str(checkpoint.parent),
         "protocol_checkpoint": {
             "schema_version": (
                 launcher.project_state.PROTOCOL_CHECKPOINT_SCHEMA_VERSION
@@ -3302,20 +4793,40 @@ def test_later_phase_four_tasks_receive_the_verified_protocol_identity(
                     "purpose": "Fix the study regimes and primary metric.",
                 }]
             },
+            "protocol_report": {
+                "path": protocol_report.relative_to(project).as_posix(),
+                "sha256": "c" * 64,
+                "size": 1024,
+                "scientific_outcome": "Partial",
+            },
         }
     }
 
-    block = launcher._phase_four_protocol_checkpoint_block(
-        project, manifest, run, 2, "theorist", "standard"
-    )
+    blocks = [
+        launcher._phase_four_protocol_checkpoint_block(
+            project, manifest, run, round_n, role, task_kind
+        )
+        for round_n, role, task_kind in (
+            (1, "data_scientist", "result"),
+            (2, "theorist", "standard"),
+            (3, "research_lead", "standard"),
+        )
+    ]
 
-    assert "Mechanically verified prespecification boundary" in block
-    assert checkpoint.relative_to(project).as_posix() in block
-    assert "a" * 64 in block
-    assert protocol_path.relative_to(project).as_posix() in block
-    assert "b" * 64 in block
-    assert "512 bytes" in block
-    assert "sealed design and protocol" in block
+    for block in blocks:
+        assert "Mechanically verified prespecification boundary" in block
+        assert checkpoint.relative_to(project).as_posix() in block
+        assert "a" * 64 in block
+        assert protocol_path.relative_to(project).as_posix() in block
+        assert "b" * 64 in block
+        assert "512 bytes" in block
+        assert "sealed protocol-stage report" in block
+        assert protocol_report.relative_to(project).as_posix() in block
+        assert "c" * 64 in block
+        assert "scientific outcome `Partial`" in block
+    assert "Generate the initial study results only" in blocks[0]
+    for block in blocks[1:]:
+        assert "sealed design and protocol" in block
 
 
 def test_phase_four_dispatch_isolates_protocol_then_seals_before_results(
@@ -3327,6 +4838,7 @@ def test_phase_four_dispatch_isolates_protocol_then_seals_before_results(
     output_root = project / "numerical" / "run" / "01"
     protocol_root = output_root / "protocol"
     checkpoint = protocol_root / "protocol-checkpoint.json"
+    protocol_report = protocol_root / "protocol-stage.md"
     directive = output_root / ".directives" / "round-01.md"
     directive.parent.mkdir(parents=True)
     directive.write_text("Prespecify the study, then generate results.", encoding="utf-8")
@@ -3440,6 +4952,13 @@ def test_phase_four_dispatch_isolates_protocol_then_seals_before_results(
         seal_calls.append(
             (root, phase, run_id, checkpoint_path, isolated_task_completed)
         )
+        protocol_root.mkdir(parents=True, exist_ok=True)
+        protocol_report.write_text(
+            "Scientific completion outcome: Complete\n\n"
+            "The numerical study design is fully prespecified.",
+            encoding="utf-8",
+        )
+        report_payload = protocol_report.read_bytes()
         record = {
             "path": checkpoint.relative_to(project).as_posix(),
             "sha256": "a" * 64,
@@ -3453,6 +4972,12 @@ def test_phase_four_dispatch_isolates_protocol_then_seals_before_results(
                     "size": 512,
                     "purpose": "Fix the numerical design before result generation.",
                 }]
+            },
+            "protocol_report": {
+                "path": protocol_report.relative_to(project).as_posix(),
+                "sha256": hashlib.sha256(report_payload).hexdigest(),
+                "size": len(report_payload),
+                "scientific_outcome": "Complete",
             },
         }
         run["protocol_checkpoint"] = record
@@ -4030,139 +5555,52 @@ def test_shipped_phase04_and_phase05_bind_methods() -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Phase 04 run modes: shaping + comprehensive gate
-# ──────────────────────────────────────────────────────────────────────────
+# Phase 04 run modes retain the same ordered discussion stages.
 
-def test_phase_four_preliminary_shaped_to_one_round() -> None:
-    """_phase_for_run_mode shapes preliminary to 1 round and stamps run_plan."""
-    from core import launch_plans, launch_common
+
+@pytest.mark.parametrize("run_mode", ["preliminary", "comprehensive"])
+def test_phase_four_run_modes_keep_all_three_stages(run_mode: str) -> None:
+    from core import launch_common, launch_plans
+
     phase = {
         "slug": launch_common.DRAFT_ASSEMBLY_PHASE,
-        "run_modes": {"plans": ["preliminary", "comprehensive"], "default": "preliminary"},
-        "rounds": {"min": 1, "default": 2, "max": 2},
+        "pattern": "sequential",
+        "run_modes": {
+            "plans": ["preliminary", "comprehensive"],
+            "default": "preliminary",
+        },
+        "members": ["data_scientist", "theorist", "research_lead"],
+        "stages": [
+            {"role": "data_scientist"},
+            {"role": "theorist"},
+            {"role": "research_lead"},
+        ],
+        "rounds": {"min": 3, "default": 3, "max": 3},
     }
-    shaped = launch_plans._phase_for_run_mode(phase, "preliminary")
-    assert shaped["rounds"] == {"min": 1, "default": 1, "max": 1}
-    assert shaped["run_plan"] == "preliminary"
 
+    shaped = launch_plans._phase_for_run_mode(phase, run_mode)
 
-def test_phase_four_comprehensive_shaped_to_two_rounds() -> None:
-    """_phase_for_run_mode shapes comprehensive to 2 rounds and stamps run_plan."""
-    from core import launch_plans, launch_common
-    phase = {
-        "slug": launch_common.DRAFT_ASSEMBLY_PHASE,
-        "run_modes": {"plans": ["preliminary", "comprehensive"], "default": "preliminary"},
-        "rounds": {"min": 1, "default": 2, "max": 2},
-    }
-    shaped = launch_plans._phase_for_run_mode(phase, "comprehensive")
-    assert shaped["rounds"] == {"min": 2, "default": 2, "max": 2}
-    assert shaped["run_plan"] == "comprehensive"
+    assert shaped["run_plan"] == run_mode
+    assert shaped["members"] == phase["members"]
+    assert shaped["stages"] == phase["stages"]
+    assert shaped["rounds"] == {"min": 3, "default": 3, "max": 3}
 
 
 def test_phase_four_run_mode_rejected_on_wrong_phase() -> None:
-    """_phase_for_run_mode raises LaunchError on a non-Phase-04 slug."""
-    from core import launch_plans, launch_common
+    from core import launch_common, launch_plans
+
     phase = {
         "slug": "03-idea-evaluation",
-        "run_modes": {"plans": ["preliminary", "comprehensive"], "default": "preliminary"},
+        "run_modes": {
+            "plans": ["preliminary", "comprehensive"],
+            "default": "preliminary",
+        },
     }
-    with pytest.raises(launch_common.LaunchError, match="only valid for Phase 04 or Phase 05"):
+    with pytest.raises(
+        launch_common.LaunchError,
+        match="only valid for Phase 04 or Phase 05",
+    ):
         launch_plans._phase_for_run_mode(phase, "preliminary")
-
-
-def test_comprehensive_gate_blocks_without_approved_preliminary(tmp_path: Path) -> None:
-    """Gate returns False when no approved preliminary run exists."""
-    from core import launch_plans
-    # No runs at all → gate should be False
-    assert not launch_plans._comprehensive_gate_satisfied(tmp_path, "some-method")
-
-
-def test_comprehensive_gate_passes_with_approved_preliminary(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Gate returns True when an approved preliminary run with matching branch exists."""
-    from core import launch_plans, launch_common, project_state
-    import json as _json
-
-    project_dir = tmp_path / "proj"
-    project_dir.mkdir()
-    branch_id = "spectral-graph-coupling"
-
-    # Write a sealed manifest that records run_plan=preliminary + matching method_selection
-    state_dir = project_state.state_dir(project_dir)
-    run_id = "abc123"
-    run_manifest_dir = state_dir / "runs" / launch_common.DRAFT_ASSEMBLY_PHASE / run_id
-    run_manifest_dir.mkdir(parents=True)
-    manifest = {
-        "phase_slug": launch_common.DRAFT_ASSEMBLY_PHASE,
-        "run_id": run_id,
-        "phase": {"slug": launch_common.DRAFT_ASSEMBLY_PHASE, "run_plan": "preliminary"},
-        "method_selection": {"stable_id": branch_id, "version": "1"},
-    }
-    manifest_bytes = _json.dumps(manifest).encode("utf-8")
-    manifest_path = run_manifest_dir / "manifest.json"
-    manifest_path.write_bytes(manifest_bytes)
-    manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
-
-    # Bypass state migration: return the run record directly so the gate reads our manifest
-    fake_run = {
-        "run_id": run_id,
-        "status": "approved",
-        "manifest_path": str(manifest_path),
-        "manifest_sha256": manifest_sha,
-    }
-    monkeypatch.setattr(
-        project_state,
-        "get_runs",
-        lambda _pd, _slug: [fake_run],
-    )
-
-    assert launch_plans._comprehensive_gate_satisfied(project_dir, branch_id)
-    # Different branch should NOT satisfy
-    assert not launch_plans._comprehensive_gate_satisfied(project_dir, "other-method")
-
-
-def test_comprehensive_gate_ignores_non_preliminary_approved(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Gate returns False if the approved run was comprehensive, not preliminary."""
-    from core import launch_plans, launch_common, project_state
-    import json as _json
-
-    project_dir = tmp_path / "proj"
-    project_dir.mkdir()
-    branch_id = "method-x"
-
-    state_dir = project_state.state_dir(project_dir)
-    run_id = "xyz789"
-    run_manifest_dir = state_dir / "runs" / launch_common.DRAFT_ASSEMBLY_PHASE / run_id
-    run_manifest_dir.mkdir(parents=True)
-    manifest = {
-        "phase_slug": launch_common.DRAFT_ASSEMBLY_PHASE,
-        "run_id": run_id,
-        "phase": {"slug": launch_common.DRAFT_ASSEMBLY_PHASE, "run_plan": "comprehensive"},
-        "method_selection": {"stable_id": branch_id, "version": "1"},
-    }
-    manifest_bytes = _json.dumps(manifest).encode("utf-8")
-    manifest_path = run_manifest_dir / "manifest.json"
-    manifest_path.write_bytes(manifest_bytes)
-    manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
-
-    fake_run = {
-        "run_id": run_id,
-        "status": "approved",
-        "manifest_path": str(manifest_path),
-        "manifest_sha256": manifest_sha,
-    }
-    monkeypatch.setattr(
-        project_state,
-        "get_runs",
-        lambda _pd, _slug: [fake_run],
-    )
-
-    # Approved comprehensive run does NOT satisfy the preliminary gate
-    assert not launch_plans._comprehensive_gate_satisfied(project_dir, branch_id)
-
 
 def test_exact_rerun_recovers_phase_four_run_mode(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

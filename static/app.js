@@ -203,6 +203,118 @@
     });
   }
 
+  function initializeMethodSelection(root = document) {
+    const forms = [];
+    if (root.matches?.("form.launch-form-lower")) forms.push(root);
+    root.querySelectorAll?.("form.launch-form-lower").forEach((form) => forms.push(form));
+    forms.forEach((form) => {
+      const methodPanel = form.querySelector("[data-method-selection]");
+      const planSelect = form.querySelector("[data-theory-plan]");
+      if (!methodPanel && !planSelect) return;
+
+      const radios = Array.from(form.querySelectorAll("[data-method-radio]"));
+      const options = Array.from(form.querySelectorAll("[data-method-option]"));
+      const details = Array.from(form.querySelectorAll("[data-method-detail]"));
+      const emptyDetail = form.querySelector("[data-method-detail-empty]");
+      const auditSource = form.querySelector("[data-theory-audit-source]");
+      const auditSourceRow = form.querySelector("[data-theory-audit-row]");
+      const launchButton = form.querySelector("[data-method-launch]");
+      const choiceHint = form.querySelector("[data-method-choice-hint]");
+
+      const update = () => {
+        const auditOnly = planSelect?.value === "audit_only";
+        if (auditSource) auditSource.disabled = !auditOnly;
+        if (auditSourceRow) auditSourceRow.hidden = !auditOnly;
+        methodPanel?.classList.toggle("method-selection-inactive", auditOnly);
+
+        radios.forEach((radio) => {
+          const selectable = radio.dataset.methodSelectable === "true";
+          radio.disabled = auditOnly || !selectable;
+          radio.required = !auditOnly && selectable;
+        });
+        const selected = auditOnly
+          ? null
+          : radios.find((radio) => radio.checked && !radio.disabled) || null;
+        options.forEach((option) => {
+          option.classList.toggle(
+            "phase3-method-option-selected",
+            Boolean(selected && option.dataset.methodOption === selected.value)
+          );
+        });
+        let visibleDetail = null;
+        details.forEach((detail) => {
+          const visible = Boolean(selected && detail.dataset.methodDetail === selected.value);
+          detail.hidden = !visible;
+          if (visible) visibleDetail = detail;
+        });
+        if (emptyDetail) {
+          emptyDetail.hidden = Boolean(selected);
+          emptyDetail.textContent = auditOnly
+            ? "Audit-only reruns use the method already frozen in the selected theory artifact."
+            : "Choose an active method to inspect its Phase 2 definition and mathematical details.";
+        }
+
+        if (launchButton) {
+          const baseBlocked = launchButton.dataset.baseBlocked === "true";
+          const missingAuditSource = auditOnly && (!auditSource || !auditSource.value);
+          launchButton.disabled = baseBlocked || missingAuditSource || (!auditOnly && !selected);
+          launchButton.setAttribute("aria-disabled", String(launchButton.disabled));
+        }
+        if (choiceHint) choiceHint.hidden = auditOnly || Boolean(selected);
+        if (visibleDetail && window.MathJax?.typesetPromise) {
+          window.MathJax.typesetPromise([visibleDetail]).catch(() => {});
+        }
+      };
+
+      if (form.dataset.theoryPlansInitialized !== "true") {
+        radios.forEach((radio) => radio.addEventListener("change", update));
+        planSelect?.addEventListener("change", update);
+        auditSource?.addEventListener("change", update);
+        form.dataset.theoryPlansInitialized = "true";
+      }
+      update();
+    });
+  }
+
+  function ensureMathJax(root = document) {
+    const marker = root.matches?.("[data-mathjax-required]")
+      ? root
+      : root.querySelector?.("[data-mathjax-required]");
+    if (!marker) return;
+
+    const scope = root === document ? document.body : root;
+    const typeset = () => {
+      if (window.MathJax?.typesetPromise) {
+        window.MathJax.typesetPromise([scope]).catch(() => {});
+      }
+    };
+    if (window.MathJax?.typesetPromise) {
+      typeset();
+      return;
+    }
+    if (!window.MathJax) {
+      window.MathJax = {
+        tex: {
+          inlineMath: [["$", "$"], ["\\(", "\\)"]],
+          displayMath: [["$$", "$$"], ["\\[", "\\]"]],
+        },
+        svg: { fontCache: "global" },
+      };
+    }
+
+    let script = document.getElementById("MathJax-script");
+    if (!script) {
+      script = document.createElement("script");
+      script.id = "MathJax-script";
+      script.src = "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js";
+      script.async = true;
+      script.addEventListener("load", typeset, { once: true });
+      document.head.appendChild(script);
+      return;
+    }
+    script.addEventListener("load", typeset, { once: true });
+  }
+
   function announce(message) {
     const region = document.getElementById("interface-status");
     if (!region) return;
@@ -407,7 +519,8 @@
       currentProjectUrl = window.location.href;
       formatTimes(replacement);
       initializeGuardedForms(replacement);
-      initializeTheoryPlans(replacement);
+      ensureMathJax(replacement);
+      initializeMethodSelection(replacement);
       clearAsyncError(replacement, "project-tabs");
       clearAsyncError(replacement, "project-interaction");
       if (pushHistory) {
@@ -665,7 +778,8 @@
 
   window.addEventListener("pageshow", () => {
     initializeGuardedForms();
-    initializeTheoryPlans();
+    ensureMathJax();
+    initializeMethodSelection();
   });
 
   window.setInterval(() => {
@@ -700,6 +814,8 @@
   setSidebar(false);
   initializeGuardedForms();
   restoreDraftsAfterError();
+  ensureMathJax();
+  initializeMethodSelection();
   formatTimes();
 
   // ── Theme toggle (light/dark) ──

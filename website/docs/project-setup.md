@@ -6,143 +6,117 @@ slug: /project-setup
 
 # Creating a Project
 
-A Research Hub project is a focused research effort with a clear goal, a research brief, and a five-phase pipeline. This page covers how to set up a project that produces good results.
+A project begins with a research brief. The brief should state the scientific question, the setting in which it will be studied, and the evidence that would justify a decision.
 
-## Step 1: Create the project
+## Define the question before creating the project
 
-1. Open [http://127.0.0.1:5055](http://127.0.0.1:5055)
-2. Click **New Project**
-3. Enter a **project name** (this becomes the folder slug — keep it short and descriptive)
-4. Write the **research brief** (see below)
+Write down:
 
-The project appears as a new tab with five phase sub-tabs.
+- the uncertainty you want the research to reduce;
+- the population, system, dataset, or mathematical setting;
+- the target quantity, prediction task, theorem, or scientific claim;
+- the assumptions and exclusions that define the scope;
+- the evidence that would support, weaken, or invalidate the proposed direction;
+- practical limits on data, computation, time, privacy, or experimentation.
 
-## Step 2: Write the research brief
+A useful question is precise enough to evaluate but does not prescribe the answer. For example:
 
-The research brief (`setting.md`) is the single most important input. Every agent in every phase reads it. A vague brief produces vague research; a sharp brief produces sharp research.
+> Under the stated sampling assumptions, can the proposed estimator improve uncertainty calibration relative to the specified baselines without sacrificing predictive accuracy?
 
-### What a good brief contains
+This identifies a setting, a comparison, and a criterion without assuming that the proposed estimator will succeed.
+
+## Create the project in the Web UI
+
+1. Open [http://127.0.0.1:5055](http://127.0.0.1:5055).
+2. Select **New project**.
+3. Enter a short, recognizable project name.
+4. Write or paste the project brief.
+5. Select **Create project**.
+
+Research Hub creates a safe folder name from the project name. The full scientific description belongs in the brief, not in the project name.
+
+## A practical brief template
 
 ```markdown
-# <Project Title>
+# Project title
 
-## Research Goal
+## Research question
 
-State the central question in one or two sentences. Be specific about what
-you want to discover or prove, not just the general area.
+State the primary question in one or two sentences.
 
-> Can we construct finite-dimensional particle systems whose update rule
-> entangles particles in a way that produces faster mixing than independent
-> Langevin chains, while maintaining Π_N = p^⊗N as the exact stationary
-> distribution for finite N?
+## Scientific setting
 
-## Background / What we already know
+Define the population, data, mathematical objects, or experimental system.
+State the target quantity, prediction task, or theoretical result.
 
-Summarize the starting point. What mathematical foundation are you building
-on? What's the key equation or condition? What prior results are established?
+## Current evidence
 
-## Scope and directions
+Summarize established results, relevant references, available data, and
+preliminary observations. Distinguish known facts from working hypotheses.
 
-List the directions you want explored. This guides Phase 2 (Method
-Development) but doesn't constrain it — agents can propose directions you
-didn't list.
+## Decision criteria
 
-- Direction A (e.g., graph-structured interactions)
-- Direction B (e.g., non-reversible entanglement)
-- Direction C (e.g., multi-scale coupling)
+State what evidence would support the proposed direction, what would make the
+result inconclusive, and what would rule the direction out.
 
-## Restrictions (optional but recommended)
+## Assumptions and constraints
 
-State any constraints:
-- "Focus on the finite-N regime, not mean-field limits"
-- "Prioritize provable rate bounds over empirical heuristics"
-- "The method must preserve the exact invariant measure, not approximate it"
-- "Avoid approaches that require N → ∞ for the guarantee to hold"
+List important assumptions, exclusions, computational limits, data restrictions,
+required baselines, and validation requirements.
+
+## Outputs sought
+
+State the results you need, such as a literature assessment, a formal method,
+a proof, a simulation study, an empirical analysis, or a manuscript draft.
 ```
 
-### What makes a good research goal
+Include only sections that are relevant to the project. For an empirical study, specify the unit of analysis, outcome, candidate predictors or exposures, validation design, and important sources of bias. For a theoretical project, specify the mathematical setting, assumptions, comparison class, and the form of result that would be meaningful.
 
-| ✅ Good goal | ❌ Vague goal |
-|-------------|-------------|
-| "Can graph-structured interaction accelerate Langevin sampling with a provable rate bound?" | "Improve Langevin sampling" |
-| "Does the Bakry–Émery Γ₂ calculus yield a tighter spectral gap for non-reversible ALDI?" | "Study non-reversible MCMC" |
-| "Can memory-augmented interaction achieve entanglement beyond covariance preconditioning?" | "Explore new MCMC methods" |
+## What makes the brief useful
 
-A good goal is:
-- **Specific** — names the mechanism, the quantity, and the comparison
-- **Open-ended enough for creativity** — doesn't prescribe the answer
-- **Constrained enough to be tractable** — has a clear success criterion
+A strong brief:
 
-### Restrictions shape the research
+- uses measurable or logically testable criteria;
+- separates established evidence from hypotheses;
+- names essential baselines or comparison results;
+- records assumptions that could limit interpretation;
+- states negative results that would still be scientifically informative;
+- leaves room for the team to identify an unexpected but defensible direction.
 
-Restrictions are how you steer the research without micromanaging it. Common restriction types:
+Avoid goals such as "improve the model" or "find a novel method" without defining the quantity to improve, the comparison, and the acceptable evidence.
 
-- **Theoretical**: "Must preserve the exact invariant measure", "Prioritize provable bounds over empirical gains"
-- **Computational**: "Must be implementable in O(N log N) per step", "Must work on GPU"
-- **Scope**: "Finite-N only, not mean-field", "Focus on log-concave targets first"
-- **Differentiation**: "Must be fundamentally different from ALDI and covariance preconditioning"
+## Edit the brief when the question changes
 
-Without restrictions, agents may propose methods that are technically novel but not aligned with your actual research constraints. With too many restrictions, they can't be creative. The sweet spot is 2–4 clear constraints.
+Open the project **Overview** and select **Edit brief**. A saved edit applies to future runs.
 
-## Step 3: Understand the folder structure
+A run already in progress continues with the version of the brief recorded when you started it. This preserves the scientific context used to produce that run. If the change is material, start a new run so the phase can evaluate the revised question.
 
-When you create a project, Research Hub sets up:
+## Start and review the first run
 
-```
-<project-slug>/
-├── setting.md                 ← your research brief (editable)
-├── phase-summaries/           ← HTML decision briefs from each run
-│   ├── 01-literature-review/
-│   ├── 02-method-development/
-│   ├── 03-idea-evaluation/
-│   ├── 04-draft-assembly/
-│   └── 05-review-revision/
-├── references/                ← Phase 1 output (literature)
-│   ├── literature-review/run/
-│   ├── papers/                ← per-reference summary files
-│   └── literature-summary.md  ← consolidated summary
-├── ideas/                     ← Phase 2 output (methods)
-│   ├── methods/               ← one file per proposed method
-│   │   ├── _registry.yaml     ← permanent numbering registry
-│   │   └── <method-slug>.md
-│   └── run/
-├── branches/<method-slug>/    ← Phase 3/4/5 output (per-method)
-│   ├── evaluations/run/       ← Phase 3: theorems and proofs
-│   ├── draft/sections/run/    ← Phase 4: code, experiments, results
-│   └── draft/revised/run/     ← Phase 5: manuscript assembly and revision
-```
+Open **Literature Review** and inspect the launch plan. Check the participating roles, number of rounds, available prior context, and any direction you want to add. Start the run only when the plan, available context, and your direction match your purpose.
 
-### Editing the brief
+When the run finishes:
 
-You can edit `setting.md` at any time. The edit takes effect on the **next run** — runs that are already in flight read from the frozen copy made at launch. This is by design: a run's exact inputs must be reproducible.
+1. Read the decision summary and the cited evidence.
+2. Inspect important artifacts when a conclusion depends on them.
+3. Note unresolved assumptions, missing comparisons, and uncertainty.
+4. Decide whether the result is useful for the next question you want to study.
+5. If more work is needed, start another run with clearer instructions.
 
-### What agents can and cannot touch
+You decide when to start every run or rerun. Completion of one run does not start
+another phase. Compatible prior results remain available as context, subject to
+the prerequisite, integrity, and method-branch checks shown at launch.
 
-- **Agents write to**: `references/`, `ideas/`, `branches/`, `draft/`, and the run's output directories
-- **Agents do not touch**: the control directory (`.research-hub-control/`), run manifests, decision records
-- **You control**: `setting.md` (the brief), `config.yaml`, and all approval decisions
+## Files and records
 
-## Step 4: Start the first phase
-
-Once your brief is written, open **Phase 1: Literature Review** and [start a run](./workflow/pipeline). The pipeline will guide you through each phase sequentially — you decide when to proceed.
-
----
-
-## Tips for a successful project
-
-1. **Write a sharp brief.** This is the highest-leverage thing you can do. Spend 30 minutes on the goal and restrictions; it saves hours of misdirected research.
-
-2. **Let Phase 1 (Literature) run first.** Even if you know the literature, the structured notes and reference library become context for every later phase. Approve Phase 1 before starting Phase 2.
-
-3. **Use the "direction" field on each run.** When starting a phase, you can add free-text direction (e.g., "focus on graph-based methods", "compare against the ALDI baseline specifically"). This steers the agents without changing the brief.
-
-4. **Review critically.** Read the HTML summary at each `awaiting_review`. The summary states conclusions, evidence, and risks. Don't rubber-stamp — if the evidence is weak, request a revision or rerun.
-
-5. **Rerun when you have new context.** If Phase 1 finds new literature, or you realize the brief needs refinement, rerun. The rerun protocol audits and extends prior work — nothing is lost.
-
----
+You do not need to manage the project directory during normal use. The Web UI
+presents the brief, run history, summaries, and available context. For
+provenance, artifact locations, and immutable records, see
+[Files and Records](./reference/files-and-records).
 
 ## Next steps
 
-- [Pipeline Overview](./workflow/pipeline) — how the five phases connect
-- [Phase 1: Literature Review](./workflow/phase-1) — start here
+- [Pipeline Overview](./workflow/pipeline)
+- [Phase 1: Literature Review](./workflow/phase-1)
+- [Roles and Team](./roles)
+- [Known Limitations](./known-limitations)

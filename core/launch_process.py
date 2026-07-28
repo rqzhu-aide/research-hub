@@ -681,6 +681,42 @@ def _process_identity(pid: int | None) -> str | None:
     return f"ps:{value}" if shown.returncode == 0 and value else None
 
 
+def _windows_pid_is_alive(pid: int) -> bool:
+    """Return whether *pid* is running without relying on os.kill on Windows."""
+
+    import ctypes
+    from ctypes import wintypes
+
+    process_query_limited_information = 0x1000
+    error_access_denied = 5
+    still_active = 259
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetExitCodeProcess.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+
+    ctypes.set_last_error(0)
+    handle = kernel32.OpenProcess(
+        process_query_limited_information, False, int(pid)
+    )
+    if not handle:
+        return ctypes.get_last_error() == error_access_denied
+    try:
+        exit_code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+            return True
+        return exit_code.value == still_active
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 def _pid_is_alive(pid: int | None, expected_identity: str | None = None) -> bool:
     """Conservatively report whether the recorded process may still be alive.
 
@@ -691,14 +727,18 @@ def _pid_is_alive(pid: int | None, expected_identity: str | None = None) -> bool
 
     if not pid:
         return False
-    try:
-        os.kill(int(pid), 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except (OSError, ValueError):
-        return False
+    if os.name == "nt":
+        if not _windows_pid_is_alive(int(pid)):
+            return False
+    else:
+        try:
+            os.kill(int(pid), 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        except (OSError, ValueError):
+            return False
     if expected_identity:
         observed_identity = _process_identity(pid)
         if observed_identity is not None and observed_identity != expected_identity:

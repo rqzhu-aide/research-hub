@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from . import method_menu, project_state
-from .launch_manifest import phase_requires_method_binding
+from .launch_manifest import (
+    phase_requires_method_binding,
+    phase_uses_catalog_method_selection,
+    phase_five_branch_readiness,
+)
 from .launch_run import LaunchError, exact_rerun_options
+from .safe_markdown import render_safe_markdown
 
 import logging
 log = logging.getLogger(__name__)
@@ -180,7 +186,7 @@ def _discover_summary_path(
 ) -> str | None:
     """Resolve the summary path. Falls back to the conventional location
     (phase-summaries/<slug>/<run_id>.html) when the lead never recorded
-    final_summary in state — the 'failed but artifacts exist' case."""
+    final_summary in state, the 'failed but artifacts exist' case."""
     raw_path = run.get("final_summary")
     if raw_path:
         return str(raw_path)
@@ -287,11 +293,10 @@ def _cross_phase_context(
     phase_slug: str,
     phases_cfg: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Build context chips showing what other phases can feed into this run.
+    """Build project-history chips for the other configured phases.
 
-    Each entry: {slug, name, status, run_number, has_result}
-    Phases with no result are shown grayed out.
-    For phases that create branches (method development), includes branch info.
+    These chips summarize project-wide run history. They do not claim that a
+    result is eligible for the selected method branch or frozen into a launch.
     """
     state = project_state.load(project_dir)
     phases_state = state.get("phases", {})
@@ -303,24 +308,26 @@ def _cross_phase_context(
         phase_state = phases_state.get(slug, {})
         approved_id = str(phase_state.get("approved_run") or "").strip()
         latest_id = str(phase_state.get("latest_run") or "").strip()
-        has_result = bool(approved_id or latest_id)
+        history_id = approved_id or latest_id
         runs = phase_state.get("runs", [])
-        run_number = ""
-        if approved_id:
-            for r in runs:
-                if str(r.get("run_id", "")) == approved_id:
-                    run_number = str(r.get("run_number", ""))
-                    break
-        elif latest_id:
-            for r in runs:
-                if str(r.get("run_id", "")) == latest_id:
-                    run_number = str(r.get("run_number", ""))
-                    break
+        history_run = next(
+            (
+                run
+                for run in runs
+                if isinstance(run, Mapping)
+                and str(run.get("run_id", "")) == history_id
+            ),
+            None,
+        )
+        has_result = isinstance(history_run, Mapping)
         entry: dict[str, Any] = {
             "slug": slug,
             "name": str(phase.get("name", slug)),
             "has_result": has_result,
-            "run_number": run_number,
+            "run_number": (
+                str(history_run.get("run_number", "")) if history_run else ""
+            ),
+            "status": str(history_run.get("status", "")) if history_run else "",
         }
         # For method development phases, include branch/method info
         if slug == project_state.METHOD_DEVELOPMENT_PHASE:
@@ -342,52 +349,28 @@ def _cross_phase_context(
 
 
 def _method_details(project_dir: Path) -> list[dict[str, Any]]:
-    """Load all method files with full markdown content and metadata."""
-    import re
+    """Render canonical method-menu entries for the expandable detail view."""
 
-    method_dir = project_dir.resolve() / "ideas" / "methods"
-    if not method_dir.is_dir():
-        return []
-    entries: list[dict[str, Any]] = []
-    for path in sorted(method_dir.glob("*.md")):
-        try:
-            raw = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        fm_match = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)$", raw, re.DOTALL)
-        if not fm_match:
-            continue
-        fm_text = fm_match.group(1)
-        body = fm_match.group(2).strip()
-
-        def _yaml_val(key: str) -> str:
-            m = re.search(rf'^{key}:\s*"?([^"\n]+?)"?\s*$', fm_text, re.MULTILINE)
-            return m.group(1).strip() if m else ""
-
+    root = project_dir.resolve()
+    details: list[dict[str, Any]] = []
+    for entry in method_menu.load_method_menu(root)["entries"]:
+        relative_path = str(entry.get("path", ""))
+        path = root / relative_path
         created_ts = ""
         try:
             created_ts = str(path.stat().st_mtime)
         except OSError:
             pass
-
-        # Render markdown body to HTML
-        import markdown as md
-        body_html = md.markdown(body, extensions=["fenced_code", "tables", "md_in_html"])
-
-        entries.append({
-            "stable_id": _yaml_val("stable_id") or path.stem,
-            "version": _yaml_val("version"),
-            "label": _yaml_val("label") or path.stem,
-            "status": _yaml_val("status") or "viable",
-            "body": body,
-            "body_html": body_html,
+        body = str(entry.get("body", ""))
+        details.append({
+            **entry,
+            "body_html": render_safe_markdown(
+                body, extensions=["fenced_code", "tables"]
+            ),
             "created_ts": created_ts,
             "created_display": _format_method_ts(created_ts),
         })
-    rank = {"recommended": 0, "viable": 1, "frontier": 2, "retired": 3}
-    entries.sort(key=lambda e: (rank.get(e["status"], 9), e["stable_id"]))
-    return entries
-
+    return details
 
 def _format_method_ts(ts: str) -> str:
     if not ts:
@@ -445,178 +428,30 @@ def _method_comparison_data(project_dir: Path) -> str:
     return text.strip()[:3000]
 
 
-def _method_scores(project_dir: Path) -> dict[str, dict[str, str]]:
-    """Extract the 3-axis scoring (risk, potential, tractability) from the theorist output.
-
-    Parses markdown tables from ideas/run/*/round-01/theorist.md.
-    Returns {method_name_lower: {risk: str, potential: str, tractability: str}}.
-    """
-    import re
-
-    ideas_dir = project_dir.resolve() / "ideas" / "run"
-    if not ideas_dir.is_dir():
-        return {}
-    scores: dict[str, dict[str, str]] = {}
-    # Check all rounds for scoring tables
-    for run_dir in sorted(ideas_dir.iterdir()):
-        for round_dir in sorted((run_dir / "round-01").parent.iterdir() if (run_dir / "round-01").exists() else []):
-            theorist_file = round_dir / "theorist.md"
-            if not theorist_file.is_file():
-                continue
-            try:
-                text = theorist_file.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            # Find markdown scoring tables with our three axes
-            lines = text.split("\n")
-            for i, line in enumerate(lines):
-                if "Mathematical risk" not in line and "Acceleration potential" not in line:
-                    continue
-                headers = [h.strip() for h in line.split("|") if h.strip()]
-                if len(headers) < 4:
-                    continue
-                # Parse subsequent rows until empty/non-table line
-                for j in range(i + 2, min(len(lines), i + 12)):
-                    row_line = lines[j].strip()
-                    if not row_line.startswith("|"):
-                        break
-                    cells = [c.strip() for c in row_line.split("|") if c.strip()]
-                    if len(cells) < 4:
-                        continue
-                    idea_name = re.sub(r"^\d+\.\s*", "", cells[0]).strip()
-                    # Extract just the rating word (Low/Medium/High/Very high) from each cell
-                    def _extract_rating(cell: str) -> str:
-                        m = re.match(r"(Very high|High|Medium|Low|Moderate)", cell, re.IGNORECASE)
-                        return m.group(1) if m else cell[:20]
-                    scores[idea_name.lower()] = {
-                        "risk": _extract_rating(cells[1]),
-                        "potential": _extract_rating(cells[2]),
-                        "tractability": _extract_rating(cells[3]),
-                    }
-    return scores
-
 
 def _method_ranking_rows(project_dir: Path) -> list[dict[str, Any]]:
-    """Parse the Full Idea Set table and enrich with downstream phase status.
+    """Build the Phase 02 table from the persistent method menu."""
 
-    Returns simplified rows: {name, note, p3, p4, p5, stable_id}
-    where p3/p4/p5 are 'done' / 'pending' / '' for green/gray/empty lights.
-    """
-    import re
-    from . import project_state as ps
-
-    # Parse the ranking table from the summary HTML
-    summary_dir = project_dir.resolve() / "phase-summaries" / "02-method-development"
-    if not summary_dir.is_dir():
-        return []
-    summaries = sorted(summary_dir.glob("*.html"), key=lambda p: p.stat().st_mtime, reverse=True)
-    if not summaries:
-        return []
-    try:
-        html = summaries[0].read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return []
-
-    tables = re.findall(r"<table[^>]*>(.*?)</table>", html, re.DOTALL | re.IGNORECASE)
-    raw_rows: list[dict[str, str]] = []
-    for table_html in tables:
-        headers = re.findall(r"<th[^>]*>(.*?)</th>", table_html, re.DOTALL | re.IGNORECASE)
-        headers = [re.sub(r"<[^>]+>", "", h).strip() for h in headers]
-        if not any("Idea" in h for h in headers):
-            continue
-        row_matches = re.findall(r"<tr[^>]*>(.*?)</tr>", table_html, re.DOTALL | re.IGNORECASE)
-        for row_html in row_matches[1:]:
-            cells = re.findall(r"<td[^>]*>(.*?)</td>", row_html, re.DOTALL | re.IGNORECASE)
-            cells = [re.sub(r"<[^>]+>", "", c).strip() for c in cells]
-            if len(cells) != len(headers):
-                continue
-            raw_rows.append(dict(zip(headers, cells)))
-        break
-
-    if not raw_rows:
-        return []
-
-    # Load method files to match names to stable_ids
-    method_dir = project_dir.resolve() / "ideas" / "methods"
-    name_to_id: dict[str, str] = {}
-    if method_dir.is_dir():
-        for path in method_dir.glob("*.md"):
-            try:
-                raw = path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            fm = re.match(r"^---\s*\n(.*?)\n---", raw, re.DOTALL)
-            if not fm:
-                continue
-            fm_text = fm.group(1)
-            label_m = re.search(r'^label:\s*"?([^"\n]+?)"?\s*$', fm_text, re.MULTILINE)
-            sid_m = re.search(r'^stable_id:\s*"?([^"\n]+?)"?\s*$', fm_text, re.MULTILINE)
-            if label_m and sid_m:
-                name_to_id[label_m.group(1).strip().lower()] = sid_m.group(1).strip()
-
-    # Check which phases have runs
-    state = ps.load(project_dir)
-    phases_state = state.get("phases", {})
-    p03_has = bool(phases_state.get("03-idea-evaluation", {}).get("runs"))
-    p04_has = bool(phases_state.get("04-draft-assembly", {}).get("runs"))
-    p05_has = bool(phases_state.get("05-review-revision", {}).get("runs"))
-
-    # Determine which method is the approved one
-    approved_method_id = ""
-    p02_state = phases_state.get("02-method-development", {})
-    approved_run_id = str(p02_state.get("approved_run") or "")
-    for r in p02_state.get("runs", []):
-        if str(r.get("run_id", "")) == approved_run_id:
-            dr = r.get("decision_record", {})
-            sel = dr.get("data", {}).get("selected_scientific_object", {}) if isinstance(dr.get("data"), dict) else {}
-            if isinstance(sel, dict) and sel.get("stable_id"):
-                approved_method_id = str(sel["stable_id"])
-            break
-
-    # Build simplified rows
-    method_scores = _method_scores(project_dir)
-    result: list[dict[str, Any]] = []
-    for row in raw_rows:
-        idea = row.get("Idea", row.get("idea", ""))
-        note = row.get("Phase 03 status", row.get("Phase 03 Status", ""))
-        # Also include mechanism class as part of note if present
-        mech = row.get("Mechanism class", row.get("Mechanism Class", "")
+    rows: list[dict[str, Any]] = []
+    for entry in method_menu.load_method_menu(project_dir)["entries"]:
+        label = str(
+            entry.get("label")
+            or entry.get("stable_id")
+            or "Unnamed method"
         )
-        brief = f"{mech}: {note}" if mech and note else (note or mech or "")
-
-        # Match to stable_id
-        stable_id = name_to_id.get(idea.lower().strip(), "")
-
-        # Phase lights: green for approved method if phase has runs
-        is_approved = stable_id and stable_id == approved_method_id
-        p3 = "done" if (is_approved and p03_has) else ""
-        p4 = "done" if (is_approved and p04_has) else ""
-        p5 = "done" if (is_approved and p05_has) else ""
-
-        # Scores from theorist evaluation — match by substring
-        idea_lower = idea.lower().strip()
-        scores = method_scores.get(idea_lower, {})
-        if not scores:
-            # Try partial match: score keys are abbreviated names
-            for score_key, score_val in method_scores.items():
-                if score_key in idea_lower or idea_lower.startswith(score_key):
-                    scores = score_val
-                    break
-
-        result.append({
-            "name": idea,
-            "note": brief,
-            "risk": scores.get("risk", ""),
-            "potential": scores.get("potential", ""),
-            "tractability": scores.get("tractability", ""),
-            "p3": p3,
-            "p4": p4,
-            "p5": p5,
+        stable_id = str(entry.get("stable_id", ""))
+        errors = list(entry.get("errors", []))
+        rows.append({
+            "number": entry.get("number"),
+            "name": label,
             "stable_id": stable_id,
-            "is_method": bool(stable_id),
+            "version": str(entry.get("version", "")),
+            "status": str(entry.get("status", "")),
+            "sha256": str(entry.get("sha256", "")),
+            "errors": errors,
+            "is_method": bool(stable_id and not errors),
         })
-    return result
-
+    return rows
 
 def _summary_available(
     project_dir: Path,
@@ -971,7 +806,9 @@ def _run_view(
         "approve_with_limitations": "Approve with limitations",
         "request_revision": "Request revision",
         "rerun": "Rerun",
-        "defer": "Defer the decision",
+        "defer": "Defer further work",
+        "proceed": "Start Phase 3 or Phase 4",
+        "return_to_phase_1": "Return to Phase 1",
     }
     post_review_target = _phase_six_post_review_target(
         project_dir, phase_slug, run, integrity_report
@@ -1027,6 +864,10 @@ def _run_view(
         and plan_pattern == "sequential"
     ):
         plan_variant = "Standard theory"
+    elif phase_slug == "04-draft-assembly" and run_plan == "preliminary":
+        plan_variant = "Preliminary scope"
+    elif phase_slug == "04-draft-assembly" and run_plan == "comprehensive":
+        plan_variant = "Comprehensive scope"
     elif phase_slug == "05-review-revision" and plan_stages:
         plan_variant = "Full manuscript writing and independent review"
     elif has_frozen_plan:
@@ -1134,6 +975,10 @@ def _run_view(
         "cleanup_started_at": run.get("cleanup_started_at"),
         "cleanup_completed_at": run.get("cleanup_completed_at"),
         "cleanup_recovery_note": run.get("cleanup_recovery_note"),
+        "publication_kind": run.get("publication_kind"),
+        "publication_outcome": run.get("publication_outcome"),
+        "publication_readiness": run.get("publication_readiness"),
+        "migration_warning": run.get("migration_warning"),
         "protocol_checkpoint": (
             dict(run["protocol_checkpoint"])
             if isinstance(run.get("protocol_checkpoint"), Mapping)
@@ -1223,12 +1068,25 @@ def _prerequisite_view(
     missing = [entry for entry in requirements if not entry.get("satisfied")]
     missing_names = [entry["name"] for entry in missing]
     satisfied = bool(report.get("satisfied", not blockers))
+    completion_policy = report.get("policy") == "completed_results"
     if satisfied and requirements:
-        message = "All recommended prerequisite results are approved and current."
+        message = (
+            "All required prior phase results are complete and intact."
+            if completion_policy
+            else "All recommended prerequisite results are current."
+        )
     elif satisfied:
         message = "This phase has no prerequisites and can be run at any time."
     else:
-        message = "Missing or stale context: " + ", ".join(missing_names)
+        details = [
+            f"{entry['name']} ({entry.get('reason', 'not current')})"
+            for entry in missing
+        ]
+        message = (
+            "Required completed results are missing: "
+            if completion_policy
+            else "Recommended context needs review: "
+        ) + "; ".join(details)
     return {
         **dict(report),
         "ok": satisfied,
@@ -1240,6 +1098,77 @@ def _prerequisite_view(
         "message": message,
     }
 
+
+def _phase_five_method_prerequisite_report(
+    project_dir: Path,
+    methods: Sequence[dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Describe Phase 5 readiness at the exact selectable-method grain."""
+
+    requirements: list[dict[str, Any]] = []
+    ready_count = 0
+    active_count = 0
+    for method in methods:
+        base_launchable = bool(
+            method.get("status") != "retired" and not method.get("errors")
+        )
+        if not base_launchable:
+            method["launchable"] = False
+            method["launch_blockers"] = []
+            continue
+        active_count += 1
+        readiness = method.get("branch_readiness")
+        if not isinstance(readiness, Mapping):
+            readiness = phase_five_branch_readiness(project_dir, method)
+            method["branch_readiness"] = readiness
+        launchable = bool(readiness.get("ready"))
+        blockers = [str(item) for item in readiness.get("blockers", [])]
+        method["launchable"] = launchable
+        method["launch_blockers"] = blockers
+        if launchable:
+            ready_count += 1
+        requirements.append({
+            "method_id": str(method.get("stable_id", "")),
+            "method_version": str(method.get("version", "")),
+            "method_sha256": str(method.get("sha256", "")),
+            "satisfied": launchable,
+            "blockers": blockers,
+        })
+
+    satisfied = ready_count > 0
+    if satisfied:
+        message = (
+            f"{ready_count} active method"
+            f"{' is' if ready_count == 1 else 's are'} ready. Choose one to "
+            "reverify its exact Phase 1 to Phase 4 results at launch."
+        )
+    elif active_count:
+        message = (
+            "No active method has intact completed results from Phases 1 through 4 "
+            "with matching Phase 3 and Phase 4 branch identity."
+        )
+    else:
+        message = "No active Phase 2 method is available for Phase 5."
+    blockers = [
+        str(item["method_id"])
+        for item in requirements
+        if not item["satisfied"]
+    ]
+    raw_report = {
+        "phase": "05-review-revision",
+        "policy": "phase_five_method_branches",
+        "satisfied": satisfied,
+        "blockers": [] if satisfied else (blockers or ["method_branch"]),
+        "requirements": requirements,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+    return raw_report, {
+        **raw_report,
+        "ok": satisfied,
+        "missing": [item for item in requirements if not item["satisfied"]],
+        "missing_names": blockers,
+        "message": message,
+    }
 
 def _decision_label(phase_state: Mapping[str, Any], latest: Mapping[str, Any] | None) -> str:
     if latest and latest.get("status") in project_state.ACTIVE_RUN_STATUSES:
@@ -1346,6 +1275,21 @@ def prepare_phase_data(
     project_dir = Path(project_dir).resolve()
     phase_slug = str(phase_cfg["slug"])
     recovery_only = bool(phase_cfg.get("recovery_only"))
+    method_menu_state = None
+    method_menu_version = ""
+    if (
+        phase_requires_method_binding(phase_cfg)
+        or phase_slug == project_state.METHOD_DEVELOPMENT_PHASE
+    ):
+        method_menu_state = method_menu.load_method_menu(project_dir)
+        try:
+            method_menu_version = method_menu.catalog_version(project_dir)
+        except (OSError, ValueError) as exc:
+            warning = f"The method catalog cannot be verified: {exc}"
+            warnings = list(method_menu_state.get("warnings", []))
+            if warning not in warnings:
+                warnings.append(warning)
+            method_menu_state = {**method_menu_state, "warnings": warnings}
     state = project_state.load(project_dir)
     approved_method_selection = None
     method_phase = state.get("phases", {}).get(
@@ -1463,6 +1407,7 @@ def prepare_phase_data(
         and not active_here
         and phase_slug in {
             "03-idea-evaluation",
+            "04-draft-assembly",
             "05-review-revision",
         }
         and displayed_latest.get("frozen_plan", {}).get("available")
@@ -1479,10 +1424,33 @@ def prepare_phase_data(
             project_state.ProjectStateError,
         ):
             displayed_latest["rerun_config"] = None
-    raw_report = project_state.prerequisite_report(
-        project_dir, phase_slug, _dependencies(phases_cfg)
+
+    catalog_detail_phases = {
+        project_state.METHOD_DEVELOPMENT_PHASE,
+        "03-idea-evaluation",
+        "04-draft-assembly",
+        "05-review-revision",
+    }
+    method_details = (
+        _method_details(project_dir) if phase_slug in catalog_detail_phases else []
     )
-    report = _prerequisite_view(raw_report, phases_cfg)
+    for method in method_details:
+        base_launchable = bool(
+            method.get("status") != "retired" and not method.get("errors")
+        )
+        method["launchable"] = base_launchable
+        method["launch_blockers"] = []
+    if phase_slug == "05-review-revision":
+        raw_report, report = _phase_five_method_prerequisite_report(
+            project_dir, method_details
+        )
+    else:
+        raw_report = project_state.prerequisite_report(
+            project_dir,
+            phase_slug,
+            _dependencies(phases_cfg),
+        )
+        report = _prerequisite_view(raw_report, phases_cfg)
     approval_report = None
     approval_subject = displayed_latest
     if approval_subject and (
@@ -1565,6 +1533,7 @@ def prepare_phase_data(
     downstream_context = _downstream_context_options(
         project_dir, phase_slug, phases_cfg
     )
+
     return {
         "project_id": project_id,
         "phase_cfg": dict(phase_cfg),
@@ -1601,12 +1570,9 @@ def prepare_phase_data(
             "prerequisite", raw_report
         ),
         "approved_method_selection": approved_method_selection,
-        "method_menu": (
-            method_menu.load_method_menu(project_dir)
-            if phase_requires_method_binding(phase_cfg)
-               or phase_slug == project_state.METHOD_DEVELOPMENT_PHASE
-            else None
-        ),
+        "catalog_method_selection": phase_uses_catalog_method_selection(phase_cfg),
+        "method_menu": method_menu_state,
+        "method_menu_version": method_menu_version,
         "approval_context_report": approval_report,
         "approval_context_report_version": (
             decision_report_version("approval_context", approval_report)
@@ -1626,11 +1592,8 @@ def prepare_phase_data(
         "cross_phase_context": _cross_phase_context(
             project_dir, phase_slug, phases_cfg
         ),
-        "method_details": (
-            _method_details(project_dir)
-            if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE
-            else []
-        ),
+        "method_details": method_details,
+
         "method_comparison": (
             _method_comparison(project_dir)
             if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE
@@ -1666,7 +1629,7 @@ def prepare_overview_data(
     dependencies = _dependencies(phases_cfg)
     cards: list[dict[str, Any]] = []
     # Pre-compute global ordinal rank for each run (by start time across ALL phases)
-    # This gives every run its own horizontal slot — no clustering regardless of time gaps.
+    # This gives every run its own horizontal slot, with no clustering regardless of time gaps.
     from datetime import datetime
     def _parse_iso(ts: str | None):
         if not ts:
@@ -1700,12 +1663,19 @@ def prepare_overview_data(
         if latest is None and views:
             latest = views[-1]
         approved = by_id.get(str(phase_state.get("approved_run")))
-        report = _prerequisite_view(
-            project_state.prerequisite_report(
-                project_dir, phase_slug, dependencies
-            ),
-            phases_cfg,
-        )
+        if phase_slug == "05-review-revision":
+            _, report = _phase_five_method_prerequisite_report(
+                project_dir, _method_details(project_dir)
+            )
+        else:
+            report = _prerequisite_view(
+                project_state.prerequisite_report(
+                    project_dir,
+                    phase_slug,
+                    dependencies,
+                ),
+                phases_cfg,
+            )
         active_reference = None
         if active_conflict:
             active_reference = next(
@@ -1799,7 +1769,7 @@ def prepare_overview_data(
                     "number": v.get("number") or v.get("run_number", ""),
                     "scientific_outcome": v.get("scientific_outcome", ""),
                     # Ordinal rank positioning: each run gets its own slot based on
-                    # global temporal order. 5%–95% range keeps dots off the edges.
+                    # global temporal order. The 5% to 95% range keeps dots off the edges.
                     "left_pct": round(
                         5 + (_rank_by_id.get(str(v.get("run_id", "")), 0) / max(_total_ranked - 1, 1)) * 90,
                         1,

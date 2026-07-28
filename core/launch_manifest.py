@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
@@ -20,7 +21,7 @@ from core import launch_plans
 import logging
 log = logging.getLogger(__name__)
 
-MANIFEST_SCHEMA_VERSION = 8
+MANIFEST_SCHEMA_VERSION = 11
 
 
 def _method_identity(stable_id: str, version: str) -> dict[str, str]:
@@ -65,6 +66,21 @@ def phase_requires_method_binding(phase: Mapping[str, Any]) -> bool:
         launch_common.IDEA_EVALUATION_PHASE,
         launch_common.DRAFT_ASSEMBLY_PHASE,
     } and str(phase.get("pattern", "")) not in {"parallel", "debate"}
+
+
+def phase_uses_catalog_method_selection(phase: Mapping[str, Any]) -> bool:
+    """True when the user must choose a current Phase 2 catalog entry."""
+
+    return (
+        phase_requires_method_binding(phase)
+        and project_state._resolve_slug(str(phase.get("slug", "")))
+        in {
+            launch_common.IDEA_EVALUATION_PHASE,
+            launch_common.DRAFT_ASSEMBLY_PHASE,
+            launch_common.PAPER_WRITING_PHASE,
+        }
+        and phase.get("audit_only") is not True
+    )
 
 
 def _manifest_declares_protocol_checkpoint(manifest: Mapping[str, Any]) -> bool:
@@ -335,7 +351,7 @@ def _validate_manifest_snapshot_schema(manifest: Mapping[str, Any]) -> None:
         not isinstance(role, str) or not role for role in members
     ):
         raise launch_common.LaunchError("Run manifest phase members must be a list of role names")
-    # F16: validate run_plan if present — must be a recognized theory plan
+    # F16: validate run_plan if present; it must be a recognized theory plan
     # or run mode. An empty string is acceptable (no plan specified).
     raw_plan = phase.get("run_plan", "")
     if isinstance(raw_plan, str) and raw_plan:
@@ -349,10 +365,17 @@ def _validate_manifest_snapshot_schema(manifest: Mapping[str, Any]) -> None:
     if not isinstance(snapshots, Mapping):
         raise launch_common.LaunchError("Run manifest snapshots must be a mapping")
     required_snapshot_keys = {"setting", "team", "souls", "playbooks", "summaries"}
+    requires_method_snapshot = bool(
+        _manifest_schema_version(manifest) >= 10
+        and phase_requires_method_binding(phase)
+        and phase.get("audit_only") is not True
+    )
+    if requires_method_snapshot:
+        required_snapshot_keys.add("selected_method")
     if set(snapshots) != required_snapshot_keys:
+        expected = ", ".join(sorted(required_snapshot_keys))
         raise launch_common.LaunchError(
-            "Run manifest snapshots must contain exactly setting, team, souls, "
-            "playbooks, and summaries"
+            f"Run manifest snapshots must contain exactly: {expected}"
         )
     _snapshot_leaf(snapshots.get("setting"), "setting")
 
@@ -382,9 +405,264 @@ def _validate_manifest_snapshot_schema(manifest: Mapping[str, Any]) -> None:
     summaries = snapshots.get("summaries")
     if not isinstance(summaries, list):
         raise launch_common.LaunchError("Frozen snapshot summaries must be a list")
+    schema_version = _manifest_schema_version(manifest)
+    valid_context_outcomes = {"Complete", "Partial", "Failed", "Missing"}
     for index, entry in enumerate(summaries):
         _snapshot_leaf(entry, f"summaries[{index}]", allow_extra=True)
+        if schema_version >= 11:
+            required_context_fields = {
+                "supporting_artifacts",
+                "protocol_artifacts",
+                "scientific_outcome",
+            }
+            if not required_context_fields.issubset(entry):
+                raise launch_common.LaunchError(
+                    "Schema-11 frozen context summary must contain supporting_artifacts, "
+                    "protocol_artifacts, and scientific_outcome"
+                )
+            outcome = entry.get("scientific_outcome")
+            if (
+                outcome not in valid_context_outcomes
+                or type(entry.get("trusted")) is not bool
+                or type(entry.get("usable")) is not bool
+                or not isinstance(entry.get("evidence_status"), str)
+                or not entry.get("evidence_status", "").strip()
+            ):
+                raise launch_common.LaunchError(
+                    "Schema-11 frozen context summary has invalid scientific status metadata"
+                )
+            if outcome in {"Failed", "Missing"} and (
+                entry.get("trusted") or entry.get("usable")
+            ):
+                raise launch_common.LaunchError(
+                    "Failed or missing scientific context must remain advisory"
+                )
+            decision = entry.get("decision_record")
+            if outcome == "Missing":
+                if decision is not None:
+                    raise launch_common.LaunchError(
+                        "Context with a missing scientific outcome must not claim a decision record"
+                    )
+            else:
+                decision_leaf = _snapshot_leaf(
+                    decision,
+                    f"summaries[{index}].decision_record",
+                    allow_extra=True,
+                )
+                expected_decision_fields = {
+                    "path",
+                    "sha256",
+                    "size",
+                    "schema_version",
+                    "selected_scientific_object",
+                    "scientific_outcome",
+                }
+                if (
+                    set(decision_leaf) != expected_decision_fields
+                    or decision_leaf.get("scientific_outcome") != outcome
+                    or isinstance(decision_leaf.get("size"), bool)
+                    or not isinstance(decision_leaf.get("size"), int)
+                    or decision_leaf["size"] < 1
+                    or decision_leaf["size"] > launch_common.MAX_SOURCE_DECISION_BYTES
+                    or decision_leaf.get("schema_version")
+                    not in project_state.SUPPORTED_DECISION_RECORD_SCHEMA_VERSIONS
+                ):
+                    raise launch_common.LaunchError(
+                        "Schema-11 frozen context decision record has invalid metadata"
+                    )
 
+        discussion = entry.get("discussion", [])
+        if not isinstance(discussion, list):
+            raise launch_common.LaunchError(
+                f"Frozen snapshot summaries[{index}].discussion must be a list"
+            )
+        discussion_paths: set[str] = set()
+        for discussion_index, record in enumerate(discussion):
+            leaf = _snapshot_leaf(
+                record,
+                f"summaries[{index}].discussion[{discussion_index}]",
+                allow_extra=True,
+            )
+            if set(leaf) != {"path", "sha256", "size", "round", "role"}:
+                raise launch_common.LaunchError(
+                    "Frozen prior discussion record has an invalid structure"
+                )
+            if (
+                isinstance(leaf.get("size"), bool)
+                or not isinstance(leaf.get("size"), int)
+                or leaf["size"] < 1
+                or leaf["size"] > project_state.MAX_RUN_ARTIFACT_BYTES
+                or isinstance(leaf.get("round"), bool)
+                or not isinstance(leaf.get("round"), int)
+                or leaf["round"] < 1
+                or not isinstance(leaf.get("role"), str)
+                or not leaf["role"].strip()
+                or leaf["path"] in discussion_paths
+            ):
+                raise launch_common.LaunchError(
+                    "Frozen prior discussion record has invalid metadata"
+                )
+            discussion_paths.add(str(leaf["path"]))
+
+        if schema_version >= 11 and "supporting_artifacts" not in entry:
+            raise launch_common.LaunchError(
+                "Schema-11 frozen context has no supporting artifact inventory"
+            )
+        supporting = entry.get("supporting_artifacts", [])
+        if not isinstance(supporting, list):
+            raise launch_common.LaunchError(
+                f"Frozen prior supporting artifacts in summary {index} must be a list"
+            )
+        supporting_counts: dict[int, int] = {}
+        supporting_sizes: dict[int, int] = {}
+        supporting_paths: set[str] = set()
+        supporting_sources: set[str] = set()
+        for supporting_index, record in enumerate(supporting):
+            leaf = _snapshot_leaf(
+                record,
+                f"summaries[{index}].supporting_artifacts[{supporting_index}]",
+                allow_extra=True,
+            )
+            if set(leaf) != {"path", "sha256", "size", "round", "source_path"}:
+                raise launch_common.LaunchError(
+                    "Frozen prior supporting artifact record has an invalid structure"
+                )
+            size = leaf.get("size")
+            round_n = leaf.get("round")
+            source_path = leaf.get("source_path")
+            if (
+                isinstance(size, bool)
+                or not isinstance(size, int)
+                or size < 1
+                or size > project_state.MAX_RUN_ARTIFACT_BYTES
+                or isinstance(round_n, bool)
+                or not isinstance(round_n, int)
+                or round_n < 1
+                or not isinstance(source_path, str)
+                or not source_path.strip()
+                or "\x00" in source_path
+                or Path(source_path).is_absolute()
+                or Path(source_path).as_posix() != source_path
+                or ".." in Path(source_path).parts
+                or leaf["path"] in supporting_paths
+                or source_path in supporting_sources
+            ):
+                raise launch_common.LaunchError(
+                    "Frozen prior supporting artifact record has invalid metadata"
+                )
+            supporting_paths.add(str(leaf["path"]))
+            supporting_sources.add(source_path)
+            supporting_counts[round_n] = supporting_counts.get(round_n, 0) + 1
+            supporting_sizes[round_n] = supporting_sizes.get(round_n, 0) + size
+            if (
+                supporting_counts[round_n] > project_state.MAX_ROUND_SUPPORTING_FILES
+                or supporting_sizes[round_n] > project_state.MAX_ROUND_SUPPORTING_BYTES
+            ):
+                raise launch_common.LaunchError(
+                    "Frozen prior supporting artifacts exceed a round safety limit"
+                )
+
+        if schema_version >= 11 and "protocol_artifacts" not in entry:
+            raise launch_common.LaunchError(
+                "Schema-11 frozen context has no protocol artifact inventory"
+            )
+        protocol = entry.get("protocol_artifacts", [])
+        if not isinstance(protocol, list):
+            raise launch_common.LaunchError(
+                f"Frozen prior protocol artifacts in summary {index} must be a list"
+            )
+        protocol_paths: set[str] = set()
+        protocol_kinds: dict[str, int] = {}
+        protocol_file_count = 0
+        protocol_file_size = 0
+        for protocol_index, record in enumerate(protocol):
+            leaf = _snapshot_leaf(
+                record,
+                f"summaries[{index}].protocol_artifacts[{protocol_index}]",
+                allow_extra=True,
+            )
+            if set(leaf) != {"path", "sha256", "size", "kind", "purpose"}:
+                raise launch_common.LaunchError(
+                    "Frozen prior protocol artifact record has an invalid structure"
+                )
+            size = leaf.get("size")
+            kind = leaf.get("kind")
+            purpose = leaf.get("purpose")
+            if (
+                isinstance(size, bool)
+                or not isinstance(size, int)
+                or size < 1
+                or kind not in {"checkpoint", "protocol_file", "protocol_report"}
+                or not isinstance(purpose, str)
+                or not purpose.strip()
+                or len(purpose) > 1_000
+                or leaf["path"] in protocol_paths
+            ):
+                raise launch_common.LaunchError(
+                    "Frozen prior protocol artifact record has invalid metadata"
+                )
+            maximum = (
+                project_state.MAX_PROTOCOL_CHECKPOINT_BYTES
+                if kind == "checkpoint"
+                else project_state.MAX_RUN_ARTIFACT_BYTES
+            )
+            if size > maximum:
+                raise launch_common.LaunchError(
+                    "Frozen prior protocol artifact exceeds its file safety limit"
+                )
+            protocol_paths.add(str(leaf["path"]))
+            protocol_kinds[kind] = protocol_kinds.get(kind, 0) + 1
+            if kind == "protocol_file":
+                protocol_file_count += 1
+                protocol_file_size += size
+        if (
+            protocol_kinds.get("checkpoint", 0) > 1
+            or protocol_kinds.get("protocol_report", 0) > 1
+            or protocol_file_count > project_state.MAX_PROTOCOL_CHECKPOINT_FILES
+            or protocol_file_size
+            > project_state.MAX_PROTOCOL_CHECKPOINT_AGGREGATE_BYTES
+        ):
+            raise launch_common.LaunchError(
+                "Frozen prior protocol artifacts exceed a checkpoint safety limit"
+            )
+    if requires_method_snapshot:
+        selected_method = _snapshot_leaf(
+            snapshots.get("selected_method"),
+            "selected_method",
+            allow_extra=True,
+        )
+        expected_method_fields = {
+            "path",
+            "sha256",
+            "stable_id",
+            "version",
+            "label",
+            "catalog_path",
+        }
+        if set(selected_method) != expected_method_fields:
+            raise launch_common.LaunchError(
+                "Frozen snapshot selected_method has an invalid structure"
+            )
+        selection = manifest.get("method_selection")
+        if not isinstance(selection, Mapping):
+            raise launch_common.LaunchError(
+                "The selected method snapshot has no frozen method identity"
+            )
+        identity = _method_identity(
+            str(selection.get("stable_id", "")),
+            str(selection.get("version", "")),
+        )
+        if (
+            selected_method.get("stable_id") != identity["stable_id"]
+            or selected_method.get("version") != identity["version"]
+        ):
+            raise launch_common.LaunchError(
+                "The selected method snapshot does not match the frozen method identity"
+            )
+        if not str(selected_method.get("catalog_path", "")).strip():
+            raise launch_common.LaunchError(
+                "The selected method snapshot has no published catalog path"
+            )
     if _manifest_schema_version(manifest) >= 3:
         outputs = manifest.get("submission_outputs")
         if not isinstance(outputs, Mapping):
@@ -582,6 +860,13 @@ def _validated_manifest_method_selection(
     if value.get("kind") != identity["kind"]:
         raise launch_common.LaunchError("The frozen scientific object must be a method")
     source = value.get("source")
+    if (
+        int(manifest.get("schema_version", 1)) >= 9
+        and source != "run_specific_user_selection"
+    ):
+        raise launch_common.LaunchError(
+            "New runs require a method chosen by the user for that run"
+        )
     if source == "run_specific_user_selection":
         if any(
             value.get(field) is not None
@@ -692,6 +977,301 @@ def _read_manifest(project_dir: Path, phase_slug: str, run_id: str) -> dict[str,
     _validate_manifest_snapshot_schema(manifest)
     return manifest
 
+
+COMPLETED_METHOD_RESULT_STATUSES = frozenset({"approved", "awaiting_review"})
+COMPLETED_SCIENTIFIC_OUTCOMES = frozenset({"Complete", "Partial"})
+
+
+def _completed_scientific_outcome(run: Mapping[str, Any]) -> str:
+    record = run.get("decision_record")
+    data = record.get("data") if isinstance(record, Mapping) else None
+    outcome = data.get("scientific_outcome") if isinstance(data, Mapping) else None
+    return str(outcome) if outcome in COMPLETED_SCIENTIFIC_OUTCOMES else ""
+
+
+def completed_method_branch_result(
+    project_dir: str | Path,
+    phase_slug: str,
+    method: Mapping[str, Any],
+) -> dict[str, str] | None:
+    """Return the newest intact completed result for one exact method branch."""
+
+    root = Path(project_dir).resolve()
+    stable_id = str(method.get("stable_id", "")).strip()
+    version = str(method.get("version", "")).strip()
+    definition_sha256 = str(method.get("sha256", "")).strip().lower()
+    if (
+        not stable_id
+        or not version
+        or len(definition_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in definition_sha256)
+    ):
+        return None
+    for run in reversed(project_state.get_runs(root, phase_slug)):
+        if (
+            not isinstance(run, Mapping)
+            or str(run.get("status", "")) not in COMPLETED_METHOD_RESULT_STATUSES
+            or not run.get("submitted_at")
+            or not run.get("final_summary")
+        ):
+            continue
+        scientific_outcome = _completed_scientific_outcome(run)
+        if not scientific_outcome:
+            continue
+        run_id = str(run.get("run_id", "")).strip()
+        if not run_id:
+            continue
+        try:
+            manifest = _read_manifest(root, phase_slug, run_id)
+            if (
+                project_state._resolve_slug(phase_slug)
+                in {
+                    launch_common.IDEA_EVALUATION_PHASE,
+                    launch_common.DRAFT_ASSEMBLY_PHASE,
+                }
+                and _manifest_schema_version(manifest) < 11
+            ):
+                continue
+            selection = _validated_manifest_method_selection(manifest)
+            selected_method = manifest.get("snapshots", {}).get("selected_method")
+            if (
+                not isinstance(selection, Mapping)
+                or not isinstance(selected_method, Mapping)
+                or str(selection.get("stable_id", "")) != stable_id
+                or str(selection.get("version", "")) != version
+                or str(selected_method.get("stable_id", "")) != stable_id
+                or str(selected_method.get("version", "")) != version
+                or not hmac.compare_digest(
+                    str(selected_method.get("sha256", "")).lower(),
+                    definition_sha256,
+                )
+                or not project_state.run_integrity_report(root, phase_slug, run_id).get("ok")
+            ):
+                continue
+        except (KeyError, OSError, ValueError, launch_common.LaunchError, project_state.ProjectStateError):
+            continue
+        return {
+            "phase": phase_slug,
+            "run_id": run_id,
+            "status": str(run.get("status", "")),
+            "method_id": stable_id,
+            "method_version": version,
+            "method_sha256": definition_sha256,
+            "scientific_outcome": scientific_outcome,
+        }
+    return None
+
+
+def completed_phase_result(
+    project_dir: str | Path,
+    phase_slug: str,
+) -> dict[str, str] | None:
+    """Return the newest intact completed result for a non-branch phase."""
+
+    root = Path(project_dir).resolve()
+    for run in reversed(project_state.get_runs(root, phase_slug)):
+        if (
+            not isinstance(run, Mapping)
+            or str(run.get("status", "")) not in COMPLETED_METHOD_RESULT_STATUSES
+            or not run.get("submitted_at")
+            or not run.get("final_summary")
+        ):
+            continue
+        scientific_outcome = _completed_scientific_outcome(run)
+        if not scientific_outcome:
+            continue
+        run_id = str(run.get("run_id", "")).strip()
+        if not run_id:
+            continue
+        try:
+            if not project_state.run_integrity_report(root, phase_slug, run_id).get("ok"):
+                continue
+        except (KeyError, OSError, ValueError, project_state.ProjectStateError):
+            continue
+        return {
+            "phase": phase_slug,
+            "run_id": run_id,
+            "status": str(run.get("status", "")),
+            "scientific_outcome": scientific_outcome,
+        }
+    return None
+
+
+def phase_five_branch_readiness(
+    project_dir: str | Path,
+    method: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Check the Phase 1 to Phase 4 results required by Phase 5."""
+
+    requirements: list[dict[str, Any]] = []
+    blockers: list[str] = []
+    for phase_slug, label, branch_specific in (
+        ("01-literature-review", "Phase 1 literature review", False),
+        (project_state.METHOD_DEVELOPMENT_PHASE, "Phase 2 method development", False),
+        (launch_common.IDEA_EVALUATION_PHASE, "Phase 3 theoretical development", True),
+        (launch_common.DRAFT_ASSEMBLY_PHASE, "Phase 4 implementation and experiments", True),
+    ):
+        result = (
+            completed_method_branch_result(project_dir, phase_slug, method)
+            if branch_specific
+            else completed_phase_result(project_dir, phase_slug)
+        )
+        requirements.append({
+            "phase": phase_slug,
+            "label": label,
+            "satisfied": result is not None,
+            "result": result,
+        })
+        if result is None:
+            blockers.append(label)
+    return {
+        "ready": not blockers,
+        "method_id": str(method.get("stable_id", "")).strip(),
+        "method_version": str(method.get("version", "")).strip(),
+        "method_sha256": str(method.get("sha256", "")).strip().lower(),
+        "requirements": requirements,
+        "blockers": blockers,
+    }
+
+def phase_five_required_completed_runs(
+    readiness: Mapping[str, Any],
+) -> dict[str, str]:
+    """Return exact Phase 1 to Phase 4 run IDs from a ready report."""
+
+    expected_requirements = (
+        ("01-literature-review", "Phase 1 literature review", False),
+        (
+            project_state.METHOD_DEVELOPMENT_PHASE,
+            "Phase 2 method development",
+            False,
+        ),
+        (
+            launch_common.IDEA_EVALUATION_PHASE,
+            "Phase 3 theoretical development",
+            True,
+        ),
+        (
+            launch_common.DRAFT_ASSEMBLY_PHASE,
+            "Phase 4 implementation and experiments",
+            True,
+        ),
+    )
+    if (
+        not isinstance(readiness, Mapping)
+        or set(readiness)
+        != {
+            "ready",
+            "method_id",
+            "method_version",
+            "method_sha256",
+            "requirements",
+            "blockers",
+        }
+        or readiness.get("ready") is not True
+        or readiness.get("blockers") != []
+    ):
+        raise launch_common.LaunchError(
+            "Phase 5 readiness is incomplete or malformed"
+        )
+    method_id = readiness.get("method_id")
+    method_version = readiness.get("method_version")
+    method_sha256 = readiness.get("method_sha256")
+    if (
+        not isinstance(method_id, str)
+        or not method_id.strip()
+        or "\x00" in method_id
+        or not isinstance(method_version, str)
+        or not method_version.strip()
+        or "\x00" in method_version
+        or not isinstance(method_sha256, str)
+        or len(method_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in method_sha256)
+    ):
+        raise launch_common.LaunchError(
+            "Phase 5 readiness has invalid method identity metadata"
+        )
+
+    requirements = readiness.get("requirements")
+    if not isinstance(requirements, list) or len(requirements) != len(
+        expected_requirements
+    ):
+        raise launch_common.LaunchError(
+            "Phase 5 readiness must contain exactly one result for each prior phase"
+        )
+    by_phase: dict[str, Mapping[str, Any]] = {}
+    expected_by_phase = {
+        phase_slug: (label, branch_specific)
+        for phase_slug, label, branch_specific in expected_requirements
+    }
+    for requirement in requirements:
+        if (
+            not isinstance(requirement, Mapping)
+            or set(requirement) != {"phase", "label", "satisfied", "result"}
+        ):
+            raise launch_common.LaunchError(
+                "Phase 5 readiness contains an invalid requirement"
+            )
+        phase_slug = requirement.get("phase")
+        expected = (
+            expected_by_phase.get(phase_slug)
+            if isinstance(phase_slug, str)
+            else None
+        )
+        if (
+            not isinstance(phase_slug, str)
+            or expected is None
+            or phase_slug in by_phase
+            or requirement.get("label") != expected[0]
+        ):
+            raise launch_common.LaunchError(
+                "Phase 5 readiness contains a missing, duplicate, or unknown phase"
+            )
+        by_phase[phase_slug] = requirement
+
+    completed: dict[str, str] = {}
+    for phase_slug, _, branch_specific in expected_requirements:
+        requirement = by_phase.get(phase_slug)
+        result = requirement.get("result") if isinstance(requirement, Mapping) else None
+        expected_result_fields = {
+            "phase",
+            "run_id",
+            "status",
+            "scientific_outcome",
+        }
+        if branch_specific:
+            expected_result_fields |= {
+                "method_id",
+                "method_version",
+                "method_sha256",
+            }
+        if (
+            not isinstance(requirement, Mapping)
+            or requirement.get("satisfied") is not True
+            or not isinstance(result, Mapping)
+            or set(result) != expected_result_fields
+            or result.get("phase") != phase_slug
+            or result.get("status") not in COMPLETED_METHOD_RESULT_STATUSES
+            or result.get("scientific_outcome")
+            not in COMPLETED_SCIENTIFIC_OUTCOMES
+            or (
+                branch_specific
+                and (
+                    result.get("method_id") != method_id
+                    or result.get("method_version") != method_version
+                    or result.get("method_sha256") != method_sha256
+                )
+            )
+        ):
+            raise launch_common.LaunchError(
+                f"Phase 5 readiness has no usable completed result for {phase_slug}"
+            )
+        run_id = result.get("run_id")
+        if not isinstance(run_id, str) or not run_id.strip() or "\x00" in run_id:
+            raise launch_common.LaunchError(
+                f"Phase 5 readiness has an invalid run ID for {phase_slug}"
+            )
+        completed[phase_slug] = run_id.strip()
+    return completed
 
 def _verify_frozen_inputs(
     project_dir: Path,

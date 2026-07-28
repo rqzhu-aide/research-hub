@@ -61,7 +61,7 @@ def _verify_completed_round_artifacts(
     *,
     before_round: int | None = None,
 ) -> None:
-    """Verify completed evidence before it becomes input to later work."""
+    """Verify completed role reports and supporting evidence before reuse."""
 
     root = project_dir.resolve()
     for round_ in run.get("rounds", []):
@@ -71,45 +71,113 @@ def _verify_completed_round_artifacts(
         if not round_.get("completed"):
             continue
         outputs = [str(item) for item in round_.get("outputs", [])]
-        artifacts = [
-            item for item in round_.get("artifacts", []) if isinstance(item, Mapping)
-        ]
-        if sorted(outputs) != sorted(str(item.get("path", "")) for item in artifacts):
-            raise launch_common.LaunchError(f"Round {number} artifact records do not match its outputs")
-        for artifact in artifacts:
-            raw_path = str(artifact.get("path", ""))
-            raw_candidate = root / raw_path
-            if launch_common._path_uses_symlink_below(raw_candidate, root):
-                raise launch_common.LaunchError(
-                    f"Round {number} artifact path uses a symbolic link: {raw_path}"
-                )
-            try:
-                candidate = raw_candidate.resolve(strict=True)
-                candidate.relative_to(root)
-            except OSError as exc:
-                raise launch_common.LaunchError(
-                    f"Round {number} artifact is missing: {raw_path}"
-                ) from exc
-            except ValueError as exc:
-                raise launch_common.LaunchError(f"Round {number} artifact escaped the project") from exc
-            contents = launch_common._bounded_bytes(
-                candidate,
-                label=f"round {number} artifact",
-                max_bytes=project_state.MAX_RUN_ARTIFACT_BYTES,
+        raw_artifacts = round_.get("artifacts", [])
+        if not isinstance(raw_artifacts, list) or any(
+            not isinstance(item, Mapping) for item in raw_artifacts
+        ):
+            raise launch_common.LaunchError(
+                f"Round {number} role-report artifact inventory is invalid"
             )
-            try:
-                recorded_size = int(artifact.get("size", -1))
-            except (TypeError, ValueError) as exc:
-                raise launch_common.LaunchError(
-                    f"Round {number} artifact has an invalid size record: {raw_path}"
-                ) from exc
-            if len(contents) != recorded_size or hashlib.sha256(contents).hexdigest() != str(
-                artifact.get("sha256", "")
-            ).lower():
-                raise launch_common.LaunchError(
-                    f"Round {number} artifact changed after completion: {raw_path}"
-                )
+        artifacts = list(raw_artifacts)
+        if (
+            len(artifacts) != len(outputs)
+            or sorted(outputs)
+            != sorted(str(item.get("path", "")) for item in artifacts)
+        ):
+            raise launch_common.LaunchError(
+                f"Round {number} role-report records do not match its outputs"
+            )
 
+        raw_supporting = round_.get("supporting_artifacts", [])
+        if not isinstance(raw_supporting, list) or any(
+            not isinstance(item, Mapping) for item in raw_supporting
+        ):
+            raise launch_common.LaunchError(
+                f"Round {number} supporting artifact inventory is invalid"
+            )
+        supporting = list(raw_supporting)
+        if len(supporting) > project_state.MAX_ROUND_SUPPORTING_FILES:
+            raise launch_common.LaunchError(
+                f"Round {number} contains too many supporting artifacts"
+            )
+        supporting_paths = [str(item.get("path", "")) for item in supporting]
+        if (
+            len(set(supporting_paths)) != len(supporting_paths)
+            or set(supporting_paths) & set(outputs)
+        ):
+            raise launch_common.LaunchError(
+                f"Round {number} supporting artifact paths are not distinct"
+            )
+        role_directories = {
+            (root / output).parent.resolve(strict=False) for output in outputs
+        }
+        if supporting and len(role_directories) != 1:
+            raise launch_common.LaunchError(
+                f"Round {number} supporting artifacts have no unique round directory"
+            )
+        round_directory = next(iter(role_directories), None)
+        supporting_size = 0
+
+        for artifact_kind, records in (
+            ("role report", artifacts),
+            ("supporting artifact", supporting),
+        ):
+            for artifact in records:
+                if artifact_kind == "supporting artifact" and set(artifact) != {
+                    "path",
+                    "sha256",
+                    "size",
+                }:
+                    raise launch_common.LaunchError(
+                        f"Round {number} supporting artifact record is invalid"
+                    )
+                raw_path = str(artifact.get("path", ""))
+                raw_candidate = root / raw_path
+                if launch_common._path_uses_symlink_below(raw_candidate, root):
+                    raise launch_common.LaunchError(
+                        f"Round {number} {artifact_kind} path uses a symbolic link: "
+                        f"{raw_path}"
+                    )
+                try:
+                    candidate = raw_candidate.resolve(strict=True)
+                    candidate.relative_to(root)
+                    if artifact_kind == "supporting artifact":
+                        candidate.relative_to(round_directory)
+                except OSError as exc:
+                    raise launch_common.LaunchError(
+                        f"Round {number} {artifact_kind} is missing: {raw_path}"
+                    ) from exc
+                except (TypeError, ValueError) as exc:
+                    raise launch_common.LaunchError(
+                        f"Round {number} {artifact_kind} escaped its allowed directory"
+                    ) from exc
+                contents = launch_common._bounded_bytes(
+                    candidate,
+                    label=f"round {number} {artifact_kind}",
+                    max_bytes=project_state.MAX_RUN_ARTIFACT_BYTES,
+                )
+                try:
+                    recorded_size = int(artifact.get("size", -1))
+                except (TypeError, ValueError) as exc:
+                    raise launch_common.LaunchError(
+                        f"Round {number} {artifact_kind} has an invalid size record: "
+                        f"{raw_path}"
+                    ) from exc
+                if (
+                    len(contents) != recorded_size
+                    or hashlib.sha256(contents).hexdigest()
+                    != str(artifact.get("sha256", "")).lower()
+                ):
+                    raise launch_common.LaunchError(
+                        f"Round {number} {artifact_kind} changed after completion: "
+                        f"{raw_path}"
+                    )
+                if artifact_kind == "supporting artifact":
+                    supporting_size += len(contents)
+        if supporting_size > project_state.MAX_ROUND_SUPPORTING_BYTES:
+            raise launch_common.LaunchError(
+                f"Round {number} supporting artifacts exceed the aggregate safety limit"
+            )
 
 def _verify_task_briefs(
     project_dir: Path,
@@ -314,31 +382,57 @@ def _dispatch_task(
     context_lines = []
     if reviewer_substage != "independent":
         for item in snapshots.get("summaries", []):
-            trust = (
-                "trusted current input"
-                if item.get("trusted", True)
-                else "historical baseline"
-            )
+            if item.get("trusted"):
+                evidence_label = "accepted current evidence"
+            elif item.get("usable"):
+                evidence_label = "completed same-branch evidence, not an accepted baseline"
+            else:
+                evidence_label = (
+                    f"{item.get('evidence_status', 'historical')} advisory evidence"
+                )
             context_lines.append(
-                f"- {item['phase']} run {item['run_id']} ({trust}): {item['path']}"
+                f"- Summary, {item['phase']} run {item['run_id']} "
+                f"({item.get('kind', 'context')}; {evidence_label}; "
+                f"SHA-256 {item['sha256']}): {item['path']}"
             )
-    prior_outputs: list[str] = []
-    prior_artifacts: list[Mapping[str, Any]] = []
+            for report in item.get("discussion", []):
+                context_lines.append(
+                    f"  - Prior role report, round {report.get('round')}, "
+                    f"{report.get('role') or 'role not recorded'} "
+                    f"(SHA-256 {report.get('sha256', 'not recorded')}): "
+                    f"{report.get('path')}"
+                )
+            for artifact in item.get("supporting_artifacts", []):
+                context_lines.append(
+                    f"  - Frozen supporting artifact, round {artifact.get('round')} "
+                    f"(SHA-256 {artifact.get('sha256', 'not recorded')}): "
+                    f"{artifact.get('path')}"
+                )
+            for artifact in item.get("protocol_artifacts", []):
+                context_lines.append(
+                    f"  - Frozen {artifact.get('kind', 'protocol artifact')} "
+                    f"({artifact.get('purpose', 'sealed protocol evidence')}; "
+                    f"SHA-256 {artifact.get('sha256', 'not recorded')}): "
+                    f"{artifact.get('path')}"
+                )
+    prior_lines: list[str] = []
     for prior_round in run.get("rounds", [])[: round_n - 1]:
-        prior_outputs.extend(str(item) for item in prior_round.get("outputs", []))
-        prior_artifacts.extend(
-            item
-            for item in prior_round.get("artifacts", [])
-            if isinstance(item, Mapping)
-        )
-    if reviewer_substage == "contextual":
-        prior_text = "\n".join(
-            f"- {project_dir / str(item.get('path', ''))} "
-            f"(SHA-256 {item.get('sha256', 'not recorded')})"
-            for item in prior_artifacts
-        )
-    else:
-        prior_text = "\n".join(f"- {project_dir / item}" for item in prior_outputs)
+        prior_number = int(prior_round.get("n", 0) or 0)
+        for report in prior_round.get("artifacts", []):
+            if isinstance(report, Mapping):
+                prior_lines.append(
+                    f"- Role report, round {prior_number}: "
+                    f"{project_dir / str(report.get('path', ''))} "
+                    f"(SHA-256 {report.get('sha256', 'not recorded')})"
+                )
+        for artifact in prior_round.get("supporting_artifacts", []):
+            if isinstance(artifact, Mapping):
+                prior_lines.append(
+                    f"- Supporting artifact, round {prior_number}: "
+                    f"{project_dir / str(artifact.get('path', ''))} "
+                    f"(SHA-256 {artifact.get('sha256', 'not recorded')})"
+                )
+    prior_text = "\n".join(prior_lines)
     output = launch_common._contained_file_destination(
         _planned_task_output(manifest, round_n, role, task_kind),
         project_dir,
@@ -380,7 +474,8 @@ def _dispatch_task(
         project_dir, manifest, run, round_n, role, task_kind
     )
     method_selection_block = launch_prompts._method_selection_prompt_block(
-        manifest.get("method_selection")
+        manifest.get("method_selection"),
+        manifest.get("snapshots", {}).get("selected_method"),
     )
 
     if proof_audit_stage:
@@ -526,7 +621,7 @@ User direction for the run:
 Research lead directive for this round:
 {directive}
 
-Approved context and prior baseline snapshots:
+Frozen prior results and discussion:
 {chr(10).join(context_lines) if context_lines else '- None available'}
 
 Prior-round artifacts that must be read for critique or handoff:
@@ -551,10 +646,19 @@ When the report exists, complete this kanban task with a concise handoff summary
 """
     review_bundle_record: dict[str, str] | None = None
     task_workspace = project_dir
-    if (
+    manifest_schema = launch_manifest._manifest_schema_version(manifest)
+    production_workspace = bool(
+        phase_slug in {
+            launch_common.IDEA_EVALUATION_PHASE,
+            launch_common.DRAFT_ASSEMBLY_PHASE,
+        }
+        and manifest_schema >= 11
+    )
+    protocol_workspace = bool(
         launch_manifest._manifest_declares_protocol_checkpoint(manifest)
-        and launch_manifest._manifest_schema_version(manifest) >= 7
-    ):
+        and manifest_schema >= 7
+    )
+    if production_workspace or protocol_workspace:
         if phase_four_split and task_kind == "protocol":
             declaration = manifest["protocol_checkpoint"]
             workspace_directory = Path(
@@ -563,12 +667,28 @@ When the report exists, complete this kanban task with a concise handoff summary
             workspace_label = "Phase 04 isolated protocol workspace"
         else:
             workspace_directory = _planned_output(manifest, round_n, role).parent
-            workspace_label = "Phase 04 write-limited round workspace"
+            workspace_label = "Phase 3 or Phase 4 write-limited round workspace"
         task_workspace = launch_common._ensure_contained_directory(
             workspace_directory,
             project_dir,
             label=workspace_label,
         )
+        if production_workspace and not (
+            phase_four_split and task_kind == "protocol"
+        ):
+            task_brief += f"""
+
+## Required supporting-file location
+
+Write every code file, data file, table, figure, proof supplement, or other
+supporting artifact created by this task inside the assigned round workspace:
+`{task_workspace}`
+
+You may read the sealed inputs named above, but do not write supporting files
+elsewhere in the project. Research Hub inventories and seals this round
+workspace when the stage completes. Files written elsewhere are outside the
+scientific record for this run.
+"""
     if role == launch_common.PAPER_REVIEWER_ROLE:
         task_workspace, brief_path, brief_hash, review_bundle_record = (
             launch_prompts._prepare_review_bundle(
@@ -720,13 +840,14 @@ def _show_task(manifest: Mapping[str, Any], task_id: str) -> dict[str, Any]:
         raise launch_common.LaunchError(f"Hermes returned invalid JSON for task {task_id}") from exc
 
 
+
 def _complete_round_checked(
     project_dir: str | Path,
     phase_slug: str,
     run_id: str | int,
     round_n: int,
     outputs: Sequence[str | Path],
-) -> None:
+) -> int:
     project_dir = Path(project_dir).resolve()
     run = project_state.get_run(project_dir, phase_slug, run_id)
     stable_id = str(run["run_id"])
@@ -789,6 +910,21 @@ def _complete_round_checked(
     supplied = {Path(output).resolve() for output in outputs}
     if supplied != expected:
         raise launch_common.LaunchError("Round outputs do not match the frozen role output plan")
-    project_state.complete_round(
-        project_dir, phase_slug, run_id, round_n, list(outputs)
-    )
+    if phase_slug in {
+        launch_common.IDEA_EVALUATION_PHASE,
+        launch_common.DRAFT_ASSEMBLY_PHASE,
+    }:
+        supporting_count = project_state.complete_round(
+            project_dir,
+            phase_slug,
+            run_id,
+            round_n,
+            list(outputs),
+            discover_supporting=True,
+        )
+    else:
+        project_state.complete_round(
+            project_dir, phase_slug, run_id, round_n, list(outputs)
+        )
+        supporting_count = 0
+    return int(supporting_count or 0)

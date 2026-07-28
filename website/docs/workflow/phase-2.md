@@ -6,190 +6,252 @@ slug: /workflow/phase-2
 
 # Phase 2: Method Development
 
-Brainstorm **genuinely new ideas** — new mechanisms, frameworks, and insights that address the gaps identified in Phase 1. Propose multiple candidate methods, then select one for theoretical development.
+## Purpose
 
-## At a glance
+Phase 2 builds and maintains a catalog of candidate methods. The team develops
+ideas that respond to the literature, states each method precisely enough for
+formal study, and records credible alternatives rather than forcing a single
+winner.
 
-| | |
+A valid run publishes the updated catalog. It does not select a method or start
+another phase. You choose an active method only when you start Phase 3 or Phase
+4.
+
+A current Phase 1 literature result is the preferred basis for this phase. If
+you proceed without one, the team should state which novelty and differentiation
+questions remain unsupported.
+
+## How the Phase 2 page is organized
+
+The page separates the current scientific record from instructions for new
+work.
+
+### Upper panel: current methods
+
+The upper panel always shows the published method catalog. It is empty in a new
+project until the first valid Phase 2 run publishes.
+
+For each method, the catalog shows its stable number, name, version, status, and
+definition. A method may be:
+
+- **recommended**, **viable**, or **frontier**, all of which remain active and
+  can be chosen for a Phase 3 or Phase 4 run;
+- **retired**, which remains visible as history but cannot be chosen for a new
+  Phase 3 or Phase 4 run.
+
+`recommended` records the research lead's assessment. There may be zero, one,
+or several recommended methods. It is not a user selection and does not bind a
+later phase.
+
+The published catalog remains visible and unchanged while a Phase 2 run is in
+progress.
+
+### Lower panel: instructions and launch
+
+Use the lower panel to state the scientific question for a new run or rerun,
+choose the number of rounds, and launch the work. The instructions should say
+what needs to be added, reconsidered, or compared. Starting the run does not
+select a method and does not start Phase 3 or Phase 4.
+
+## What you decide before launch
+
+State the design problem the team should address:
+
+- the research question, estimand, prediction target, or biological objective;
+- the gap or obstacle established by the literature review;
+- the statistical or scientific advance a useful method should enable;
+- required invariances, validity conditions, interpretability, or uncertainty
+  guarantees;
+- practical constraints such as sample size, data structure, computation,
+  memory, numerical stability, or experimental feasibility;
+- whether the run should search broadly or focus on named catalog methods.
+
+Phase 2 uses 2 to 3 rounds, with 2 as the default. In round 1, the roles generate
+ideas independently. A later round is useful for comparing mechanisms,
+combining compatible ideas, and addressing a named weakness.
+
+On a rerun, refer to existing candidates by their stable method number. For
+example:
+
+- "Reassess method #3 under dependent observations and state whether its
+  estimand remains identifiable."
+- "Develop alternatives that retain the biological interpretation of method #2
+  but reduce its computational cost."
+- "Compare methods #1 and #4 with the newly identified direct prior work."
+
+## What the team does
+
+### Independent proposals
+
+Each role initially proposes several methods without reading the other roles'
+proposals:
+
+- **The theorist** develops mathematical mechanisms, representations,
+  identities, or frameworks. Each serious idea should have a precise core
+  definition, explicit assumptions, and a coherent reason it could work.
+- **The research lead** develops the scientific contribution and positioning.
+  The lead asks what the method would make possible, why the result would
+  matter, and how it differs from the closest literature.
+- **The data analyst** develops the algorithmic and computational structure.
+  The analyst describes inputs, operations, outputs, rough complexity,
+  numerical risks, and an empirical setting in which the method could be
+  evaluated.
+
+### Comparison and refinement
+
+In later rounds, the roles compare their proposals. They may combine compatible
+ideas, sharpen definitions, identify contradictions, and propose new candidates
+prompted by the comparison. The goal is a stronger catalog, not artificial
+consensus.
+
+### Synthesis
+
+The research lead organizes the full idea set and compares the methods using:
+
+- novelty relative to the Phase 1 evidence;
+- mathematical and statistical coherence;
+- tractability of the required theory;
+- computational feasibility;
+- potential scientific value;
+- empirical testability;
+- material assumptions and failure modes.
+
+The lead may mark methods as recommended, viable, frontier, or retired, but
+does not choose one for you. The final recommendation concerns the next action:
+proceed to Phase 3 or Phase 4, rerun Phase 2, return to Phase 1, or defer
+further work.
+
+## How a run updates the catalog
+
+Each run works on an isolated copy of the complete published catalog, including
+retired methods. This prevents unfinished agent work from changing what you see
+or what another phase can use.
+
+When the run ends:
+
+| Scientific outcome | Effect on the catalog |
 |---|---|
-| **Pattern** | Parallel |
-| **Participants** | Theorist, Research Lead, Data Analyst |
-| **Rounds** | 2–3 (default 2) |
-| **Output** | `ideas/methods/` |
-| **Prerequisites** | Phase 1 (Literature Review) |
+| **Complete** | The validated staged catalog becomes the current published catalog. It is ready to satisfy the normal Phase 3 and Phase 4 prerequisite. |
+| **Partial** | The validated staged catalog is published, with its scientific gaps recorded. Starting Phase 3 or Phase 4 requires an explicit prerequisite override. |
+| **Failed** | The staged catalog is not published. The earlier published catalog remains unchanged. |
+| **Cancelled** | The staged catalog is not published. The earlier published catalog remains unchanged. |
 
-## How it works
+For an initial Failed or cancelled run, the published catalog remains empty.
 
-### Round 1: Independent brainstorm
+A Complete or Partial result is published automatically after validation. If
+the catalog needs improvement, give focused instructions and run Phase 2 again.
+Publication does not select a method or start another phase.
 
-Each role proposes multiple ideas from their own angle, **without reading each other's work**:
+## Evidence you receive
 
-- **Theorist**: new **mathematical mechanisms** — new dynamics, geometric perspectives, algebraic identities, theoretical frameworks from other fields. At least 2–3 ideas.
-- **Research Lead**: new **contributions and positioning** — what scientific value does each idea offer? How does it position against the closest prior work?
-- **Data Analyst**: **computational structures** — algorithms that could implement the mechanisms, their cost, and infrastructure needs.
+The published catalog and run summary should provide:
 
-### Round 2: Cross-pollination
+- a precise mathematical definition or algorithmic specification for each
+  serious candidate;
+- the proposed novelty and exact relation to the closest literature;
+- required assumptions and conditions of validity;
+- statistical targets, invariances, or guarantees the method is intended to
+  support;
+- computational requirements, likely failure modes, and implementation risks;
+- testable empirical or biological implications where applicable;
+- questions that a Phase 3 theoretical run or Phase 4 empirical run would need
+  to resolve;
+- disagreements among the roles;
+- a comparison with the earlier published catalog;
+- methods retained, revised, added, merged, or retired;
+- proposed changes to the scientific record;
+- one recommended next action: **proceed**, **rerun**, **return to Phase 1**, or
+  **defer**, with reasons.
 
-Roles read each other's ideas and:
-- Identify whether mechanisms can **combine** (e.g., a theorist's mechanism + a data scientist's computational approach → a new composed method)
-- **Refine** ideas based on cross-role insights
-- Propose **new ideas** sparked by other perspectives
-- Identify mathematical issues (e.g., "this parametrization produces zero drift")
+The catalog may contain conjectures. They should be labeled as conjectures and
+separated from facts inherited from the literature or already established
+results.
 
-## Per-role responsibilities
+For the underlying method and run records, see
+[Files and research records](../reference/files-and-records).
 
-### Theorist
-For each idea, state:
-1. The **core mathematical novelty** (new dynamical structure, geometric insight, algebraic identity)
-2. The **target and obstacle** — what quantity matters and why existing formulations fail
-3. The **unique position** — what this enables that nothing else can
-4. **Logical reasoning** with minimal notation (full proof not required at this stage — the idea needs to be sound, not rigorous)
-5. **Why it's mathematically interesting**
+## Review checklist
 
-### Research Lead
-- What **scientific value** does each idea offer?
-- How does it **position** against the closest prior work?
-- What's the **strongest defensible claim** if the method works?
+Before using a method or planning a rerun, ask:
 
-### Data Analyst
-- What **algorithms** could implement this?
-- What's the **computational cost**?
-- What **infrastructure** is needed?
+- [ ] Is the scientific question, estimand, or prediction target explicit?
+- [ ] Does each serious candidate contain enough mathematics or algorithmic
+      detail to distinguish it from a general research theme?
+- [ ] Are assumptions stated separately from claimed consequences?
+- [ ] Is the novelty argument tied to specific Phase 1 evidence?
+- [ ] Does the proposed method preserve the quantities or structures it is
+      intended to preserve?
+- [ ] Are identifiability, approximation, dependence, missingness, or
+      distributional conditions addressed when relevant?
+- [ ] Are computation, memory, numerical stability, data requirements, and
+      implementation risks plausible?
+- [ ] For a biological application, does the method respect the measurement
+      process, biological variability, study design, and intended
+      interpretation?
+- [ ] Are central claims stated as testable theoretical or empirical questions?
+- [ ] Are important counterexamples and failure regimes visible?
+- [ ] Are active methods compared on common criteria without hiding credible
+      alternatives?
+- [ ] If the outcome is Partial, are the missing work and its consequence for
+      Phase 3 or Phase 4 explicit?
 
-## Output: the method menu
+## What you can do after publication
 
-The lead publishes one markdown file per retained idea to `ideas/methods/`:
+### Start Phase 3 or Phase 4 with an active method
 
-```
-ideas/
-├── methods/
-│   ├── _registry.yaml                    ← permanent numbering (see below)
-│   ├── spectral-graph-coupling.md        ← status: recommended
-│   ├── nonreversible-composition.md      ← status: viable
-│   ├── multi-scale-rate-transfer.md      ← status: viable
-│   ├── kernel-metric-coupling.md         ← status: frontier
-│   └── cheeger-optimal-dn.md             ← status: retired
-│
-└── run/
-    └── 01/                               ← run outputs (round files)
-        ├── .directives/
-        ├── round-01/
-        │   ├── theorist.md
-        │   ├── research_lead.md
-        │   └── data_scientist.md
-        └── round-02/
-            └── ...
-```
+Open Phase 3 or Phase 4 and choose any active method in that phase's launch
+form. Both pages show the same Phase 2 catalog as a read-only list. Research
+Hub freezes the method's stable identity and version for the run. Choosing a
+method in one phase does not change the catalog or start the other phase.
 
-### Method file format
+If the current Phase 2 publication is Partial, either launch form requires you
+to acknowledge the incomplete prerequisite explicitly. You can instead rerun
+Phase 2 to resolve the missing work before developing theory or experiments.
 
-Each method file contains rigorous mathematical definitions:
+### Rerun Phase 2
 
-```markdown
----
-stable_id: spectral-graph-coupling
-number: 1
-version: v1
-label: Spectral graph coupling
-status: recommended
----
+Rerun when the catalog needs new ideas, a sharper definition, a revised
+literature comparison, or a different assessment. The new run starts from the
+complete current catalog and can:
 
-# Spectral graph coupling
+- retain a method without changing it;
+- revise a method and record a new version;
+- add a genuinely distinct method;
+- merge methods that represent the same mechanism;
+- retire a method with a scientific reason.
 
-## Mathematical definition
+Stable method numbers are never reused. Retired and merged identities remain in
+the catalog so that earlier work stays interpretable.
 
-$$D_N(X) = L_G \otimes K$$
+### Retire an individual method
 
-where $L_G$ is the graph Laplacian of a sparse expander graph (degree
-$d = O(\log N)$) and $K \in \mathbb{S}_{++}^d$ is a constant
-positive-definite preconditioner.
+You can retire an active method directly from the upper catalog when no project
+run is active. Retirement removes it from the Phase 3 and Phase 4 choices but
+does not delete its definition, identity, earlier runs, or downstream
+artifacts.
 
-**Key property**: The Fiedler eigenvalue $\sigma_2(L_G)$ acts as a
-multiplicative accelerator. Conjectured rate bound:
-$\lambda \geq \rho \cdot \sigma_2(L_G) \cdot \lambda_{\min}(K)$
-under strong log-concavity $-\nabla^2 \log p \succeq \rho I_d$.
-```
+Retirement can change the interpretation of later work. Completed downstream
+results bound to that method remain available as history, but they no longer
+correspond to an active catalog choice. Inspect the affected work and decide
+whether to retain it for comparison or rerun the relevant phases.
 
-The lead selects exactly one method as `status: recommended` — the proposed primary mechanism for Phase 3. Other methods carry `status: viable` (solid, ready for Phase 3) or `status: frontier` (speculative, high-risk/high-reward).
+### Defer
 
-## Method numbering
+You can leave the catalog unchanged and take no further action. Publication
+does not start another phase.
 
-Every method gets a **permanent integer number** that survives retirement and merge. This gives each method a stable, human-friendly handle.
+## Rerun guidance
 
-### The registry file
+Use a rerun to answer a specific design question, not simply to make the catalog
+larger. Ask the team to compare against the current publication and explain:
 
-`ideas/methods/_registry.yaml` is the single source of truth:
+- what changed in the literature, target, or constraints;
+- which methods were retained, revised, added, merged, or retired;
+- why each material status or version changed;
+- which claims remain unresolved;
+- whether the catalog is ready for Phase 3 and Phase 4, or should be improved
+  again.
 
-```yaml
-next_number: 8
-entries:
-  - number: 1
-    stable_id: spectral-graph-coupling
-    label: Spectral graph coupling
-    status: recommended
-    added_in_run: f14ad9b2-...
-  - number: 4
-    stable_id: cheeger-optimal-dn
-    label: Cheeger-optimal D_N
-    status: retired
-    added_in_run: f14ad9b2-...
-    retired_in_run: 9bc360f2-...
-```
-
-### Rules
-
-- **Numbers never get reused.** A retired or merged method keeps its number. `next_number` only increases. Gaps are never filled.
-- **Every method file has a `number:` field** in frontmatter matching the registry.
-- **Users refer to methods by number**: "#1 Spectral graph coupling", "#5 Kernel-metric coupling". The number is the method's identity for the life of the project — names can drift, status can change, but "#4" always means the same method.
-
-This is the "jersey number" principle: once assigned, the number is permanent.
-
-## Reruns
-
-Phase 2 is the most complex phase to rerun. The rerun protocol includes four operations:
-
-### 1. Re-evaluate existing methods
-
-Every existing method is re-assessed against four criteria:
-1. **Novelty** — is it genuinely new?
-2. **Tractability** — can it be proved with current tools?
-3. **Acceleration potential** — does it actually offer improvement?
-4. **Differentiation** — is it fundamentally different from prior work?
-
-### 2. Retire weak methods
-
-A method is **retired** (`status: retired`) if **both** conditions hold:
-- Scores **Weak or Insufficient** on 2+ of the four criteria
-- Has **no downstream records** — never evaluated in Phase 3, never drafted in Phase 4
-
-A method that has already been evaluated or implemented downstream is **never retired** — it's part of the project's history.
-
-When retiring: set `status: retired` in the method file, add a `## Retirement reason` section explaining which criteria failed, and update the registry with `retired_in_run`.
-
-### 3. Merge duplicate methods
-
-If two methods are **substantially identical** (same core mechanism, same math, same unique position — just worded differently), merge them:
-
-1. **Survivor**: prefer the method with downstream records. If neither has any, prefer the more complete definition. If tied, alphabetical `stable_id`.
-2. **Merge files**: copy unique content from the absorbed file into the survivor. Add a `## Merged from` section.
-3. **Downstream records stay sealed**: if the absorbed method was run in Phase 3/4/5, those artifacts stay in place. Note the provenance in the survivor's `## Merged from` section.
-4. **Retire the absorbed file**: `status: retired` with reason `merged into <survivor_stable_id>`.
-
-A merge is for **the same mechanism described differently** — not for methods that are merely related or composable.
-
-### 4. Add new methods
-
-The lead can also propose **new methods** based on the updated literature library. New methods get the next available number from the registry.
-
-### What stays sealed
-
-Prior run outputs (`ideas/run/01/`, `ideas/run/02/`) are never modified. The new run writes to `ideas/run/03/`, etc. Method files in `ideas/methods/` are updated in place (status changes, new versions) but never deleted.
-
-## What Phase 2 produces for Phase 3
-
-The approved summary tells Phase 3:
-- The **selected method** (the `recommended` one) and its mathematical definition
-- The full **method menu** (all active methods with their status)
-- Any **mathematical issues** found during brainstorming (e.g., "gradient-orthogonal A_N produces zero drift")
-
-Phase 3 takes the selected method and develops its theory rigorously. The user chooses which method to evaluate — they're not bound by the recommendation.
+While the rerun is active, the current published catalog remains available. A
+Complete or Partial result replaces it only after validation; a Failed or
+cancelled run leaves it intact.

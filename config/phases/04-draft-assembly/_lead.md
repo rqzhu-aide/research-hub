@@ -1,103 +1,136 @@
-# Lead Instructions: Implementation & Experiments
+# Lead Instructions: Implementation and Experiments
 
-Coordinate the implementation and experimental validation phase. Your job is to
-ensure experiments are pre-specified, honestly run, and that the results are
-synthesized with integrity.
+Coordinate a fixed three-stage empirical run for the method chosen by the user.
+The order is data analyst, theorist, research lead. The analyst does the primary
+implementation and experimental work, the theorist audits it, and the lead
+reconciles the evidence.
 
-## Step 1: Read prior context
+## Step 1: Establish the branch, scope, and prior context
+
 Read:
-- `setting.md`
-- the approved Phase 03 summary (proved theorems and rate bounds)
-- the approved Phase 02 summary (method definition)
-- the approved Phase 01 summary (literature, for baselines)
-- prior implementation runs for the selected method (under `branches/<stable_id>/`)
 
-**This is a rerun.** When prior outputs exist for the
-selected method (under `branches/<stable_id>/run/`), treat this run as an **audit and refinement** of that prior
-material, not a clean restart:
+- `setting.md`;
+- the published Phase 2 summary and canonical method definition;
+- the Phase 1 literature assessment, including relevant baselines;
+- every frozen prior same-branch Phase 3 and Phase 4 summary and discussion
+  report enumerated in the run prompt.
 
-1. **Audit first.** Read every prior round output for this method. For each
-   existing section, identify: what's correct, what's incomplete, what's
-   wrong, what's missing. Write the audit findings into the report.
-2. **Fix in place.** Correct errors, fill gaps, and tighten claims in the
-   existing material. Do not discard correct prior work — build on it.
-3. **Add new material.** Extend with additional experiments, baselines,
-   targets, or analysis that the prior run lacked (e.g., incorporate the
-   updated literature library at `references/papers/`, test larger N, add
-   comparisons the prior run missed).
-4. **Never replace.** Prior outputs are sealed history. Write new rounds into
-   the new run directory; the prior run's files stay intact. The final summary
-   must reference both the prior and new material, noting what changed.
+Verify the selected stable ID, version, definition path, and SHA-256 digest. If
+they are missing or inconsistent, report a launch-integrity failure. No role may
+choose another method or edit the Phase 2 catalog.
 
-## Step 2: Round 1 — pre-specify and implement
-Dispatch tasks:
+Phase 3 is optional context. A Phase 4 run may begin directly from the Phase 2
+definition. When same-branch Phase 3 results exist, use their assumptions,
+theorems, bounds, and open questions. When they do not exist, do not infer a
+missing guarantee.
 
-1. **You (lead)**: write the experiment protocol. State:
-   - What metrics will be computed (ESS/s, IAT, KL divergence to target, etc.)
-   - What comparisons (which baselines, which parameter settings)
-   - What result would **support** the theoretical predictions
-   - What result would **contradict** them
-   - What targets will be tested (Gaussian, mixture, banana, etc.)
+Give every role the complete frozen same-branch context named in the prompt,
+including prior summaries and role reports from both sibling phases. Do not
+import an unlisted artifact or material from another branch. Prior files are
+sealed and the current run writes only to its new run directory.
 
-2. **Data analyst**: implement the method in code. Run diagnostic checks first
-   (known-answer cases, invariants). Then run initial experiments.
+## Step 2: Interpret the selected run mode
 
-3. **Theorist**: independently check the implementation against the Phase 3
-   mathematical definition. Does the code compute what the theory describes?
+The run mode changes empirical scope only:
 
-## Step 3: Round 2 — full benchmark + audit
-1. **Data analyst**: run the full benchmark study based on the lead's protocol.
-   Produce tables and figures with real measured data.
+- **Preliminary**: a runnable implementation, protocol, focused diagnostics, and
+  a small study that establishes basic numerical credibility.
+- **Comprehensive**: a full prespecified evaluation with strong baselines,
+  multiple settings, sensitivity analysis, uncertainty, tables, figures, and
+  complete reproducibility information.
 
-2. **Theorist**: audit the results against the proved rate bounds from Phase 3.
-   Does the measured spectral gap satisfy the proved lower bound? If not, why?
+Both modes use the same role order. Either may be launched directly after Phase
+2. A comprehensive run does not require a preliminary run. If prior same-branch
+code exists, require the analyst to audit and reuse the supported parts when
+appropriate.
 
-3. **You (lead)**: synthesize. What was validated? What was challenged? What
-   remains open?
+## Step 3: Stage 1, data analyst
 
-## Step 4: Final synthesis
-Write the HTML summary. Present:
+Assign the analyst the selected definition and all frozen prior context. The
+analyst must first record a study protocol with hypotheses, outcomes, baselines,
+settings, sample sizes, replications, uncertainty measures, stopping rules, and
+success or failure criteria. Complete the protocol checkpoint before the analyst
+executes the main result-producing work.
 
-1. **Experiment protocol** — what was tested and why.
-2. **Diagnostic results** — did the sanity checks pass?
-3. **Benchmark results** — the key numbers, with uncertainty.
-4. **Theory-experiment agreement** — do the measured rates match the proved
-   bounds?
-5. **What worked and what didn't** — honest assessment.
+Then require the analyst to:
 
-6. **Readiness assessment and recommendation.** Evaluate explicitly:
+- implement or verify the selected method in runnable code;
+- run appropriate known-answer, invariant, data-integrity, numerical, and
+  reproducibility diagnostics;
+- complete the selected preliminary or comprehensive scope;
+- record actual measurements, uncertainty, failures, and negative results;
+- identify all protocol deviations and exploratory analyses;
+- provide exact code, data, figure, table, and command paths.
 
-   a. **Are the results sufficient to proceed to Phase 05?** Does the evidence
-      support the method's claims? Are the experiments complete enough to write
-      the paper? If yes, recommend proceeding and state what the paper should
-      emphasize.
+## Step 4: Stage 2, theorist
 
-   b. **Do the experiments need improvement before Phase 05?** If the experiments
-      are incomplete, the diagnostics failed, or the results are ambiguous,
-      recommend rerunning this phase with a specific focus (e.g., "run additional
-      targets," "test at larger N," "fix the discretization instability"). State
-      exactly what needs to be tested.
+Give the theorist the same frozen context and the completed current analyst
+report and artifacts. Require an audit of:
 
-   c. **Should a previous phase be rerun?** If the experiments reveal a theory
-      gap (e.g., the proved bound doesn't match reality, the method's scope was
-      mischaracterized), recommend rerunning Phase 03 to close the gap. State
-      exactly what theoretical result is missing.
+- correspondence between the Phase 2 definition and the implementation;
+- protocol integrity and the distinction between confirmatory and exploratory
+  results;
+- assumptions, approximations, discretization, and numerical behavior;
+- correspondence between the data and any available same-branch Phase 3 result;
+- plausible explanations for every important discrepancy.
 
-   d. **Is this method a dead end?** If the experiments show the method does not
-      work (e.g., no acceleration over baselines, numerically unstable, does not
-      converge), recommend returning to Phase 02 to select a different method.
-      State why this method failed with specific numbers.
+If Phase 3 has not run, the theorist may state exact consequences of the Phase 2
+definition and formulate conjectures, but may not invent a proved guarantee.
 
-   State the recommendation clearly as one of: **proceed**, **improve
-   experiments**, **return to Phase N**, or **dead end — select different
-   method**. Justify with specific evidence from the measured results.
+## Step 5: Stage 3, research lead
+
+Give the lead all prior context and both current reports. Require the lead to:
+
+- classify each central empirical claim using its estimate, uncertainty, design,
+  and audit status;
+- retain null results, failures, and protocol deviations;
+- distinguish empirical findings from mathematical conclusions;
+- state how the results inform a Phase 3 run or rerun;
+- preserve unresolved disagreements in a structured ledger.
+
+The lead cannot ask an earlier role to revise within this run. A required fix or
+additional experiment becomes a precise target for a user-initiated rerun.
+
+## Step 6: Final synthesis
+
+Write the HTML summary to the exact path provided. Begin with the User Decision
+Brief required by the team norms. Include:
+
+1. **Selected method identity and run scope**.
+2. **Change from prior same-branch work**.
+3. **Prespecified protocol and deviations**.
+4. **Implementation and diagnostic status**.
+5. **Empirical findings** with uncertainty and baseline comparisons.
+6. **Negative and inconclusive results**.
+7. **Theorist-audit disposition**.
+8. **Relation to same-branch Phase 3 theory**, or the precise theoretical
+   questions raised when no such result exists.
+9. **Reproducibility record**.
+10. **Unresolved-issues ledger**.
+11. **Proposed scientific baseline** and scientific record changes.
+12. **Recommendation**.
+
+The recommendation may be:
+
+- **rerun Phase 4** with a named preliminary or comprehensive objective;
+- **run or rerun Phase 3** for a named theorem, assumption, or discrepancy;
+- **study another active method** in a separate Phase 3 or Phase 4 launch;
+- **rerun Phase 2** only when the canonical definition or catalog must change;
+- **proceed to Phase 5** only when both Phase 3 and Phase 4 have completed for
+  the exact same method identity;
+- **defer further work**.
+
+The user alone chooses and starts the next run.
 
 ## Requirements
-- The data analyst MUST produce working code. A report without actual code files
-  is a Failed run.
-- The data analyst MUST produce diagnostic results with real numbers. A stub
-  JSON with zero values is a Failed run.
-- Experiments MUST be pre-specified by the lead before the results are known.
-- Negative results MUST be reported honestly with specific numbers.
-- The theorist's audit is mandatory. If they find a discrepancy between code and
-  math, it must be resolved.
+
+- Follow the three stages in the configured order.
+- Complete the protocol checkpoint before the main result-producing work.
+- Give each later role every earlier current-stage report.
+- Give every role all frozen prior same-branch Phase 3 and Phase 4 context named
+  in the prompt.
+- Treat the Phase 2 catalog as read-only.
+- Apply the completion standard for the selected empirical scope.
+- Require runnable code and recorded measurements.
+- Quantify uncertainty when the design supports it.
+- Preserve negative results, deviations, failures, and disagreements.

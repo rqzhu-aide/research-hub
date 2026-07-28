@@ -41,6 +41,7 @@
   {% set current_round_record = current.current_round | default(none) %}
   {% set current_round = current_round_record.n | default(current_round_record.number | default(current_round_record)) if current_round_record else none %}
   {% set cleanup_pending = current.status == 'stopping' %}
+  {% set visible_run_mode = current.frozen_plan.run_plan | default('', true) %}
   <div class="run-active-card{% if cleanup_pending %} run-cleanup-card{% endif %}">
     <div class="run-active-header">
       <span class="{{ 'status-marker status-stopping' if cleanup_pending else 'run-pulse' }}" aria-hidden="true"></span>
@@ -54,7 +55,7 @@
           {% endif %}
         </small>
       </div>
-      <span class="run-mode-badge">{{ 'cleanup' if cleanup_pending else current.mode | default(pc.pattern | default('run')) }}</span>
+      <span class="run-mode-badge">{{ 'cleanup' if cleanup_pending else (visible_run_mode | replace('_', ' ')) if visible_run_mode else current.mode | default(pc.pattern | default('run')) }}</span>
     </div>
 
     {% if pc.slug == '04-draft-assembly' and current.protocol_checkpoint_required %}

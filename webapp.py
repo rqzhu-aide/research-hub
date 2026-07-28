@@ -6,7 +6,6 @@ from __future__ import annotations
 import base64
 import hmac
 import hashlib
-import html
 import io
 import ipaddress
 import json
@@ -20,10 +19,8 @@ import tempfile
 import threading
 from contextlib import contextmanager
 from functools import wraps
-from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping
-from urllib.parse import urlsplit
 
 from flask import (
     Flask,
@@ -40,6 +37,7 @@ from werkzeug.sansio.utils import host_is_trusted
 
 import hub
 from core import method_menu, profile_skills, project_state
+from core.safe_markdown import render_safe_markdown
 from core import launch_plans
 from core.launch_run import (
     PAPER_WRITING_PHASE,
@@ -60,6 +58,9 @@ from core.launch_run import (
     launch_run,
     paper_review_only_phase,
     phase_requires_method_binding,
+    phase_uses_catalog_method_selection,
+    phase_five_branch_readiness,
+    phase_five_required_completed_runs,
     phase_supports_theory_plans,
     phase_supports_run_modes,
     reconcile_active_run,
@@ -472,59 +473,8 @@ def security_headers(response: Response) -> Response:
     return response
 
 
-class _SafeHtml(HTMLParser):
-    """Small whitelist sanitizer for project-brief Markdown output."""
-
-    allowed_tags = {
-        "p", "br", "hr", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol",
-        "li", "strong", "em", "code", "pre", "blockquote", "a", "table", "thead",
-        "tbody", "tr", "th", "td",
-    }
-    void_tags = {"br", "hr"}
-
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.parts: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag not in self.allowed_tags:
-            return
-        rendered: list[str] = []
-        if tag == "a":
-            values = dict(attrs)
-            href = values.get("href") or ""
-            parsed = urlsplit(href)
-            if parsed.scheme.lower() in {"", "http", "https", "mailto"} and not href.startswith("//"):
-                rendered.append(f'href="{html.escape(href, quote=True)}"')
-                rendered.append('rel="noopener noreferrer"')
-        suffix = (" " + " ".join(rendered)) if rendered else ""
-        self.parts.append(f"<{tag}{suffix}>")
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in self.allowed_tags and tag not in self.void_tags:
-            self.parts.append(f"</{tag}>")
-
-    def handle_data(self, data: str) -> None:
-        self.parts.append(html.escape(data))
-
-    def get_html(self) -> str:
-        return "".join(self.parts)
-
-
 def _render_project_markdown(source: str) -> str:
-    try:
-        import markdown
-
-        generated = markdown.markdown(
-            html.escape(source), extensions=["extra", "sane_lists"]
-        )
-    except Exception:
-        return ""
-    sanitizer = _SafeHtml()
-    sanitizer.feed(generated)
-    sanitizer.close()
-    return sanitizer.get_html()
-
+    return render_safe_markdown(source)
 
 def _bounded_form_value(name: str, limit: int, *, required: bool = False) -> str:
     value = request.form.get(name, "").strip()
@@ -970,52 +920,6 @@ def _phase_or_404(phase_slug: str) -> tuple[dict[str, Any], dict[str, Any]]:
     return config, phase
 
 
-def _sealed_method_version(project_dir: Path, stable_id: str) -> str | None:
-    """Return the sealed Phase-02 decision's version for *stable_id*, or None.
-
-    Used to override the editable menu-file version when the launched branch
-    matches the approved Phase-02 selection (R4 fix).
-    """
-    try:
-        state = project_state.load(project_dir)
-    except Exception:
-        return None
-    method_phase = state.get("phases", {}).get(
-        project_state.METHOD_DEVELOPMENT_PHASE, {}
-    )
-    if bool(method_phase.get("stale")):
-        return None
-    method_run_id = str(method_phase.get("approved_run") or "").strip()
-    if not method_run_id:
-        return None
-    method_run = next(
-        (
-            candidate
-            for candidate in method_phase.get("runs", [])
-            if isinstance(candidate, Mapping)
-            and str(candidate.get("run_id", "")) == method_run_id
-        ),
-        None,
-    )
-    if not isinstance(method_run, Mapping) or method_run.get("status") != "approved":
-        return None
-    decision = method_run.get("decision_record")
-    selected = (
-        decision.get("data", {}).get("selected_scientific_object")
-        if isinstance(decision, Mapping)
-        and isinstance(decision.get("data"), Mapping)
-        else None
-    )
-    if (
-        isinstance(selected, Mapping)
-        and selected.get("kind") == "method"
-        and str(selected.get("stable_id", "")) == stable_id
-        and str(selected.get("version", "")).strip()
-    ):
-        return str(selected["version"])
-    return None
-
-
 def _phase_catalog(project_dir: Path, config: dict[str, Any]) -> list[dict[str, Any]]:
     """Return configured phases plus non-launchable records removed from config."""
 
@@ -1282,8 +1186,42 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
         # below. The direct form fields are removed.
         run_specific_method_id = ""
         run_specific_method_version = ""
+        run_specific_method_sha256 = ""
+        submitted_menu_version = ""
         method_bound_phase = phase_requires_method_binding(phase)
         method_branch = _bounded_form_value("method_branch", 200)
+        branch_entry = None
+        catalog_method_run = (
+            phase_uses_catalog_method_selection(phase)
+            and (
+                not theory_plans_available
+                or theory_plan != THEORY_PLAN_AUDIT_ONLY
+            )
+        )
+        if catalog_method_run:
+            submitted_menu_version = _bounded_form_value(
+                "method_menu_version", 64
+            ).lower()
+            if len(submitted_menu_version) != 64 or any(
+                character not in "0123456789abcdef"
+                for character in submitted_menu_version
+            ):
+                raise ValueError(
+                    "The reviewed Phase 2 method catalog version is missing or invalid"
+                )
+            try:
+                current_menu_version = method_menu.catalog_version(project_dir)
+            except (OSError, ValueError) as exc:
+                raise ValueError(
+                    "The Phase 2 method catalog could not be verified"
+                ) from exc
+            if not hmac.compare_digest(
+                submitted_menu_version, current_menu_version
+            ):
+                raise ValueError(
+                    "The Phase 2 method catalog changed since this page was shown. "
+                    "Reload this phase and review the methods again"
+                )
         if method_branch:
             if not method_bound_phase:
                 raise ValueError(
@@ -1299,14 +1237,26 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
                 )
             run_specific_method_id = branch_entry["stable_id"]
             run_specific_method_version = branch_entry["version"]
-            # R4 fix: when the posted branch is the Phase-02-approved
-            # method, bind the SEALED decision's version rather than the
-            # editable menu file's version.  This prevents the manifest
-            # from sealing a version that diverges from the sealed
-            # Phase-02 decision record displayed in the UI banner.
-            sealed_version = _sealed_method_version(project_dir, run_specific_method_id)
-            if sealed_version is not None:
-                run_specific_method_version = sealed_version
+            run_specific_method_sha256 = branch_entry["sha256"]
+        if catalog_method_run and not run_specific_method_id:
+            raise ValueError("Choose an active method for this run")
+        phase_five_readiness = None
+        phase_five_required_runs = None
+        if phase_slug == PAPER_WRITING_PHASE:
+            if not isinstance(branch_entry, Mapping):
+                raise ValueError("Choose a method after all previous phases are complete")
+            phase_five_readiness = phase_five_branch_readiness(
+                project_dir, branch_entry
+            )
+            if not phase_five_readiness["ready"]:
+                raise ValueError(
+                    "Phase 5 is not ready. Complete "
+                    + " and ".join(phase_five_readiness["blockers"])
+                    + ". Phase 3 and Phase 4 must use the same method version"
+                )
+            phase_five_required_runs = phase_five_required_completed_runs(
+                phase_five_readiness
+            )
         if (
             theory_plans_available
             and theory_plan == THEORY_PLAN_AUDIT_ONLY
@@ -1331,12 +1281,13 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
                 THEORY_PLAN_AUDIT_ONLY: 1,
             }[theory_plan]
         elif run_modes_available:
-            rounds = {
-                RUN_MODE_PRELIMINARY: 1,
-                RUN_MODE_COMPREHENSIVE: 2,
-                RUN_MODE_ASSEMBLY: 1,
-                RUN_MODE_REVIEW_REVISION: 2,
-            }[run_mode]
+            if phase_slug == DRAFT_ASSEMBLY_PHASE:
+                rounds = len(phase["stages"])
+            else:
+                rounds = {
+                    RUN_MODE_ASSEMBLY: 1,
+                    RUN_MODE_REVIEW_REVISION: 2,
+                }[run_mode]
         elif phase["pattern"] == "sequential":
             rounds = len(phase["stages"])
         else:
@@ -1348,20 +1299,33 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
                 )
 
         report = project_state.prerequisite_report(
-            project_dir, phase_slug, _gating(config)
+            project_dir,
+            phase_slug,
+            _gating(config),
+            required_completed_runs=phase_five_required_runs,
         )
-        _require_current_report_version(
-            "prerequisite_report_version",
-            "prerequisite",
-            report,
-            "Prerequisite status changed since this page was shown. Review the updated "
-            "scientific inputs before launching",
-        )
+        if phase_five_required_runs is not None:
+            prerequisite_report_version = decision_report_version(
+                "prerequisite", report
+            )
+        else:
+            _require_current_report_version(
+                "prerequisite_report_version",
+                "prerequisite",
+                report,
+                "Prerequisite status changed since this page was shown. Review the updated "
+                "scientific inputs before launching",
+            )
+            prerequisite_report_version = request.form.get(
+                "prerequisite_report_version", ""
+            ).strip()
         override_reason = ""
-        prerequisite_report_version = request.form.get(
-            "prerequisite_report_version", ""
-        ).strip()
         if not report["satisfied"]:
+            if phase_slug == PAPER_WRITING_PHASE:
+                raise ValueError(
+                    "The completed Phase 5 prerequisites changed. Reload the phase "
+                    "and review the available branch results"
+                )
             if request.form.get("override_prerequisites") != "1":
                 raise ValueError(
                     "Confirm the prerequisite override after reviewing the missing context"
@@ -1402,6 +1366,16 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
             "expected_phase_plan_version": submitted_phase_plan_version,
             "include_downstream": include_downstream == "1",
         }
+        if run_specific_method_sha256:
+            launch_options["run_specific_method_sha256"] = (
+                run_specific_method_sha256
+            )
+        if submitted_menu_version:
+            launch_options["expected_method_menu_version"] = (
+                submitted_menu_version
+            )
+        if phase_five_required_runs is not None:
+            launch_options["required_completed_runs"] = phase_five_required_runs
         if replace_note is not None:
             launch_options["replace_awaiting_review_run_id"] = rerun_from
         if review_target:
@@ -1434,9 +1408,16 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
         return _redirect_phase(project_id, phase_slug)
 
     unit = "stages" if phase["pattern"] == "sequential" else "rounds"
+    if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE:
+        completion_message = (
+            "The current method catalog stays visible while the run is active and "
+            "updates only after a valid Complete or Partial submission."
+        )
+    else:
+        completion_message = "It will stop for your review when the agents finish."
     flash(
         f"Run #{result['run_number']} started with {result['rounds_requested']} {unit}. "
-        "It will stop for your review when the agents finish.",
+        + completion_message,
         "success",
     )
     return _redirect_phase(project_id, phase_slug)
@@ -1475,38 +1456,91 @@ def retire_branch(project_id: int, phase_slug: str) -> Response:
     if not resolved:
         abort(404, description="Project not found")
     _, project_dir = resolved
-    config, phase = _phase_or_404(phase_slug)
-    if not phase_requires_method_binding(phase):
-        abort(404, description="This phase does not manage method branches")
+    _phase_or_404(phase_slug)
+    if phase_slug != project_state.METHOD_DEVELOPMENT_PHASE:
+        abort(404, description="Only Phase 2 manages the method menu")
     try:
         project_identity = _submitted_project_identity(project_id)
         _matching_project_context(project_id, project_identity)
     except ValueError:
-        abort(409, description="Project identity mismatch — reload the page and try again")
-    stable_id = _bounded_form_value("stable_id", 200)
-    if not stable_id:
-        abort(400, description="No branch selected to retire")
-    # R7 fix: block retiring the currently approved Phase-02 branch.
-    # Otherwise the banner still shows "Active method branch: X" from the
-    # sealed decision, but the form can no longer launch it.
-    sealed_version = _sealed_method_version(project_dir, stable_id)
-    if sealed_version is not None:
+        abort(
+            409,
+            description="Project identity mismatch. Reload the page and try again",
+        )
+
+    active = project_state.get_active_run(project_dir)
+    if active:
         abort(
             409,
             description=(
-                f"Branch '{stable_id}' is the currently approved method and cannot "
-                "be retired. Approve a different Phase 02 result first."
+                "Wait for the active project run to finish before retiring a method"
             ),
         )
-    try:
-        method_menu.retire_branch(project_dir, stable_id)
-    except method_menu.BranchNotFound:
-        abort(404, description=f"No method menu file for branch '{stable_id}'")
-    except method_menu.BranchAlreadyRetired:
-        abort(409, description=f"Branch '{stable_id}' is already retired")
-    flash(f"Branch '{stable_id}' retired — it will no longer appear in the launch picker.", "info")
-    return redirect(url_for("project_view", project_id=project_id, tab=phase_slug))
 
+    stable_id = _bounded_form_value("stable_id", 200)
+    expected_version = _bounded_form_value("method_version", 200)
+    expected_sha256 = _bounded_form_value("method_sha256", 64).lower()
+    if not stable_id:
+        abort(400, description="No method selected to retire")
+    if not expected_version:
+        abort(400, description="The displayed method version is missing")
+    if len(expected_sha256) != 64 or any(
+        character not in "0123456789abcdef" for character in expected_sha256
+    ):
+        abort(400, description="The displayed method digest is invalid")
+    try:
+        method_menu.retire_branch(
+            project_dir,
+            stable_id,
+            expected_version=expected_version,
+            expected_sha256=expected_sha256,
+        )
+    except method_menu.BranchNotFound:
+        abort(404, description=f"No method menu file for '{stable_id}'")
+    except method_menu.StaleMethodMenu as exc:
+        abort(
+            409,
+            description=(
+                "The method changed after this page was shown. Reload the page "
+                f"and review it again: {exc}"
+            ),
+        )
+    except method_menu.BranchAlreadyRetired:
+        abort(409, description=f"Method '{stable_id}' is already retired")
+    except ValueError as exc:
+        abort(409, description=f"Method could not be retired: {exc}")
+
+    try:
+        staled = project_state.mark_method_dependents_stale(
+            project_dir,
+            stable_id,
+            reason=f"method {stable_id} was retired by the user",
+        )
+    except (OSError, project_state.ProjectStateError):
+        app.logger.exception("Method retired but downstream stale marking failed")
+        flash(
+            f"Method '{stable_id}' was retired, but downstream status could not "
+            "be updated. Reload the project before continuing.",
+            "warning",
+        )
+        return redirect(
+            url_for("project_view", project_id=project_id, tab=phase_slug)
+        )
+
+    downstream_note = (
+        f" {len(staled)} affected downstream phase result"
+        f"{'' if len(staled) == 1 else 's'} marked stale."
+        if staled
+        else ""
+    )
+    flash(
+        f"Method '{stable_id}' retired. It remains visible as history."
+        + downstream_note,
+        "info",
+    )
+    return redirect(
+        url_for("project_view", project_id=project_id, tab=phase_slug)
+    )
 
 @app.post("/project/<int:project_id>/phase/<phase_slug>/run/<run_id>/approve")
 @_locked_project_mutation
@@ -1516,6 +1550,14 @@ def approve_run(project_id: int, phase_slug: str, run_id: str) -> Response:
         abort(404, description="Project not found")
     _, project_dir = resolved
     config, _ = _phase_or_404(phase_slug)
+    if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE:
+        abort(
+            409,
+            description=(
+                "Phase 2 results publish the method menu automatically and do not "
+                "require approval"
+            ),
+        )
     try:
         run = project_state.get_run(project_dir, phase_slug, run_id)
         decision_record = run.get("decision_record")
@@ -1554,30 +1596,10 @@ def approve_run(project_id: int, phase_slug: str, run_id: str) -> Response:
                 raise ValueError(
                     "Choose whether to approve or approve with limitations"
                 )
-            selected_object = decision_record.get("data", {}).get(
-                "selected_scientific_object"
-            )
-            selected_object_acknowledgement = ""
-            if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE:
-                if not isinstance(selected_object, dict):
-                    raise ValueError(
-                        "The Phase 02 result has no structured method selection. "
-                        "Request revision before approval"
-                    )
-                if request.form.get("accept_selected_scientific_object") != "1":
-                    raise ValueError(
-                        "Review and explicitly select the named method ID and version"
-                    )
-                selected_object_acknowledgement = (
-                    " The user also selected method "
-                    f"{selected_object.get('stable_id')}, version "
-                    f"{selected_object.get('version')}, for downstream study."
-                )
             baseline_acknowledgement = (
                 "The user reviewed the sealed summary and structured decision record "
                 "and accepted the proposed scientific baseline as a whole, choosing to "
                 f"{approval_labels[approval_kind]}."
-                + selected_object_acknowledgement
             )
         approval_note = _bounded_form_value("approval_note", MAX_FEEDBACK_LENGTH)
         context_report = project_state.approval_context_report(

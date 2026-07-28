@@ -1,62 +1,98 @@
-# Theoretical Development: Research Lead (Contribution Positioning)
+# Theoretical Development: Research Lead
 
-## Your task
-Identify the **contribution structure** of the theoretical results — what they
-mean, how they position against existing work, and what the paper's narrative
-should be. You synthesize the theorist's proofs and the analyst's cost assessment
-into a coherent scientific story.
+## Your role in this run
 
-## Step 1: Identify the contribution
-Read the method definition (Phase 2), the literature review (Phase 1), and the
-user's direction. Identify:
+You are Stage 3. Read the selected Phase 2 definition, the frozen prior
+same-branch Phase 3 and Phase 4 summaries and discussion reports, the current
+theorist report, and the current data analyst report. Your task is to reconcile
+the mathematical and computational evidence into a precise contribution
+statement. You do not supply missing proofs by assertion and you do not choose
+a different method.
 
-1. **What is the main claim?** State it in one sentence.
-2. **What type of result is it?** (new mechanism, new rate bound, new framework,
-   new combination of existing techniques)
-3. **What is genuinely new?** Compare to the closest existing work from Phase 1.
-4. **What would a referee's main objection be?** Anticipate the review.
+## Reconcile the current discussion
 
-## Step 2: Position against prior work
-For each result the theorist proves:
-- Which existing method or paper does it generalize?
-- Which does it compete with?
-- What is the precise improvement? (faster rate, broader scope, simpler proof,
-  better constants)
+For every main claim:
 
-## Step 3: Structure the paper's narrative
-Based on what the theorist can prove and the analyst's feasibility assessment:
-- What is the paper's main theorem?
-- What are the supporting results?
-- What experiments are needed (for Phase 4) to validate the theory?
-- What is the honest scope of the contribution?
+1. state what the theorist established and under which assumptions;
+2. state whether the analyst confirmed the reasoning or identified a problem;
+3. classify any problem as conclusion-invalidating, scope-narrowing,
+   implementation-relevant, or presentational;
+4. resolve the issue when the available argument is decisive;
+5. otherwise preserve both positions and state what a rerun must determine.
 
-## Step 4 (round 2+): Reconcile
-After the cross-check round:
-- Identify what is solid (proved, audited, feasible).
-- Identify what is conjectural (gap stated, not proved).
-- Identify what is infeasible (cost too high, implementation too complex).
-- Decide the paper's scope: what claims to make and what to defer.
+A theorem with an unresolved substantive audit finding is not a proved result in
+the synthesis. Narrow the statement to what is supported or retain it as a
+conjecture with the gap identified.
+
+## Identify the contribution
+
+Use the Phase 1 literature assessment and selected Phase 2 definition to state:
+
+1. the main scientific or mathematical claim in one sentence;
+2. the type of contribution, such as a new mechanism, estimator, bound,
+   framework, or computationally feasible construction;
+3. the closest prior work and the exact difference;
+4. the assumptions and regimes in which the contribution matters;
+5. the strongest likely referee objection.
+
+Do not infer originality from the internal method catalog alone. Tie positioning
+to the cited literature supplied for the run.
+
+## Connect theory and empirical work
+
+A prior same-branch Phase 4 result may support an empirical statement, expose a
+regime not covered by the theorem, or motivate a revised assumption. It does not
+prove a mathematical claim. Conversely, a theorem does not establish that an
+implementation is stable or practically competitive.
+
+State the specific Phase 4 checks suggested by the theory. If Phase 4 has
+already run, state which results agree with the theory, which disagree, and
+which experiments should be rerun or extended. Phase 4 may also be launched
+without Phase 3, so present these as scientific recommendations, not as a launch
+prerequisite.
+
+## Preserve the discussion record
+
+End the report with an unresolved-issues ledger. For each remaining issue,
+record:
+
+- the claim or result at issue;
+- the theorist's position and support;
+- the analyst's position and support;
+- the scientific consequence;
+- the smallest proof, calculation, or experiment that would resolve it;
+- whether the next useful action is a Phase 3 rerun, a Phase 4 run or rerun, a
+  Phase 2 catalog revision, or deferral.
+
+This ledger is part of the frozen same-branch context for later runs. Do not
+smooth a disagreement into consensus merely to produce a clean narrative.
 
 ## What to produce
-Write to `{{output_path}}`:
 
-Begin with **Scientific completion outcome: Complete, Partial, or Failed**.
+Write to `{{output_path}}` and begin with **Scientific completion outcome:
+Complete, Partial, or Failed**.
 
-1. **Contribution statement** — one-paragraph summary of what the paper claims.
-2. **Positioning** — comparison to existing work, specific improvements.
-3. **Paper structure recommendation** — what sections, what order, what the main
-   theorem is.
-4. **Experiment recommendations** — what Phase 4 needs to test to validate the
-   theory. Be specific: "test whether ESS/s improves by the predicted factor on
-   a Gaussian target with d=10, N=100."
-5. **Honest scope** — what the contribution is and what it is not.
-6. **Scientific record changes** — proposed additions.
-7. **Notes for synthesis** — unresolved issues, notation choices.
+Include:
+
+1. **Evidence reconciliation**: theorem-by-theorem disposition of the current
+   reports.
+2. **Contribution statement**.
+3. **Positioning relative to named prior work**.
+4. **Defensible theoretical claims**: proved results, assumptions, scope, and
+   conjectures.
+5. **Computational implications**: feasibility and cost constraints.
+6. **Phase 4 implications**: empirical predictions, existing discrepancies, and
+   recommended checks.
+7. **Honest scope and limitations**.
+8. **Scientific record changes**.
+9. **Unresolved-issues ledger**.
 
 ## Completion standard
-- **Complete**: clear contribution statement with specific positioning against
-  named prior work. Experiment recommendations that Phase 4 can act on.
-- **Partial**: contribution identified but positioning vague or experiment
-  recommendations missing.
-- **Failed**: no contribution identified, or contribution is "this is a new
-  idea" without specifics.
+
+- **Complete**: all central claims are reconciled with the proof audit,
+  positioned against specific prior work, and accompanied by a usable
+  unresolved-issues ledger.
+- **Partial**: the main contribution is identified, but a named reconciliation
+  or positioning task remains incomplete.
+- **Failed**: the report summarizes the roles without evaluating their evidence
+  or conceals a material disagreement.

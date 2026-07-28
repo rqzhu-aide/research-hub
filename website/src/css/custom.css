@@ -1,21 +1,17 @@
+@import "katex/dist/katex.min.css";
+
 /**
- * Research Hub — Documentation Theme
+ * Research Hub documentation theme.
  *
- * Unified palette shared with the Research Hub app (static/style.css).
- * Same indigo accent, teal/blue/amber/rose status hues, IBM Plex typography,
- * and dual-theme architecture (dark default + light variant).
- *
- * All color pairs verified against WCAG AA (≥4.5:1 text, ≥3.0 UI).
+ * The documentation and application share the same indigo accent, status
+ * colors, IBM Plex typography, and light and dark theme structure.
  */
 
-/* ─────────────────────────────────────────────────────────────
-   DARK THEME (default)
-   ───────────────────────────────────────────────────────────── */
 :root {
-  --ifm-color-primary: #818cf8;          /* Indigo-400 — bright on dark */
-  --ifm-color-primary-dark: #6366f1;     /* Indigo-500 */
-  --ifm-color-primary-darker: #4f46e5;   /* Indigo-600 */
-  --ifm-color-primary-darkest: #4338ca;  /* Indigo-700 */
+  --ifm-color-primary: #818cf8;
+  --ifm-color-primary-dark: #6366f1;
+  --ifm-color-primary-darker: #4f46e5;
+  --ifm-color-primary-darkest: #4338ca;
   --ifm-color-primary-light: #a5b0fc;
   --ifm-color-primary-lighter: #c7cefe;
   --ifm-color-primary-lightest: #e0e3fe;
@@ -24,7 +20,8 @@
   --ifm-font-family-base: "IBM Plex Sans", system-ui, sans-serif;
   --ifm-font-family-monospace: "IBM Plex Mono", ui-monospace, monospace;
   --ifm-heading-font-weight: 700;
-  --ifm-leading: 1.6;
+  --ifm-leading: 1.25rem;
+  --ifm-line-height-base: 1.6;
 
   --ifm-background-color: #0a0e14;
   --ifm-background-surface-color: #141b24;
@@ -46,11 +43,10 @@
   --ifm-hover-overlay: rgba(99, 102, 241, 0.08);
   --ifm-color-content-secondary: #b8c5d4;
 
-  /* Status colors — same hues as the hub app */
-  --ifm-color-success: #2dd4bf;          /* Teal-400 */
-  --ifm-color-info: #3b82f6;             /* Blue-500 */
-  --ifm-color-warning: #f59e0b;          /* Amber-500 */
-  --ifm-color-danger: #f43f5e;           /* Rose-500 */
+  --ifm-color-success: #2dd4bf;
+  --ifm-color-info: #3b82f6;
+  --ifm-color-warning: #f59e0b;
+  --ifm-color-danger: #f43f5e;
 
   --ifm-link-color: #818cf8;
   --ifm-link-hover-color: #a5b0fc;
@@ -71,15 +67,15 @@
   --ifm-code-color: #eef2f6;
   --docusaurus-highlighted-code-line-bg: rgba(99, 102, 241, 0.16);
 
-  /* Background depth — radial accent glow matching the hub */
-  --rh-bg-glow: radial-gradient(ellipse 90% 55% at 50% -10%, rgba(99, 102, 241, 0.08) 0%, transparent 60%);
+  --rh-bg-glow: radial-gradient(
+    ellipse 90% 55% at 50% -10%,
+    rgba(99, 102, 241, 0.08) 0%,
+    transparent 60%
+  );
 }
 
-/* ─────────────────────────────────────────────────────────────
-   LIGHT THEME
-   ───────────────────────────────────────────────────────────── */
 [data-theme='light'] {
-  --ifm-color-primary: #4338ca;          /* Indigo-700 — deep on light */
+  --ifm-color-primary: #4338ca;
   --ifm-color-primary-dark: #3730a3;
   --ifm-color-primary-darker: #312e81;
   --ifm-color-primary-darkest: #1e1b4b;
@@ -107,16 +103,18 @@
   --ifm-hover-overlay: rgba(67, 56, 202, 0.06);
   --ifm-color-content-secondary: #2d3a4f;
 
-  --ifm-color-success: #0d9488;          /* Teal-600 */
-  --ifm-color-info: #2563eb;             /* Blue-600 */
-  --ifm-color-warning: #b45309;          /* Amber-700 */
-  --ifm-color-danger: #e11d48;           /* Rose-600 */
+  --ifm-color-success: #0d9488;
+  --ifm-color-info: #2563eb;
+  --ifm-color-warning: #b45309;
+  --ifm-color-danger: #e11d48;
 
   --ifm-link-color: #4338ca;
   --ifm-link-hover-color: #3730a3;
 
   --ifm-navbar-background-color: #e2e7ef;
   --ifm-navbar-shadow: 0 1px 0 #c4cdd9;
+  --ifm-menu-color: var(--ifm-font-color-secondary);
+  --ifm-menu-color-active: var(--ifm-color-primary);
   --ifm-menu-color-background-hover: rgba(67, 56, 202, 0.07);
   --ifm-toc-link-color: #5a6b82;
 
@@ -127,38 +125,66 @@
   --ifm-code-color: #0d1521;
   --docusaurus-highlighted-code-line-bg: rgba(67, 56, 202, 0.12);
 
-  --rh-bg-glow: radial-gradient(ellipse 90% 55% at 50% -10%, rgba(67, 56, 202, 0.05) 0%, transparent 60%);
+  --rh-bg-glow: radial-gradient(
+    ellipse 90% 55% at 50% -10%,
+    rgba(67, 56, 202, 0.05) 0%,
+    transparent 60%
+  );
 }
 
-/* ─────────────────────────────────────────────────────────────
-   Base + background depth
-   ───────────────────────────────────────────────────────────── */
 body {
   background-color: var(--ifm-background-color);
   background-image: var(--rh-bg-glow);
   background-attachment: fixed;
 }
 
-/* Bolder primary buttons — decision-highlighting, matches hub */
 .button--primary {
   font-weight: 700;
   box-shadow: 0 4px 14px rgba(99, 102, 241, 0.32);
 }
+
 [data-theme='light'] .button--primary {
   box-shadow: 0 4px 14px rgba(67, 56, 202, 0.28);
 }
 
-/* Navbar brand — accent the wordmark */
-.navbar__brand { font-weight: 700; }
-.navbar__link--active { color: var(--ifm-color-primary); font-weight: 600; }
+.navbar__brand {
+  font-weight: 700;
+}
 
-/* Sidebar active item — accent treatment */
+.navbar__link--active {
+  color: var(--ifm-color-primary);
+  font-weight: 600;
+}
+
 .menu__link--active:not(.menu__link--sublist) {
   background: var(--ifm-color-emphasis-100);
   border-left: 3px solid var(--ifm-color-primary);
 }
 
-/* Headings — strong weight contrast */
-h1, h2, h3 { font-weight: 700 !important; letter-spacing: -0.02em; }
-h1 { font-size: 2rem; }
-.markdown h1:first-child { margin-top: 0; }
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.markdown h1 {
+  font-size: 2rem;
+}
+
+.markdown h1:first-child {
+  margin-top: 0;
+}
+
+.markdown table caption {
+  padding: 0.5rem 0;
+  color: var(--ifm-font-color-secondary);
+  font-weight: 600;
+  text-align: left;
+}
+
+@media (max-width: 900px) {
+  body {
+    background-attachment: scroll;
+  }
+}

@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-
+from core import method_menu, web_phase_data
 from core import project_state as state
 DEPENDENCIES = {
     "01-literature": [],
@@ -281,6 +281,188 @@ def prepare_modern_decision_run(
     return run_id, summary, decision
 
 
+@pytest.mark.parametrize("outcome", ["Complete", "Partial"])
+def test_exact_completed_run_policy_accepts_unchanged_awaiting_review_result(
+    project: Path,
+    outcome: str,
+) -> None:
+    source, summary, decision = prepare_modern_decision_run(
+        project, outcome=outcome
+    )
+    state.submit_run_for_review(
+        project, "01-literature", source, summary, decision
+    )
+    assert state.get_run_status(project, "01-literature", source) == "awaiting_review"
+    required_completed_runs = {"01-literature": source}
+    report = state.prerequisite_report(
+        project,
+        "02-method",
+        DEPENDENCIES,
+        required_completed_runs=required_completed_runs,
+    )
+    assert report["policy"] == "required_completed_runs"
+    assert report["satisfied"] is True
+    assert report["blockers"] == []
+    assert report["requirements"][0]["completed_run"] == source
+    assert report["requirements"][0]["scientific_outcome"] == outcome
+    assert report["requirements"][0]["reason"] == "completed and intact"
+
+    target = state.reserve_run(
+        project,
+        "02-method",
+        "use completed result",
+        dependencies=DEPENDENCIES,
+        expected_prerequisite_report_version=state.decision_report_version(
+            "prerequisite", report
+        ),
+        required_completed_runs=required_completed_runs,
+    )
+    reserved = state.get_run(project, "02-method", target)
+    assert reserved["override_metadata"] is None
+    assert reserved["prerequisite_snapshot"]["policy"] == "required_completed_runs"
+    assert reserved["prerequisite_snapshot"]["requirements"][0][
+        "completed_run"
+    ] == source
+    assert reserved["prerequisite_snapshot"]["required_completed_runs"] == (
+        required_completed_runs
+    )
+
+    approval_context = state.approval_context_report(
+        project, "02-method", target, DEPENDENCIES
+    )
+    assert approval_context["requires_acknowledgement"] is False
+    assert approval_context["changed_sources"] == []
+    assert approval_context["launch_override"] is None
+
+def test_exact_completed_run_policy_ignores_newer_results_and_frozen_history() -> None:
+    phase_five = state.PAPER_WRITING_PHASE
+    required_phases = (
+        "01-literature-review",
+        state.METHOD_DEVELOPMENT_PHASE,
+        "03-idea-evaluation",
+        state.DRAFT_ASSEMBLY_PHASE,
+    )
+    dependencies = {phase_five: list(required_phases)}
+    required_completed_runs = {
+        phase_slug: f"{phase_slug}-selected"
+        for phase_slug in required_phases
+    }
+
+    def completed_run(run_id: str) -> dict[str, object]:
+        return {
+            "run_id": run_id,
+            "status": "awaiting_review",
+            "submitted_at": "2026-07-27T00:00:00+00:00",
+            "final_summary": f"{run_id}.html",
+            "decision_record": {
+                "data": {"scientific_outcome": "Complete"}
+            },
+        }
+
+    phases: dict[str, dict[str, object]] = {}
+    context_inputs: list[dict[str, object]] = []
+    for phase_slug in required_phases:
+        selected = required_completed_runs[phase_slug]
+        historical = f"{phase_slug}-historical"
+        newer = (
+            f"{phase_slug}-other-method-newer"
+            if phase_slug in {
+                "03-idea-evaluation",
+                state.DRAFT_ASSEMBLY_PHASE,
+            }
+            else f"{phase_slug}-newer"
+        )
+        phases[phase_slug] = {
+            "runs": [
+                completed_run(historical),
+                completed_run(selected),
+                completed_run(newer),
+            ],
+            "approved_run": None,
+            "stale": False,
+            "status": "awaiting_review",
+        }
+        context_inputs.extend([
+            {
+                "phase": phase_slug,
+                "run_id": historical,
+                "sha256": "a" * 64,
+                "kind": "historical_advisory",
+                "trusted": False,
+                "usable": False,
+            },
+            {
+                "phase": phase_slug,
+                "run_id": selected,
+                "sha256": "b" * 64,
+                "kind": "exact_prerequisite_result",
+                "trusted": False,
+                "usable": True,
+            },
+        ])
+
+    phase_five_run = {
+        "prerequisite_snapshot": {
+            "policy": "required_completed_runs",
+            "required_completed_runs": required_completed_runs,
+            "requirements": [
+                {
+                    "phase": phase_slug,
+                    "satisfied": True,
+                    "completed_run": run_id,
+                }
+                for phase_slug, run_id in required_completed_runs.items()
+            ],
+        },
+        "context_inputs": context_inputs,
+        "override_metadata": None,
+    }
+
+    report = state._approval_context_report_from_data(
+        {"phases": phases},
+        phase_five,
+        phase_five_run,
+        dependencies,
+    )
+
+    assert report["requires_acknowledgement"] is False
+    assert report["changed_sources"] == []
+    assert report["launch_override"] is None
+
+
+def test_completed_results_policy_rejects_failed_awaiting_review_result(
+    project: Path,
+) -> None:
+    source, summary, decision = prepare_modern_decision_run(
+        project, outcome="Failed"
+    )
+    state.submit_run_for_review(
+        project, "01-literature", source, summary, decision
+    )
+    assert state.get_run_status(project, "01-literature", source) == "awaiting_review"
+
+    report = state.prerequisite_report(
+        project,
+        "02-method",
+        DEPENDENCIES,
+        completed_results=True,
+    )
+    assert report["policy"] == "completed_results"
+    assert report["satisfied"] is False
+    assert report["blockers"] == ["01-literature"]
+    assert report["requirements"][0]["completed_run"] is None
+    assert "Failed" in report["requirements"][0]["reason"]
+
+    with pytest.raises(state.StateConflict, match="not completed and intact"):
+        state.reserve_run(
+            project,
+            "02-method",
+            "must reject failed result",
+            dependencies=DEPENDENCIES,
+            completed_results=True,
+        )
+    assert state.get_active_run(project) is None
+
 def test_rerun_keeps_prior_approval_until_replacement_is_approved(project: Path) -> None:
     first = approve_phase(project, "01-literature", label="first")
     rerun = state.reserve_run(project, "01-literature", "rerun", 1)
@@ -411,7 +593,7 @@ def test_decision_record_schema_two_rejects_malformed_selected_method_identities
         ),
     ],
 )
-def test_decision_record_binds_the_selected_method_to_the_phase_two_run(
+def test_legacy_schema_seven_phase_two_decision_binds_the_selected_method(
     selected_method: dict[str, str] | None,
     decision_requested: str,
     message: str,
@@ -894,10 +1076,64 @@ def test_run_context_is_hash_checked_and_immutable(project: Path) -> None:
     state.set_run_context(project, "02-method", target, context)
     state.set_run_context(project, "02-method", target, context)  # idempotent
     stored = state.get_run(project, "02-method", target)["context_inputs"]
-    assert stored == context
+    assert stored == [{**context[0], "status_at_selection": "approved"}]
     with pytest.raises(state.StateConflict, match="already frozen"):
         state.set_run_context(project, "02-method", target, [])
 
+
+@pytest.mark.parametrize(
+    "source_status",
+    ["approved", "awaiting_review", "revision_requested", "superseded"],
+)
+def test_run_context_records_the_completed_source_status(
+    project: Path,
+    source_status: str,
+) -> None:
+    if source_status == "approved":
+        source = approve_phase(project, "01-literature")
+    elif source_status == "awaiting_review":
+        source = finish_for_review(project, "01-literature")
+    elif source_status == "revision_requested":
+        source = finish_for_review(project, "01-literature")
+        state.request_revision(
+            project,
+            "01-literature",
+            source,
+            "Recheck the boundary case.",
+        )
+    else:
+        source = approve_phase(project, "01-literature", label="first")
+        replacement = finish_for_review(
+            project,
+            "01-literature",
+            label="replacement",
+        )
+        state.approve_run(
+            project,
+            "01-literature",
+            replacement,
+            approval_kind="approve",
+            dependencies=DEPENDENCIES,
+        )
+
+    source_run = state.get_run(project, "01-literature", source)
+    summary = project / source_run["final_summary"]
+    no_gates = {phase: [] for phase in DEPENDENCIES}
+    target = state.reserve_run(
+        project,
+        "02-method",
+        "uses completed source",
+        dependencies=no_gates,
+    )
+    state.set_run_context(project, "02-method", target, [{
+        "phase": "01-literature",
+        "run_id": source,
+        "summary": source_run["final_summary"],
+        "sha256": hashlib.sha256(summary.read_bytes()).hexdigest(),
+    }])
+
+    stored = state.get_run(project, "02-method", target)["context_inputs"]
+    assert stored[0]["status_at_selection"] == source_status
 
 def test_tampered_approved_summary_cannot_become_downstream_context(project: Path) -> None:
     source = approve_phase(project, "01-literature")
@@ -915,7 +1151,7 @@ def test_tampered_approved_summary_cannot_become_downstream_context(project: Pat
     )
     digest = hashlib.sha256(summary.read_bytes()).hexdigest()
 
-    with pytest.raises(state.StateValidationError, match="changed after approval"):
+    with pytest.raises(state.StateValidationError, match="context run evidence is unavailable"):
         state.set_run_context(project, "02-method", target, [{
             "phase": "01-literature",
             "run_id": source,
@@ -1999,6 +2235,28 @@ def test_phase_four_seals_an_isolated_protocol_workspace(
         state.finalize_run_submission(project, phase, run_id)
 
 
+@pytest.mark.parametrize("separator", ["/", "\\"])
+def test_slug_path_rewrite_accepts_posix_and_windows_separators(
+    separator: str,
+) -> None:
+    old_slug = "03-theoretical-justification"
+    new_slug = state.SLUG_ALIASES[old_slug]
+    value = {
+        "run": separator.join(("root", "runs", old_slug, "run", "manifest.json")),
+        "summary": separator.join(("phase-summaries", old_slug, "run.html")),
+    }
+
+    rewritten, changed = state._rewrite_slug_path_strings(
+        value, old_slug, new_slug
+    )
+
+    assert changed is True
+    assert rewritten == {
+        "run": separator.join(("root", "runs", new_slug, "run", "manifest.json")),
+        "summary": separator.join(("phase-summaries", new_slug, "run.html")),
+    }
+
+
 def test_slug_alias_migration_repairs_paths_and_sealed_content(
     tmp_path: Path,
 ) -> None:
@@ -2195,3 +2453,637 @@ def test_slug_alias_migration_repairs_paths_and_sealed_content(
     state._validate_recorded_protocol_checkpoint(
         project, new_numerical, migrated_numerical, manifest, required=True
     )
+
+def phase_two_decision_payload(
+    run_id: str,
+    *,
+    outcome: str = "Complete",
+    action: str = "proceed",
+) -> dict:
+    payload = decision_payload(
+        outcome,
+        phase=state.METHOD_DEVELOPMENT_PHASE,
+        run=run_id,
+    )
+    payload.update({
+        "schema_version": state.PHASE_TWO_DECISION_RECORD_SCHEMA_VERSION,
+        "selected_scientific_object": None,
+        "decision_requested": (
+            "Decide whether to proceed to Phase 03, rerun Phase 02, "
+            "return to Phase 01, or leave the current menu unchanged."
+        ),
+        "recommended_user_action": action,
+        "option_consequences": {
+            "proceed": "Choose an active method when launching Phase 03.",
+            "rerun": "Run Phase 02 again with new scientific instructions.",
+            "return_to_phase_1": "Extend the literature review before developing methods again.",
+            "defer": "Keep the published menu and start no downstream phase.",
+        },
+    })
+    return payload
+
+
+def phase_two_manifest(run_id: str) -> dict:
+    return {
+        "schema_version": 9,
+        "phase_slug": state.METHOD_DEVELOPMENT_PHASE,
+        "run_id": run_id,
+        "rounds_requested": 1,
+        "phase": {
+            "slug": state.METHOD_DEVELOPMENT_PHASE,
+            "pattern": "debate",
+            "members": ["research_lead", "theorist", "data_scientist"],
+        },
+    }
+
+
+def install_fake_method_menu_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    changed_ids: list[str] | None = None,
+) -> dict[str, list]:
+    calls: dict[str, list] = {
+        "seal": [],
+        "promote": [],
+        "commit": [],
+        "rollback": [],
+    }
+    seal = {
+        "schema_version": 1,
+        "catalog_sha256": "a" * 64,
+        "entries": [],
+    }
+
+    def seal_menu(project_dir: Path, output_root: Path) -> dict:
+        calls["seal"].append((Path(project_dir), Path(output_root)))
+        return dict(seal)
+
+    def promote_menu(
+        project_dir: Path, output_root: Path, supplied_seal: dict
+    ) -> dict:
+        calls["promote"].append(
+            (Path(project_dir), Path(output_root), dict(supplied_seal))
+        )
+        identifiers = list(changed_ids or [])
+        return {
+            "changed_stable_ids": identifiers,
+            "changes": [
+                {
+                    "stable_id": stable_id,
+                    "before": {"version": "v1", "status": "viable"},
+                    "after": {"version": "v2", "status": "viable"},
+                }
+                for stable_id in identifiers
+            ],
+            "rollback": {"token": "opaque"},
+        }
+
+    def commit_menu(project_dir: Path, promotion: dict) -> None:
+        calls["commit"].append((Path(project_dir), dict(promotion)))
+
+    def rollback_menu(project_dir: Path, promotion: dict) -> None:
+        calls["rollback"].append((Path(project_dir), dict(promotion)))
+
+    monkeypatch.setattr(
+        state.method_menu, "seal_staged_menu", seal_menu, raising=False
+    )
+    monkeypatch.setattr(
+        state.method_menu, "promote_staged_menu", promote_menu, raising=False
+    )
+    monkeypatch.setattr(
+        state.method_menu,
+        "commit_method_menu_promotion",
+        commit_menu,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        state.method_menu,
+        "rollback_method_menu_promotion",
+        rollback_menu,
+        raising=False,
+    )
+    return calls
+
+
+def stage_phase_two_submission(
+    project: Path,
+    *,
+    dependencies: dict[str, list[str]],
+    outcome: str = "Complete",
+    label: str = "method menu",
+) -> str:
+    phase = state.METHOD_DEVELOPMENT_PHASE
+    run_id = state.reserve_run(
+        project,
+        phase,
+        mode=label,
+        rounds_requested=1,
+        dependencies=dependencies,
+    )
+    output_root = project / "ideas" / "run" / run_id
+    output_root.mkdir(parents=True)
+    summary = project / "phase-summaries" / phase / f"{run_id}.html"
+    summary.parent.mkdir(parents=True, exist_ok=True)
+    summary.write_text("<h1>Method menu</h1>", encoding="utf-8")
+    decision = summary.with_suffix(".decision.json")
+    decision.write_text(
+        json.dumps(phase_two_decision_payload(run_id, outcome=outcome)),
+        encoding="utf-8",
+    )
+    manifest = {
+        **phase_two_manifest(run_id),
+        "timeout_minutes": 30,
+        "output_root": str(output_root),
+        "summary_path": str(summary),
+        "decision_path": str(decision),
+    }
+    manifest_path = (
+        state.state_dir(project) / "runs" / phase / f"{run_id}.manifest.json"
+    )
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    state.seal_run_manifest(project, phase, run_id, manifest_path)
+    state.set_process_pid(project, phase, run_id, 2901)
+    state.start_round(
+        project, phase, run_id, "develop the menu", ["research_lead"], 1
+    )
+    report = output_root / "round-01" / "research_lead.md"
+    report.parent.mkdir(parents=True)
+    report.write_text(
+        f"Scientific completion outcome: {outcome}\n", encoding="utf-8"
+    )
+    state.complete_round(project, phase, run_id, 1, [report])
+    state.stage_run_submission(project, phase, run_id, summary, decision)
+    return run_id
+
+
+@pytest.mark.parametrize(
+    "action",
+    ["proceed", "rerun", "return_to_phase_1", "defer"],
+)
+def test_schema_three_phase_two_decision_actions_are_valid(action: str) -> None:
+    run_id = "run-method-menu"
+    normalized = state.validate_decision_record(
+        phase_two_decision_payload(run_id, action=action)
+    )
+
+    state._validate_decision_record_context(
+        normalized, phase_two_manifest(run_id)
+    )
+    assert normalized["recommended_user_action"] == action
+    assert normalized["selected_scientific_object"] is None
+
+
+def test_schema_three_is_reserved_for_schema_nine_phase_two() -> None:
+    run_id = "run-method-menu"
+    normalized = state.validate_decision_record(
+        phase_two_decision_payload(run_id)
+    )
+    wrong_phase = phase_two_manifest(run_id)
+    wrong_phase["phase_slug"] = "01-literature"
+    wrong_phase["phase"]["slug"] = "01-literature"
+
+    with pytest.raises(state.StateValidationError, match="reserved"):
+        state._validate_decision_record_context(normalized, wrong_phase)
+    with pytest.raises(state.StateValidationError, match="requires"):
+        state._validate_decision_record_context(normalized, None)
+
+
+def test_legacy_decision_schemas_reject_phase_two_only_actions() -> None:
+    for schema_version, action in ((1, "proceed"), (2, "return_to_phase_1")):
+        payload = decision_payload()
+        payload["schema_version"] = schema_version
+        if schema_version == 2:
+            payload["selected_scientific_object"] = None
+        payload["recommended_user_action"] = action
+        with pytest.raises(
+            state.StateValidationError,
+            match="recommended_user_action",
+        ):
+            state.validate_decision_record(payload)
+
+
+def test_phase_two_submission_is_published_without_user_review(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "phase-two-project"
+    project.mkdir()
+    phase = state.METHOD_DEVELOPMENT_PHASE
+    dependencies = {phase: []}
+    state.init(
+        project,
+        "project-phase-two",
+        "phase-two",
+        "Phase Two",
+        phase_slugs=[phase],
+        dependencies=dependencies,
+    )
+    calls = install_fake_method_menu_transaction(monkeypatch)
+
+    run_id = stage_phase_two_submission(project, dependencies=dependencies)
+    assert state.finalize_run_submission(project, phase, run_id)
+
+    phase_state = state.get_phase_status(project, phase)
+    run = state.get_run(project, phase, run_id)
+    assert phase_state["approved_run"] == run_id
+    assert phase_state["publication_readiness"] == "ready"
+    assert run["status"] == "approved"
+    assert run["publication_kind"] == "method_menu"
+    assert run["publication_outcome"] == "Complete"
+    assert run["publication_readiness"] == "ready"
+    assert run["published_at"]
+    assert run["decision_at"] is None
+    assert run["decision_by"] is None
+    assert run["decision_note"] is None
+    assert "approval_kind" not in run
+    assert run["approval_baseline_acknowledgement"] is None
+    assert run["approval_context_acknowledgement"] is None
+    assert run["decision_record"]["data"]["selected_scientific_object"] is None
+    assert run["method_menu_seal"]["catalog_sha256"] == "a" * 64
+    assert len(calls["seal"]) == 1
+    assert len(calls["promote"]) == 1
+    assert len(calls["commit"]) == 1
+    assert calls["rollback"] == []
+
+    rerun = state.reserve_run(
+        project,
+        phase,
+        mode="revise the menu",
+        rounds_requested=1,
+        dependencies=dependencies,
+    )
+    assert state.get_run_status(project, phase, rerun) == "starting"
+
+
+def test_real_phase_two_rerun_publishes_atomically_and_feeds_web_catalog(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "real-phase-two-rerun"
+    project.mkdir()
+    phase = state.METHOD_DEVELOPMENT_PHASE
+    dependencies = {phase: []}
+    state.init(
+        project,
+        "real-phase-two-rerun",
+        "real-phase-two-rerun",
+        "Real Phase Two Rerun",
+        phase_slugs=[phase],
+        dependencies=dependencies,
+    )
+
+    published_dir = project / method_menu.METHOD_MENU_DIR
+    published_dir.mkdir(parents=True)
+    published_file = published_dir / "robust-baseline.md"
+    published_file.write_text(
+        "---\n"
+        "stable_id: robust-baseline\n"
+        "version: v1\n"
+        "label: Robust Baseline\n"
+        "status: viable\n"
+        "number: 1\n"
+        "---\n\n"
+        "# Robust Baseline\n\nOriginal scientific definition.\n",
+        encoding="utf-8",
+        newline="",
+    )
+
+    run_id = state.reserve_run(
+        project,
+        phase,
+        mode="retire the baseline",
+        rounds_requested=1,
+        dependencies=dependencies,
+    )
+    output_root = project / "ideas" / "run" / run_id
+    staged = method_menu.stage_method_menu(project, output_root)
+    assert staged["warnings"] == []
+
+    staged_dir = output_root / method_menu.STAGED_METHOD_MENU_DIRNAME
+    staged_file = staged_dir / "robust-baseline.md"
+    staged_file.write_text(
+        "---\n"
+        "stable_id: robust-baseline\n"
+        "version: v2\n"
+        "label: Robust Baseline\n"
+        "status: retired\n"
+        "number: 1\n"
+        "---\n\n"
+        "# Robust Baseline\n\nRetired after the updated comparison.\n",
+        encoding="utf-8",
+        newline="",
+    )
+    registry_path = staged_dir / method_menu.METHOD_REGISTRY_FILENAME
+    registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
+    registry["entries"][0]["status"] = "retired"
+    registry_path.write_text(
+        yaml.safe_dump(registry, sort_keys=False),
+        encoding="utf-8",
+        newline="",
+    )
+
+    current_before = method_menu.load_method_menu(project)
+    assert current_before["entries"][0]["version"] == "v1"
+    assert current_before["entries"][0]["status"] == "viable"
+
+    summary = project / "phase-summaries" / phase / f"{run_id}.html"
+    summary.parent.mkdir(parents=True)
+    summary.write_text("<h1>Updated method menu</h1>", encoding="utf-8")
+    decision = summary.with_suffix(".decision.json")
+    decision.write_text(
+        json.dumps(phase_two_decision_payload(run_id)),
+        encoding="utf-8",
+    )
+    manifest = {
+        **phase_two_manifest(run_id),
+        "timeout_minutes": 30,
+        "output_root": str(output_root),
+        "summary_path": str(summary),
+        "decision_path": str(decision),
+    }
+    manifest_path = (
+        state.state_dir(project) / "runs" / phase / f"{run_id}.manifest.json"
+    )
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    state.seal_run_manifest(project, phase, run_id, manifest_path)
+    state.set_process_pid(project, phase, run_id, 2902)
+    state.start_round(
+        project, phase, run_id, "revise the menu", ["research_lead"], 1
+    )
+    report = output_root / "round-01" / "research_lead.md"
+    report.parent.mkdir(parents=True)
+    report.write_text(
+        "Scientific completion outcome: Complete\n",
+        encoding="utf-8",
+    )
+    state.complete_round(project, phase, run_id, 1, [report])
+    state.stage_run_submission(project, phase, run_id, summary, decision)
+
+    still_current = method_menu.load_method_menu(project)
+    assert still_current["entries"][0]["version"] == "v1"
+    assert still_current["entries"][0]["status"] == "viable"
+
+    assert state.finalize_run_submission(project, phase, run_id)
+    published = method_menu.load_method_menu(project)
+    assert published["warnings"] == []
+    assert published["entries"][0]["version"] == "v2"
+    assert published["entries"][0]["status"] == "retired"
+
+    phase_config = {
+        "slug": phase,
+        "name": "Method Development",
+        "description": "Develop and maintain the method catalog.",
+        "pattern": "debate",
+        "rounds": {"min": 1, "default": 1, "max": 2},
+        "gated_by": [],
+        "folder": "ideas/",
+        "members": ["research_lead", "theorist", "data_scientist"],
+    }
+    page_data = web_phase_data.prepare_phase_data(
+        project, 1, phase_config, [phase_config]
+    )
+    row = page_data["method_ranking_table"][0]
+    assert row["stable_id"] == "robust-baseline"
+    assert row["version"] == "v2"
+    assert row["status"] == "retired"
+
+def test_failed_phase_two_run_preserves_the_published_menu(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "failed-phase-two-project"
+    project.mkdir()
+    phase = state.METHOD_DEVELOPMENT_PHASE
+    dependencies = {phase: []}
+    state.init(
+        project,
+        "failed-phase-two",
+        "failed-phase-two",
+        "Failed Phase Two",
+        phase_slugs=[phase],
+        dependencies=dependencies,
+    )
+    calls = install_fake_method_menu_transaction(monkeypatch)
+    first = stage_phase_two_submission(project, dependencies=dependencies)
+    assert state.finalize_run_submission(project, phase, first)
+
+    failed = stage_phase_two_submission(
+        project,
+        dependencies=dependencies,
+        outcome="Failed",
+        label="failed revision",
+    )
+    assert state.finalize_run_submission(project, phase, failed)
+
+    phase_state = state.get_phase_status(project, phase)
+    failed_run = state.get_run(project, phase, failed)
+    assert phase_state["approved_run"] == first
+    assert failed_run["status"] == "failed"
+    assert failed_run["publication_readiness"] == "failed"
+    assert len(calls["seal"]) == 2
+    assert len(calls["promote"]) == 1
+
+
+def test_partial_phase_two_menu_is_published_but_not_prerequisite_ready(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "partial-phase-two-project"
+    project.mkdir()
+    phase = state.METHOD_DEVELOPMENT_PHASE
+    downstream = "03-idea-evaluation"
+    dependencies = {phase: [], downstream: [phase]}
+    state.init(
+        project,
+        "partial-phase-two",
+        "partial-phase-two",
+        "Partial Phase Two",
+        phase_slugs=[phase, downstream],
+        dependencies=dependencies,
+    )
+    install_fake_method_menu_transaction(monkeypatch)
+    run_id = stage_phase_two_submission(
+        project,
+        dependencies=dependencies,
+        outcome="Partial",
+    )
+    assert state.finalize_run_submission(project, phase, run_id)
+
+    phase_state = state.get_phase_status(project, phase)
+    report = state.prerequisite_report(project, downstream, dependencies)
+    assert phase_state["approved_run"] == run_id
+    assert phase_state["publication_readiness"] == "partial"
+    assert report["satisfied"] is False
+    assert report["blockers"] == [phase]
+    assert report["requirements"][0]["reason"] == (
+        "published Phase 02 method menu is scientifically partial"
+    )
+
+
+def test_phase_two_publication_rolls_back_when_state_save_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "phase-two-rollback-project"
+    project.mkdir()
+    phase = state.METHOD_DEVELOPMENT_PHASE
+    dependencies = {phase: []}
+    state.init(
+        project,
+        "phase-two-rollback",
+        "phase-two-rollback",
+        "Phase Two Rollback",
+        phase_slugs=[phase],
+        dependencies=dependencies,
+    )
+    calls = install_fake_method_menu_transaction(monkeypatch)
+    run_id = stage_phase_two_submission(project, dependencies=dependencies)
+
+    def fail_save(_project: Path, _data: dict) -> None:
+        raise OSError("simulated state write failure")
+
+    monkeypatch.setattr(state, "_save_unlocked", fail_save)
+    with pytest.raises(OSError, match="simulated"):
+        state.finalize_run_submission(project, phase, run_id)
+
+    assert len(calls["promote"]) == 1
+    assert len(calls["rollback"]) == 1
+    assert calls["commit"] == []
+
+
+def _install_approved_test_run(
+    data: dict,
+    phase_slug: str,
+    run_id: str,
+) -> None:
+    phase = data["phases"].setdefault(phase_slug, state._new_phase())
+    phase["runs"] = [{"run_id": run_id, "status": "approved"}]
+    phase["approved_run"] = run_id
+
+
+def test_manual_retirement_stales_only_the_bound_branch_and_descendants(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "selective-staleness-project"
+    project.mkdir()
+    phase = state.METHOD_DEVELOPMENT_PHASE
+    branch_a = "03-method-a"
+    branch_b = "03-method-b"
+    child_a = "04-method-a"
+    child_b = "04-method-b"
+    dependencies = {
+        phase: [],
+        branch_a: [phase],
+        branch_b: [phase],
+        child_a: [branch_a],
+        child_b: [branch_b],
+    }
+    state.init(
+        project,
+        "selective-staleness",
+        "selective-staleness",
+        "Selective Staleness",
+        phase_slugs=list(dependencies),
+        dependencies=dependencies,
+    )
+    data = state.load(project)
+    for slug in (branch_a, branch_b, child_a, child_b):
+        _install_approved_test_run(data, slug, f"run-{slug}")
+    state._save_unlocked(project, data)
+    identities = {branch_a: "method-a", branch_b: "method-b"}
+    monkeypatch.setattr(
+        state,
+        "_approved_method_identity",
+        lambda _project, slug, _phase: identities.get(slug),
+    )
+
+    staled = state.mark_method_dependents_stale(
+        project,
+        "method-a",
+        reason="Method method-a was retired by the user.",
+    )
+
+    phases = state.all_phases(project)
+    assert set(staled) == {branch_a, child_a}
+    assert phases[branch_a]["stale"] is True
+    assert phases[child_a]["stale"] is True
+    assert phases[branch_b]["stale"] is False
+    assert phases[child_b]["stale"] is False
+
+
+def test_legacy_phase_two_result_waiting_for_review_becomes_history(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "legacy-phase-two-project"
+    project.mkdir()
+    phase_slug = state.METHOD_DEVELOPMENT_PHASE
+    dependencies = {phase_slug: []}
+    state.init(
+        project,
+        "legacy-phase-two",
+        "legacy-phase-two",
+        "Legacy Phase Two",
+        phase_slugs=[phase_slug],
+        dependencies=dependencies,
+    )
+    run_id = finish_for_review(
+        project,
+        phase_slug,
+        dependencies=dependencies,
+    )
+    legacy = state.load(project)
+    legacy["schema_version"] = 6
+    phase = legacy["phases"][phase_slug]
+    phase["approved_run"] = None
+    phase["runs"][-1]["status"] = "awaiting_review"
+    phase["runs"][-1].pop("migration_warning", None)
+    state._save_unlocked(project, legacy)
+
+    migrated = state.load(project)
+    migrated_phase = migrated["phases"][phase_slug]
+    migrated_run = migrated_phase["runs"][-1]
+    assert migrated["schema_version"] == state.SCHEMA_VERSION
+    assert migrated_phase["approved_run"] is None
+    assert migrated_run["run_id"] == run_id
+    assert migrated_run["status"] == "superseded"
+    assert migrated_run["migration_warning"]["code"] == (
+        "legacy_phase_two_result_not_published"
+    )
+
+
+def test_legacy_phase_two_completion_is_historical_not_awaiting_review(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "legacy-completion-project"
+    project.mkdir()
+    phase = state.METHOD_DEVELOPMENT_PHASE
+    dependencies = {phase: []}
+    state.init(
+        project,
+        "legacy-completion",
+        "legacy-completion",
+        "Legacy Completion",
+        phase_slugs=[phase],
+        dependencies=dependencies,
+    )
+
+    run_id = finish_for_review(
+        project,
+        phase,
+        dependencies=dependencies,
+    )
+
+    run = state.get_run(project, phase, run_id)
+    assert run["status"] == "superseded"
+    assert run["migration_warning"]["code"] == (
+        "legacy_phase_two_result_not_published"
+    )
+    replacement = state.reserve_run(
+        project,
+        phase,
+        mode="new Phase 02 contract",
+        dependencies=dependencies,
+    )
+    assert state.get_run_status(project, phase, replacement) == "starting"
