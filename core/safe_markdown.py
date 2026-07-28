@@ -58,7 +58,7 @@ def render_safe_markdown(source: str, *, extensions: list[str] | None = None) ->
         import markdown
 
         generated = markdown.markdown(
-            html.escape(source), extensions=extensions or ["extra", "sane_lists"]
+            source, extensions=extensions or ["extra", "sane_lists"]
         )
     except Exception:
         return ""

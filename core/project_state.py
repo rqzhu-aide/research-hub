@@ -35,7 +35,7 @@ import logging
 log = logging.getLogger(__name__)
 
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 PAPER_WRITING_PHASE = "05-review-revision"
 DRAFT_ASSEMBLY_PHASE = "04-draft-assembly"
@@ -1434,6 +1434,11 @@ def _migrate(data: dict[str, Any]) -> dict[str, Any]:
             run.setdefault("cleanup_started_at", None)
             run.setdefault("cleanup_completed_at", None)
             run.setdefault("cleanup_recovery_note", None)
+            run.setdefault("current_results_basis", None)
+            if isinstance(run.get("current_results_basis"), dict):
+                run.setdefault("current_results_basis_sha256", None)
+            else:
+                run.setdefault("current_results_basis_sha256", None)
 
         # Infer legacy outcomes after every run has an ID.  The former phase
         # status described only the newest run, so earlier completed runs are
@@ -5464,13 +5469,52 @@ def finalize_run_submission(
         isinstance(expected_pid, bool) or not isinstance(expected_pid, int) or expected_pid <= 0
     ):
         raise StateValidationError("expected PID must be a positive integer")
+    finalized = _finalize_run_submission_locked(
+        project_dir, phase_slug, run_ref, expected_pid=expected_pid
+    )
+    if not finalized:
+        return False
+
+    # --- Current-results promotion (§11) ---
+    # The project lock has been released. Promotion runs under the separate
+    # current-results lock. Failures are logged but never affect the
+    # already-committed finalization result.
+    try:
+        from core import current_results
+        if current_results.is_enabled():
+            result = current_results.promote_run(
+                project_dir, phase_slug, finalized["run_id"]
+            )
+            if not result["promoted"]:
+                log.info(
+                    "current-results promotion not applied for %s/%s: %s",
+                    phase_slug, finalized["run_id"][:12], result["reason"],
+                )
+    except Exception:
+        log.warning("current-results promotion failed", exc_info=True)
+    return True
+
+
+def _finalize_run_submission_locked(
+    project_dir: str | Path,
+    phase_slug: str,
+    run_ref: str | int,
+    *,
+    expected_pid: int | None = None,
+) -> dict[str, str] | None:
+    """Run the locked finalization logic.
+
+    Returns ``{"run_id": str}`` on success, or None if the run was not
+    in a finalizable state (returns False from the public API).
+    """
+
     with _project_lock(project_dir):
         data = _migrate(_read_unlocked(project_dir))
         phase, run, _ = _resolve_run(data, phase_slug, run_ref)
         if run.get("status") != "submitting":
-            return False
+            return None
         if expected_pid is not None and run.get("process_pid") != expected_pid:
-            return False
+            return None
         if not run.get("final_summary") or not run.get("submitted_at"):
             raise StateValidationError("submitted run is missing its summary record")
         _validate_run_integrity(
@@ -5502,7 +5546,7 @@ def finalize_run_submission(
                 run["status"] = "awaiting_review"
             _refresh_derived_state(data)
             _save_unlocked(project_dir, data)
-            return True
+            return {"run_id": str(run["run_id"])}
 
         scientific_outcome = _phase_two_scientific_outcome(run)
         if scientific_outcome == "Failed":
@@ -5512,7 +5556,7 @@ def finalize_run_submission(
             run["method_menu_changes"] = None
             _refresh_derived_state(data)
             _save_unlocked(project_dir, data)
-            return True
+            return {"run_id": str(run["run_id"])}  # Failed — promote_run will skip
 
         if not isinstance(manifest, Mapping):
             raise StateValidationError(
@@ -5575,7 +5619,7 @@ def finalize_run_submission(
                 "Published Phase 02 menu backup could not be removed: %s",
                 cleanup_error,
             )
-        return True
+        return {"run_id": str(run["run_id"])}
 
 def submit_run_for_review(
     project_dir: str | Path,

@@ -2419,9 +2419,9 @@ def test_project_markdown_is_rendered_without_executable_html(
     )
 
     def render_markdown(source: str, **_kwargs) -> str:
-        # The renderer must receive escaped source, and the sanitizer must still
-        # defend against dangerous HTML emitted by a renderer extension.
-        assert "&lt;script&gt;owned_marker()&lt;/script&gt;" in source
+        # The renderer receives raw (unescaped) source.  The sanitizer alone
+        # must defend against dangerous HTML emitted by a renderer extension.
+        assert "<script>owned_marker()</script>" in source
         return (
             "<h1>Brief</h1><p><strong>Safe evidence</strong></p>"
             "<script>owned_marker()</script>"
