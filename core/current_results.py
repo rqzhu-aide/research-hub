@@ -1510,3 +1510,203 @@ def _write_not_applied_receipt(
         "applied_at": project_state._now_iso(),
     }
     _atomic_write_json(path, payload)
+
+
+# ---------------------------------------------------------------------------
+# §12: Phase 2 method reconciliation
+# ---------------------------------------------------------------------------
+
+
+def reconcile_method_catalog(
+    project_dir: str | Path,
+    *,
+    write: bool = False,
+) -> dict[str, Any]:
+    """Reconcile branch records with the published Phase 2 method catalog.
+
+    Reads the published method menu (``ideas/methods/``), resolves each
+    method's identity, and updates the ``active_method_identity`` in
+    branch records. Existing heads are retained — their freshness is
+    derived from the identity comparison (§3.4, §12).
+
+    This is non-destructive: it never deletes or modifies heads. It only
+    updates the branch record's cached view of the active method.
+
+    Parameters
+    ----------
+    project_dir
+        The project directory.
+    write
+        If True, atomically update branch records inside
+        :func:`current_results_lock`.
+
+    Returns
+    -------
+    dict
+        Reconciliation report: ``{"methods": {...}, "updated": [...], "written": bool}``
+    """
+
+    from core import method_menu
+
+    root = Path(project_dir).resolve()
+    report: dict[str, Any] = {
+        "methods": {},
+        "updated": [],
+        "written": False,
+        "catalog_sha256": "",
+    }
+
+    # Read the published method menu
+    try:
+        menu = method_menu.load_method_menu(root)
+        catalog_sha = method_menu.catalog_version(root)
+    except Exception:
+        return report
+
+    report["catalog_sha256"] = catalog_sha
+
+    # Resolve each active method's identity
+    for entry in menu.get("entries", []):
+        if not isinstance(entry, Mapping):
+            continue
+        stable_id = str(entry.get("stable_id", "")).strip()
+        version = str(entry.get("version", "")).strip()
+        sha256 = str(entry.get("sha256", "")).strip().lower()
+        status = str(entry.get("status", "active")).strip()
+        if not stable_id or not version or len(sha256) != 64:
+            continue
+        report["methods"][stable_id] = {
+            "stable_id": stable_id,
+            "version": version,
+            "definition_sha256": sha256,
+            "status": status,
+        }
+
+    if write:
+        with current_results_lock(root):
+            for stable_id, identity in report["methods"].items():
+                record = load_branch(root, stable_id)
+                if record is None:
+                    continue  # No branch record yet — nothing to reconcile
+                # Update active method identity
+                old_identity = record.get("active_method_identity")
+                new_identity = {
+                    "stable_id": identity["stable_id"],
+                    "version": identity["version"],
+                    "definition_sha256": identity["definition_sha256"],
+                }
+                if old_identity != new_identity:
+                    record["active_method_identity"] = new_identity
+                    record["catalog_generation"] = record.get("catalog_generation", 0) + 1
+                    report["updated"].append(stable_id)
+                # Always update catalog provenance
+                record["catalog_source_run_id"] = None  # Set by Phase 02 finalization
+                record["catalog_sha256"] = report["catalog_sha256"]
+                record.pop("reconciliation_pending", None)
+                write_branch_record(root, stable_id, record)
+            report["written"] = True
+
+    return report
+
+
+def get_branch_freshness(
+    project_dir: str | Path,
+    stable_id: str,
+) -> dict[str, dict[str, str]]:
+    """Return the derived freshness status for every head in a branch.
+
+    This is the primary read API for the UI (§15). It merges the branch
+    record's heads with the active method identity and derives freshness.
+    """
+
+    root = Path(project_dir).resolve()
+    record = load_branch(root, stable_id)
+    if record is None:
+        return {}
+    active_identity = record.get("active_method_identity")
+    method_status = str(record.get("method_status", "active")).strip()
+    result: dict[str, dict[str, str]] = {}
+    for slug, head in record.get("heads", {}).items():
+        status = derive_head_status(head, active_identity, method_status=method_status)
+        outcome = str(head.get("scientific_outcome", ""))
+        result[slug] = {
+            "status": status,
+            "scientific_outcome": outcome,
+            "run_id": str(head.get("run_id", "")),
+            "generation": str(head.get("generation", 0)),
+        }
+    return result
+
+
+# ---------------------------------------------------------------------------
+# §9: Context resolution — resolve exact head run IDs for a new launch
+# ---------------------------------------------------------------------------
+
+
+def resolve_context_heads(
+    project_dir: str | Path,
+    target_phase: str,
+    selected_method_id: str = "",
+) -> dict[str, Any]:
+    """Resolve which exact head run IDs should serve as context for a new run.
+
+    Merges global heads (P1, P2) with branch heads (P3, P4, P5) for the
+    selected method. Returns a dict mapping phase_slug → head info, or
+    an empty dict if no current-results records exist (caller should
+    fall back to all-history selection in that case — but only in shadow
+    mode; enforced mode should block).
+
+    Parameters
+    ----------
+    project_dir
+        The project directory.
+    target_phase
+        The phase being launched.
+    selected_method_id
+        The stable method ID for method-bound phases.
+
+    Returns
+    -------
+    dict
+        ``{"phase_slug": {"run_id": str, "generation": int, ...}, ...}``
+        or ``{}`` if no records exist.
+    """
+
+    root = Path(project_dir).resolve()
+    result: dict[str, Any] = {}
+
+    # Global heads (always included for any target phase)
+    global_record = load_global(root)
+    if global_record is not None:
+        for slug, head in global_record.get("heads", {}).items():
+            result[slug] = {
+                "run_id": head["run_id"],
+                "generation": head["generation"],
+                "scope": "global",
+                "head_sha256": compute_head_sha256(head),
+            }
+
+    # Branch heads (for method-bound target phases)
+    if selected_method_id:
+        method_id = str(selected_method_id).strip()
+        branch_record = load_branch(root, method_id)
+        if branch_record is not None:
+            active_identity = branch_record.get("active_method_identity")
+            method_status = str(branch_record.get("method_status", "active")).strip()
+            for slug, head in branch_record.get("heads", {}).items():
+                status = derive_head_status(
+                    head, active_identity, method_status=method_status
+                )
+                entry = {
+                    "run_id": head["run_id"],
+                    "generation": head["generation"],
+                    "scope": "branch",
+                    "head_sha256": compute_head_sha256(head),
+                    "freshness": status,
+                }
+                # Include stale heads as labeled recheck baselines (§9)
+                if status == "stale":
+                    entry["relationship"] = "stale_recheck_baseline"
+                result[slug] = entry
+
+    return result

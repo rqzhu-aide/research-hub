@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from . import method_menu, project_state
+from . import current_results
 from .launch_manifest import (
     phase_requires_method_binding,
     phase_uses_catalog_method_selection,
@@ -1534,6 +1535,30 @@ def prepare_phase_data(
         project_dir, phase_slug, phases_cfg
     )
 
+    # §15: Current-head freshness for method-bound phases.
+    # When the rollout mode is enabled, compute the freshness of this
+    # phase's head for each method branch and expose it to the template.
+    current_head_freshness: dict[str, str] = {}
+    if (
+        current_results.is_enabled()
+        and phase_requires_method_binding(phase_cfg)
+        and method_menu_state
+    ):
+        for entry in method_menu_state.get("entries", []):
+            stable_id = str(entry.get("stable_id", "")).strip()
+            if not stable_id:
+                continue
+            try:
+                freshness_map = current_results.get_branch_freshness(
+                    project_dir, stable_id
+                )
+            except Exception:
+                continue
+            if phase_slug in freshness_map:
+                current_head_freshness[stable_id] = freshness_map[
+                    phase_slug
+                ].get("status", "missing")
+
     return {
         "project_id": project_id,
         "phase_cfg": dict(phase_cfg),
@@ -1607,6 +1632,7 @@ def prepare_phase_data(
         "review_target_options": _available_review_targets(
             project_dir, phase_slug
         ),
+        "current_head_freshness": current_head_freshness,
     }
 
 

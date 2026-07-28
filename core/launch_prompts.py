@@ -18,6 +18,7 @@ from core import project_state
 from core import launch_dispatch
 from core import launch_manifest
 from core import launch_plans
+from core import current_results
 
 import logging
 log = logging.getLogger(__name__)
@@ -842,6 +843,24 @@ def _trusted_context(
     selected_method_sha256 = str(selected_method_sha256).strip().lower()
     entries: list[dict[str, Any]] = []
 
+    # §9: Current-head context resolution.
+    # When the rollout mode is enabled, resolve the exact head run IDs
+    # for this launch and restrict context to those runs only.
+    _cr_mode = current_results.get_rollout_mode()
+    _cr_heads: dict[str, set[str]] = {}
+    if _cr_mode != "off":
+        resolved = current_results.resolve_context_heads(
+            project_dir, phase_slug, selected_method_id
+        )
+        if resolved:
+            for _slug, _info in resolved.items():
+                _cr_heads.setdefault(_slug, set()).add(str(_info.get("run_id", "")))
+        elif _cr_mode == "enforced":
+            # No current-results records exist — in enforced mode this
+            # means no trusted context is available.  Return empty so
+            # the launch manifest has no context entries.
+            return []
+
     for candidate in launch_plans._phase_slugs(config):
         if candidate not in candidates:
             continue
@@ -862,7 +881,10 @@ def _trusted_context(
                     or not prior.get("final_summary")
                 ):
                     continue
+                # §9: In current-head mode, only include the resolved head run
                 prior_id = str(prior.get("run_id", "")).strip()
+                if _cr_heads and prior_id not in _cr_heads.get(candidate, set()):
+                    continue
                 selection = _sealed_run_method_selection(project_dir, candidate, prior_id)
                 if (
                     isinstance(selection, Mapping)
@@ -876,6 +898,10 @@ def _trusted_context(
                     and str(prior.get("status", "")) in {"approved", "awaiting_review"}
                     and prior.get("final_summary")
                 ):
+                    # §9: In current-head mode, only include the resolved head run
+                    prior_id_check = str(prior.get("run_id", "")).strip()
+                    if _cr_heads and prior_id_check not in _cr_heads.get(candidate, set()):
+                        continue
                     source_runs.append(prior)
 
         for run in source_runs:
