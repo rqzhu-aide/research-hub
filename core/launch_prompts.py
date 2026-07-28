@@ -844,18 +844,20 @@ def _trusted_context(
     entries: list[dict[str, Any]] = []
 
     # §9: Current-head context resolution.
-    # When the rollout mode is enabled, resolve the exact head run IDs
-    # for this launch and restrict context to those runs only.
+    # In enforced mode, resolve the exact head run IDs for this launch
+    # and restrict context to those runs only. In shadow mode, we resolve
+    # heads for logging/comparison but do NOT filter — the existing
+    # all-history behavior is preserved.
     _cr_mode = current_results.get_rollout_mode()
     _cr_heads: dict[str, set[str]] = {}
-    if _cr_mode != "off":
+    if _cr_mode == "enforced":
         resolved = current_results.resolve_context_heads(
             project_dir, phase_slug, selected_method_id
         )
         if resolved:
             for _slug, _info in resolved.items():
                 _cr_heads.setdefault(_slug, set()).add(str(_info.get("run_id", "")))
-        elif _cr_mode == "enforced":
+        else:
             # No current-results records exist — in enforced mode this
             # means no trusted context is available.  Return empty so
             # the launch manifest has no context entries.

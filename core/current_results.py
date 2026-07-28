@@ -1600,7 +1600,6 @@ def reconcile_method_catalog(
                     record["catalog_generation"] = record.get("catalog_generation", 0) + 1
                     report["updated"].append(stable_id)
                 # Always update catalog provenance
-                record["catalog_source_run_id"] = None  # Set by Phase 02 finalization
                 record["catalog_sha256"] = report["catalog_sha256"]
                 record.pop("reconciliation_pending", None)
                 write_branch_record(root, stable_id, record)
