@@ -858,10 +858,18 @@ def _trusted_context(
             for _slug, _info in resolved.items():
                 _cr_heads.setdefault(_slug, set()).add(str(_info.get("run_id", "")))
         else:
-            # No current-results records exist — in enforced mode this
-            # means no trusted context is available.  Return empty so
-            # the launch manifest has no context entries.
-            return []
+            # SAFETY FALLBACK: No current-results records exist.
+            # Returning [] would give the new run ZERO context — a
+            # catastrophically bad outcome for research quality. Instead,
+            # fall back to all-history selection (the pre-current-results
+            # behavior) and log a warning. This should only happen before
+            # bootstrap has been run for a project.
+            log.warning(
+                "current-results enforced mode has no head records for "
+                "%s — falling back to all-history context selection",
+                project_dir,
+            )
+            _cr_mode = "off"  # disable filtering for this call
 
     for candidate in launch_plans._phase_slugs(config):
         if candidate not in candidates:

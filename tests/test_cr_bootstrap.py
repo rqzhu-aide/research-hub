@@ -28,6 +28,18 @@ class TestBootstrapShadow:
         assert not cr.global_record_path(project).exists()
 
 
+class TestEnsureBootstrap:
+    """ensure_bootstrap is a no-op when records already exist."""
+
+    def test_ensure_bootstrap_creates_records(self, project: Path) -> None:
+        """First call bootstraps; second call is a no-op."""
+        r1 = cr.ensure_bootstrap(project)
+        assert r1.get("skipped") is not True
+
+        r2 = cr.ensure_bootstrap(project)
+        assert r2.get("skipped") is True
+
+
 class TestBootstrapValidation:
     """Bootstrap candidates must pass the generalized validator."""
 

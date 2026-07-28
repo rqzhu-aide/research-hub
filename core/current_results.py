@@ -130,7 +130,13 @@ def get_rollout_mode() -> str:
 
 
 def set_rollout_mode(mode: str) -> None:
-    """Set the rollout mode at runtime (primarily for tests)."""
+    """Set the rollout mode at runtime.
+
+    When switching from ``off`` to ``shadow`` or ``enforced``, existing
+    projects should be bootstrapped so head records exist.  Callers that
+    need to ensure records exist should call :func:`ensure_bootstrap`
+    for each project after switching modes.
+    """
 
     global _rollout_mode
     normalised = str(mode).strip().lower()
@@ -139,6 +145,22 @@ def set_rollout_mode(mode: str) -> None:
             f"rollout mode must be one of {sorted(ROLLOUT_MODES)}, got: {mode!r}"
         )
     _rollout_mode = normalised
+
+
+def ensure_bootstrap(project_dir: str | Path) -> dict[str, Any]:
+    """Bootstrap a project if no bootstrap has been run yet.
+
+    This is a no-op if a bootstrap report already exists.  Called after
+    enabling shadow or enforced mode to ensure the UI has data to display.
+
+    Returns the bootstrap report (same as :func:`bootstrap_project`).
+    """
+
+    root = Path(project_dir).resolve()
+    report_path = bootstrap_report_path(root)
+    if report_path.exists():
+        return {"written": False, "skipped": True}
+    return bootstrap_project(root, write=True)
 
 
 def is_enabled() -> bool:
@@ -1208,6 +1230,8 @@ def bootstrap_project(
                 }
                 write_branch_record(root, stable_id, branch_record)
             report["written"] = True
+            # Write a bootstrap report marker so ensure_bootstrap can detect prior runs
+            _atomic_write_json(bootstrap_report_path(root), report)
 
     return report
 

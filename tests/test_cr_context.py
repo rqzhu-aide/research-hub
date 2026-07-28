@@ -172,9 +172,11 @@ class TestTrustedContextIntegration:
         # The key invariant: _cr_heads is empty in off mode, so no filtering occurs.
         assert cr.get_rollout_mode() == "off"
 
-    def test_enforced_mode_with_no_records_blocks_context(self, project: Path) -> None:
-        """In enforced mode with no records, _trusted_context returns empty."""
-        # resolve_context_heads returns {} when no records exist
+    def test_enforced_mode_falls_back_when_no_records(self, project: Path) -> None:
+        """In enforced mode with no records, _trusted_context falls back to
+        all-history selection (not empty) — a safety guard prevents
+        launching a run with zero context."""
+        # resolve_context_heads returns {} when no records exist.
+        # _trusted_context logs a warning and falls back to all-history.
         result = cr.resolve_context_heads(project, "03-idea-evaluation", "method-a")
         assert result == {}
-        # In _trusted_context, this triggers the `return []` path
