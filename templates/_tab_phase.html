@@ -217,15 +217,10 @@
         {% if method_bound_phase and latest.method_selection | default(none) %}
         <span class="method-run-badge">{{ latest.method_selection.stable_id }} &middot; {{ latest.method_selection.version }}</span>
         {% endif %}
-        {% if pd.current_head_freshness | default(none) and latest.method_selection | default(none) %}
-        {% set _freshness = pd.current_head_freshness.get(latest.method_selection.stable_id, '') %}
-        {% if _freshness == 'fresh' %}
+        {% if pd.run_freshness | default('') == 'fresh' %}
         <span class="freshness-badge freshness-fresh">Up to date</span>
-        {% elif _freshness == 'stale' %}
+        {% elif pd.run_freshness | default('') == 'stale' %}
         <span class="freshness-badge freshness-stale">Method revised — rerun needed</span>
-        {% elif _freshness == 'provisional' %}
-        <span class="freshness-badge freshness-provisional">Provisional</span>
-        {% endif %}
         {% endif %}
         {% if pc.slug == '04-draft-assembly' and latest.frozen_plan.variant | default(none) %}
         <span class="run-mode-badge">{{ latest.frozen_plan.variant }}</span>

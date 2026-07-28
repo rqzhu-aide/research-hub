@@ -18,7 +18,6 @@ from core import project_state
 from core import launch_dispatch
 from core import launch_manifest
 from core import launch_plans
-from core import current_results
 
 import logging
 log = logging.getLogger(__name__)
@@ -843,34 +842,6 @@ def _trusted_context(
     selected_method_sha256 = str(selected_method_sha256).strip().lower()
     entries: list[dict[str, Any]] = []
 
-    # §9: Current-head context resolution.
-    # In enforced mode, resolve the exact head run IDs for this launch
-    # and restrict context to those runs only. In shadow mode, we resolve
-    # heads for logging/comparison but do NOT filter — the existing
-    # all-history behavior is preserved.
-    _cr_mode = current_results.get_rollout_mode()
-    _cr_heads: dict[str, set[str]] = {}
-    if _cr_mode == "enforced":
-        resolved = current_results.resolve_context_heads(
-            project_dir, phase_slug, selected_method_id
-        )
-        if resolved:
-            for _slug, _info in resolved.items():
-                _cr_heads.setdefault(_slug, set()).add(str(_info.get("run_id", "")))
-        else:
-            # SAFETY FALLBACK: No current-results records exist.
-            # Returning [] would give the new run ZERO context — a
-            # catastrophically bad outcome for research quality. Instead,
-            # fall back to all-history selection (the pre-current-results
-            # behavior) and log a warning. This should only happen before
-            # bootstrap has been run for a project.
-            log.warning(
-                "current-results enforced mode has no head records for "
-                "%s — falling back to all-history context selection",
-                project_dir,
-            )
-            _cr_mode = "off"  # disable filtering for this call
-
     for candidate in launch_plans._phase_slugs(config):
         if candidate not in candidates:
             continue
@@ -891,16 +862,14 @@ def _trusted_context(
                     or not prior.get("final_summary")
                 ):
                     continue
-                # §9: In current-head mode, only include the resolved head run
                 prior_id = str(prior.get("run_id", "")).strip()
-                if _cr_heads and prior_id not in _cr_heads.get(candidate, set()):
-                    continue
                 selection = _sealed_run_method_selection(project_dir, candidate, prior_id)
                 if (
                     isinstance(selection, Mapping)
                     and str(selection.get("stable_id", "")) == selected_method_id
                 ):
                     source_runs.append(prior)
+                    break  # Latest finalized run for this method only
         else:
             for prior in reversed(phase_state.get("runs", [])):
                 if (
@@ -908,11 +877,8 @@ def _trusted_context(
                     and str(prior.get("status", "")) in {"approved", "awaiting_review"}
                     and prior.get("final_summary")
                 ):
-                    # §9: In current-head mode, only include the resolved head run
-                    prior_id_check = str(prior.get("run_id", "")).strip()
-                    if _cr_heads and prior_id_check not in _cr_heads.get(candidate, set()):
-                        continue
                     source_runs.append(prior)
+                    break  # Latest run only
 
         for run in source_runs:
             run_id = str(run.get("run_id", "")).strip()

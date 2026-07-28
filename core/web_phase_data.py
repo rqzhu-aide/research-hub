@@ -15,10 +15,37 @@ from .launch_manifest import (
     phase_uses_catalog_method_selection,
     phase_five_branch_readiness,
 )
+
 from .launch_run import LaunchError, exact_rerun_options
 from .safe_markdown import render_safe_markdown
 
 import logging
+
+
+def _run_definition_sha256_from_manifest(
+    project_dir: Path,
+    phase_slug: str,
+    run: Mapping[str, Any],
+) -> str:
+    """Extract the frozen method definition digest from a run's manifest."""
+
+    run_id = str(run.get("run_id", "")).strip()
+    if not run_id:
+        return ""
+    try:
+        from .launch_manifest import _read_manifest
+        manifest = _read_manifest(Path(project_dir), phase_slug, run_id)
+    except Exception:
+        return ""
+    snapshots = manifest.get("snapshots")
+    selected_method = (
+        snapshots.get("selected_method") if isinstance(snapshots, Mapping) else None
+    )
+    if isinstance(selected_method, Mapping):
+        return str(selected_method.get("sha256", "")).strip().lower()
+    return ""
+
+
 log = logging.getLogger(__name__)
 
 
@@ -1535,29 +1562,27 @@ def prepare_phase_data(
         project_dir, phase_slug, phases_cfg
     )
 
-    # §15: Current-head freshness for method-bound phases.
-    # When the rollout mode is enabled, compute the freshness of this
-    # phase's head for each method branch and expose it to the template.
-    current_head_freshness: dict[str, str] = {}
+    # Freshness badge for method-bound phases: is the latest run's method
+    # still the one in the published catalog?
+    run_freshness = ""
     if (
-        current_results.is_enabled()
-        and phase_requires_method_binding(phase_cfg)
+        phase_requires_method_binding(phase_cfg)
+        and displayed_latest
         and method_menu_state
     ):
-        for entry in method_menu_state.get("entries", []):
-            stable_id = str(entry.get("stable_id", "")).strip()
-            if not stable_id:
-                continue
-            try:
-                freshness_map = current_results.get_branch_freshness(
-                    project_dir, stable_id
+        latest_ms = displayed_latest.get("method_selection")
+        if isinstance(latest_ms, Mapping):
+            stable_id = str(latest_ms.get("stable_id", "")).strip()
+            if stable_id:
+                run_freshness = current_results.derive_freshness(
+                    project_dir,
+                    phase_slug,
+                    stable_id,
+                    run_version=str(latest_ms.get("version", "")),
+                    run_definition_sha256=_run_definition_sha256_from_manifest(
+                        project_dir, phase_slug, displayed_latest
+                    ),
                 )
-            except Exception:
-                continue
-            if phase_slug in freshness_map:
-                current_head_freshness[stable_id] = freshness_map[
-                    phase_slug
-                ].get("status", "missing")
 
     return {
         "project_id": project_id,
@@ -1632,7 +1657,7 @@ def prepare_phase_data(
         "review_target_options": _available_review_targets(
             project_dir, phase_slug
         ),
-        "current_head_freshness": current_head_freshness,
+        "run_freshness": run_freshness,
     }
 
 

@@ -5469,52 +5469,14 @@ def finalize_run_submission(
         isinstance(expected_pid, bool) or not isinstance(expected_pid, int) or expected_pid <= 0
     ):
         raise StateValidationError("expected PID must be a positive integer")
-    finalized = _finalize_run_submission_locked(
-        project_dir, phase_slug, run_ref, expected_pid=expected_pid
-    )
-    if not finalized:
-        return False
-
-    # --- Current-results promotion (§11) ---
-    # The project lock has been released. Promotion runs under the separate
-    # current-results lock. Failures are logged but never affect the
-    # already-committed finalization result.
-    try:
-        from core import current_results
-        if current_results.is_enabled():
-            result = current_results.promote_run(
-                project_dir, phase_slug, finalized["run_id"]
-            )
-            if not result["promoted"]:
-                log.info(
-                    "current-results promotion not applied for %s/%s: %s",
-                    phase_slug, finalized["run_id"][:12], result["reason"],
-                )
-    except Exception:
-        log.warning("current-results promotion failed", exc_info=True)
-    return True
-
-
-def _finalize_run_submission_locked(
-    project_dir: str | Path,
-    phase_slug: str,
-    run_ref: str | int,
-    *,
-    expected_pid: int | None = None,
-) -> dict[str, str] | None:
-    """Run the locked finalization logic.
-
-    Returns ``{"run_id": str}`` on success, or None if the run was not
-    in a finalizable state (returns False from the public API).
-    """
 
     with _project_lock(project_dir):
         data = _migrate(_read_unlocked(project_dir))
         phase, run, _ = _resolve_run(data, phase_slug, run_ref)
         if run.get("status") != "submitting":
-            return None
+            return False
         if expected_pid is not None and run.get("process_pid") != expected_pid:
-            return None
+            return False
         if not run.get("final_summary") or not run.get("submitted_at"):
             raise StateValidationError("submitted run is missing its summary record")
         _validate_run_integrity(
@@ -5546,7 +5508,7 @@ def _finalize_run_submission_locked(
                 run["status"] = "awaiting_review"
             _refresh_derived_state(data)
             _save_unlocked(project_dir, data)
-            return {"run_id": str(run["run_id"])}
+            return True
 
         scientific_outcome = _phase_two_scientific_outcome(run)
         if scientific_outcome == "Failed":
@@ -5556,7 +5518,7 @@ def _finalize_run_submission_locked(
             run["method_menu_changes"] = None
             _refresh_derived_state(data)
             _save_unlocked(project_dir, data)
-            return {"run_id": str(run["run_id"])}  # Failed — promote_run will skip
+            return True
 
         if not isinstance(manifest, Mapping):
             raise StateValidationError(
@@ -5619,7 +5581,7 @@ def _finalize_run_submission_locked(
                 "Published Phase 02 menu backup could not be removed: %s",
                 cleanup_error,
             )
-        return {"run_id": str(run["run_id"])}
+        return True
 
 def submit_run_for_review(
     project_dir: str | Path,
