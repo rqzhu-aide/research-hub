@@ -1434,11 +1434,6 @@ def _migrate(data: dict[str, Any]) -> dict[str, Any]:
             run.setdefault("cleanup_started_at", None)
             run.setdefault("cleanup_completed_at", None)
             run.setdefault("cleanup_recovery_note", None)
-            run.setdefault("current_results_basis", None)
-            if isinstance(run.get("current_results_basis"), dict):
-                run.setdefault("current_results_basis_sha256", None)
-            else:
-                run.setdefault("current_results_basis_sha256", None)
 
         # Infer legacy outcomes after every run has an ID.  The former phase
         # status described only the newest run, so earlier completed runs are
