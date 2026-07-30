@@ -522,6 +522,8 @@ This task belongs only to phase `{phase_slug}`, run `{run_id}`, round {round_n}.
 It is a separate verification task. Do not revise the theory or start another
 phase.
 
+{launch_prompts._project_scope_block(project_dir)}
+
 ## Audit scope
 
 User direction supplied for this run:
@@ -627,6 +629,8 @@ complete this kanban task with a concise handoff summary.
 
 This task belongs only to phase `{phase_slug}`, run `{run_id}`, round {round_n}.
 The user explicitly authorized this run. Do not launch phases or approve results.
+
+{launch_prompts._project_scope_block(project_dir)}
 
 ## Frozen role identity and reasoning standards
 

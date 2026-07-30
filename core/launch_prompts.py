@@ -2464,6 +2464,24 @@ def _phase_package_prompt_block(
         )
     return "\n".join(lines)
 
+def _project_scope_block(project_dir: Path) -> str:
+    """Agent-memory scoping instruction shared by lead prompts and task briefs.
+
+    Hermes profiles are shared across projects; this block keeps persistent
+    agent memory namespaced so one project's context cannot leak into
+    another's through the profile.
+    """
+
+    return (
+        "## Project scope and memory\n\n"
+        f"This work belongs to project `{project_dir.name}` ({project_dir}). "
+        "If you keep persistent memory between tasks, scope every entry to "
+        "this project (prefix it with the project name), and disregard memory "
+        "entries that reference other projects — they are not part of this "
+        "run's frozen context."
+    )
+
+
 def _build_lead_prompt(
     project_dir: Path,
     phase: Mapping[str, Any],
@@ -3031,6 +3049,8 @@ user. Your result must make the user's next decision easy to understand.
 {prerequisite_text}
 
 {method_selection_text}
+
+{_project_scope_block(project_dir)}
 
 {context_policy_text}
 

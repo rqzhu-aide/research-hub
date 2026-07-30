@@ -6655,3 +6655,60 @@ def test_replaced_history_requires_usable_outcome(
     )
 
     assert {entry["run_id"] for entry in context} == {"run-new"}
+
+
+def test_lead_prompt_and_task_brief_carry_project_scope_block(
+    tmp_path: Path,
+) -> None:
+    """Agent-memory scoping instructions reach leads and task agents."""
+
+    project = (tmp_path / "project-001-demo").resolve()
+    project.mkdir()
+    block = launcher.launch_prompts._project_scope_block(project)
+    assert "project-001-demo" in block
+    assert "disregard memory" in block
+
+    lead_soul = tmp_path / "research_lead.md"
+    lead_soul.write_text("Lead with the research question.", encoding="utf-8")
+    lead_digest = hashlib.sha256(lead_soul.read_bytes()).hexdigest()
+    snapshots = {
+        "setting": {"path": str(tmp_path / "setting.md")},
+        "team": {
+            "charter": {"path": str(tmp_path / "charter.md")},
+            "norms": {"path": str(tmp_path / "norms.md")},
+        },
+        "souls": {
+            "research_lead": {"path": str(lead_soul), "sha256": lead_digest}
+        },
+        "playbooks": {
+            "_lead.md": {"path": str(tmp_path / "_lead.md")},
+            "_phase.md": {"path": str(tmp_path / "_phase.md")},
+        },
+        "summaries": [],
+    }
+    phase = {
+        "slug": "05-review-revision",
+        "name": "Paper Writing",
+        "pattern": "sequential",
+        "folder": "draft",
+        "members": ["research_lead"],
+        "stages": [
+            {"role": "research_lead", "name": "Frame", "description": "Frame."}
+        ],
+    }
+    prompt = launcher._build_lead_prompt(
+        project,
+        phase,
+        {"research_lead": "lead-profile"},
+        "board",
+        "run-id",
+        1,
+        1,
+        "",
+        {"blockers": []},
+        snapshots,
+        project / "phase-summaries" / "05-review-revision" / "run-id.html",
+        branch_readiness={"ready": True, "requirements": []},
+    )
+    assert "Project scope and memory" in prompt
+    assert "project-001-demo" in prompt
