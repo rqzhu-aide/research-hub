@@ -157,6 +157,14 @@ what an acknowledgement records and what may clear it.
 New literature yellows P2 but leaves existing P3/P4 green even though novelty
 claims, assumptions, or benchmarks may be affected. Follow-up doc Priority 2.
 
+**Update (July 30, 2026, via `situations/08`):** the P1→P2 half of this is
+now *implemented* — a focused P2 rerun applies the current literature basis
+as provenance (`method_menu.apply_run_provenance(literature_basis=...)`) and
+a `reviewed_no_change` review clears the P1→P2 yellow without a method edit.
+The follow-up doc's Priority-2 statement ("no stored Phase 1 basis or review
+disposition that can clear a Phase 2 yellow state") is partially outdated.
+The remaining gap is P1→P3/P4 only.
+
 ## 🟡 Issue 7 — P4 replacement (not accumulation) evidence model
 
 Completing failed experiments requires redoing all experiments; the prior
@@ -177,6 +185,57 @@ legacy data is history-only by design, but no bootstrap/repair tooling exists
 
 Retired branches and sealed per-run context copies accumulate forever
 (~1.4 MB/run linear growth). Follow-up doc Priority 6.
+
+---
+
+## 🟡 Issue 12 — P3 Partial trap: Partial theory can neither promote nor feed Phase 5
+
+Raised by `situations/06-p3-partial-trap.md`; **verified against code**
+(July 30, 2026). Two independent gates create the trap:
+
+1. **Seal gate** — `phase_records.py` (~line 664): theory sealing requires
+   `outcome == "Complete"` specifically, unlike literature/method/empirical
+   which use `eligible` (Complete **or** Partial). A Partial P3 promotes
+   nothing; the branch has no current theory record.
+2. **Readiness gate** — `launch_manifest.PHASE_FIVE_ACCEPTED_SCIENTIFIC_OUTCOMES`:
+   P1, P2, P4 accept `("Complete", "Partial")`; P3 accepts `("Complete",)`
+   only. Even a promoted Partial theory would be rejected by Phase 5.
+
+Notable: `theory_records` itself already accepts Partial
+(`_ELIGIBLE_OUTCOMES = {"Complete", "Partial"}`) — the record layer supports
+it; only the orchestration and readiness gates block it. The README
+("Phase 3 must be Complete") documents this as deliberate policy, so this is
+a **design decision to revisit**, not a bug. Real research routinely produces
+Partial theories (unproven lemma, numerically-verified regularity condition);
+the current policy makes them dead ends. Any fix needs both gates plus a
+visible limitation marker carried into the manuscript.
+
+## 🟡 Issue 13 — Failed runs are invisible to rerun context
+
+Raised by `situations/10-failed-runs-recovery-loop.md`; **verified**.
+`launch_prompts.py:715-717` — `_CONTEXT_RESULT_STATUSES = {"completed",
+"approved", "awaiting_review", "revision_requested", "superseded"}` excludes
+`failed`. A rerun's agents never see why the previous attempt failed; the
+user must hand-encode failure lessons in the direction text. Likely fix:
+include `failed` runs with an explicit "failed prior attempt" label in
+`_CONTEXT_EVIDENCE_STATUS`. Small, high-value, but changes agent context —
+needs a decision on labeling policy.
+
+## 🟡 Issue 14 — P2 full-catalog scaling and no subset/batch operations
+
+Raised by `situations/11-ten-method-p2-catalog.md`. Full-catalog P2 review is
+O(n) in method count (~300 KB context per role at 10 methods); the only
+alternative is one focused run per method. No batch "retire these, revise
+this, confirm the rest" operation. Medium severity; matters only for
+method-heavy projects.
+
+## 🟢 Issue 15 — No accidental-run prevention or undo
+
+Raised by `situations/09-premature-p4-scoping-errors.md`. Launching a phase
+for the wrong method creates permanent branch artifacts; cleanup requires
+state-file surgery (`references/run-cleanup.md`). Not a bug — the system
+deliberately doesn't second-guess the user — but a confirmation hint ("branch
+X is already P5-ready") or an undo path would reduce risk. Low priority.
 
 ---
 
