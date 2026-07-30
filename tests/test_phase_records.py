@@ -502,3 +502,78 @@ def test_theory_seal_still_rejects_failed_outcome(
     assert seal["kind"] == "none"
     assert seal["eligible"] is False
     assert seal["data"] is None
+
+
+def _identity_manifest(version: str, digest: str) -> dict[str, object]:
+    return {
+        "schema_version": 14,
+        "phase_slug": phase_records.THEORY_PHASE,
+        "method_selection": {
+            "kind": "method",
+            "stable_id": "method-a",
+            "version": version,
+            "definition_sha256": digest,
+        },
+        "snapshots": {
+            "selected_method": {
+                "stable_id": "method-a",
+                "version": version,
+                "definition_sha256": digest,
+            }
+        },
+    }
+
+
+def test_enforce_catalog_identity_current_rejects_outdated_frozen_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        phase_records.method_menu,
+        "load_method_menu",
+        lambda *_args: {
+            "entries": [{
+                "stable_id": "method-a",
+                "version": "v2",
+                "definition_sha256": "b" * 64,
+            }]
+        },
+    )
+    with pytest.raises(
+        phase_records.PhaseRecordError,
+        match="changed after this run froze it",
+    ):
+        phase_records.enforce_catalog_identity_current(
+            tmp_path, _identity_manifest("v1", "a" * 64)
+        )
+
+
+def test_enforce_catalog_identity_current_accepts_matching_and_legacy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        phase_records.method_menu,
+        "load_method_menu",
+        lambda *_args: {
+            "entries": [{
+                "stable_id": "method-a",
+                "version": "v1",
+                "definition_sha256": "a" * 64,
+            }]
+        },
+    )
+    phase_records.enforce_catalog_identity_current(
+        tmp_path, _identity_manifest("v1", "a" * 64)
+    )
+
+    # Legacy workspace: catalog unreadable -> legacy behavior (no error).
+    def broken(*_args: object) -> None:
+        raise OSError("no catalog")
+
+    monkeypatch.setattr(
+        phase_records.method_menu, "load_method_menu", broken
+    )
+    phase_records.enforce_catalog_identity_current(
+        tmp_path, _identity_manifest("v1", "a" * 64)
+    )

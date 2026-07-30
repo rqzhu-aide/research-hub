@@ -92,6 +92,42 @@ def manifest_method_identity(manifest: Mapping[str, Any]) -> dict[str, str]:
     )
 
 
+def enforce_catalog_identity_current(
+    project_dir: str | Path,
+    manifest: Mapping[str, Any],
+) -> None:
+    """Refuse to promote a record whose frozen method identity is outdated.
+
+    Promotion otherwise validates only the frozen manifest identity. Today
+    the single-active-run rule prevents the method catalog from changing
+    while a run is in flight, but that invariant is incidental; this check
+    enforces it intrinsically. Workspaces without a published catalog (or
+    without this stable_id) keep legacy behavior.
+    """
+
+    identity = manifest_method_identity(manifest)
+    try:
+        menu = method_menu.load_method_menu(Path(project_dir).resolve())
+    except Exception:
+        return
+    entries = [
+        entry
+        for entry in menu.get("entries", [])
+        if isinstance(entry, Mapping)
+        and str(entry.get("stable_id", "")).strip() == identity["stable_id"]
+    ]
+    if not entries:
+        return
+    current = method_identity(entries[0])
+    if current != identity:
+        raise PhaseRecordError(
+            f"The published method {identity['stable_id']!r} changed after "
+            f"this run froze it (run: {identity['version']}, catalog: "
+            f"{current['version']}). This run's result is historical; rerun "
+            "the phase for the current method version."
+        )
+
+
 def manifest_knowledge_heads(
     manifest: Mapping[str, Any],
 ) -> dict[str, Any] | None:
@@ -877,6 +913,7 @@ def promote_output(
             focused_method_id=focused_id,
         )
     if phase_slug == THEORY_PHASE:
+        enforce_catalog_identity_current(project_dir, manifest)
         return theory_records.promote_staged_theory(
             project_dir,
             output_root,
@@ -886,6 +923,7 @@ def promote_output(
             promotion_intent=promotion_intent,
         )
     if phase_slug == EMPIRICAL_PHASE:
+        enforce_catalog_identity_current(project_dir, manifest)
         verified = _verify_empirical_seal(project_dir, output_root, data)
         identity = manifest_method_identity(manifest)
         if dict(verified["index"].get("method", {})) != identity:
@@ -902,6 +940,7 @@ def promote_output(
     if phase_slug == MANUSCRIPT_PHASE:
         if promotion_intent is not None:
             raise PhaseRecordError("Phase 5 does not support a promotion intent")
+        enforce_catalog_identity_current(project_dir, manifest)
         identity = manifest_method_identity(manifest)
         return manuscript_records.promote_staged_manuscript(
             project_dir,
