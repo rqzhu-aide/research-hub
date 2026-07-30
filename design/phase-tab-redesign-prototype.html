@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Research Hub — Phase Tab Redesign Prototype</title>
+<style>
+/* Tokens lifted verbatim from research-hub static/style.css (dark theme) */
+:root {
+  --radius-sm: 4px; --radius: 7px; --radius-lg: 11px;
+  --fast: 130ms ease; --medium: 220ms ease;
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --canvas: #0a0e14; --sidebar: #0d1419; --surface: #141b24;
+  --surface-raised: #1a2330; --surface-hover: #222d3d;
+  --line: #2a3a4e; --line-strong: #3d5170;
+  --text: #eef2f6; --text-soft: #b8c5d4; --muted: #8b9bad; --faint: #8090a8;
+  --accent: #6366f1; --accent-bright: #818cf8;
+  --accent-soft: rgba(99,102,241,.14); --accent-line: rgba(99,102,241,.42);
+  --approved: #2dd4bf; --approved-soft: rgba(45,212,191,.12);
+  --running: #3b82f6; --running-soft: rgba(59,130,246,.12);
+  --review: #f59e0b; --review-soft: rgba(245,158,11,.13);
+  --danger: #f43f5e; --danger-soft: rgba(244,63,94,.12);
+  --shadow: 0 16px 40px rgba(0,0,0,.35), 0 2px 8px rgba(0,0,0,.2);
+  --focus: 0 0 0 3px rgba(99,102,241,.40);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--canvas); color: var(--text);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+}
+code { font-family: var(--font-mono); overflow-wrap: anywhere; }
+button { font: inherit; cursor: pointer; }
+
+.shell { display: flex; min-height: 100vh; }
+.mock-sidebar {
+  width: 220px; flex: 0 0 auto; background: var(--sidebar);
+  border-right: 1px solid var(--line); padding: 18px 14px;
+}
+.mock-sidebar .brand { font-weight: 700; letter-spacing: .02em; margin-bottom: 20px; }
+.mock-sidebar .nav-sec { font-size: .65rem; text-transform: uppercase; letter-spacing: .09em; color: var(--faint); margin: 14px 4px 6px; }
+.mock-sidebar .proj { display: flex; gap: 8px; align-items: center; padding: 7px 9px; border-radius: var(--radius-sm); color: var(--text-soft); }
+.mock-sidebar .proj.current { background: var(--surface-raised); color: var(--text); border-left: 3px solid var(--accent); }
+.mock-sidebar .proj .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--approved); }
+.main { flex: 1; padding: 26px 30px 60px; max-width: 1080px; }
+
+.eyebrow { font-size: .66rem; text-transform: uppercase; letter-spacing: .1em; color: var(--faint); margin: 0 0 2px; }
+h1 { font-size: 1.5rem; margin: 0 0 4px; }
+h2 { font-size: 1.15rem; margin: 0; }
+h2 .roman { color: var(--accent-bright); font-family: var(--font-mono); font-size: .85rem; }
+.phase-desc { color: var(--muted); margin: 4px 0 0; max-width: 640px; }
+.tabs { display: flex; gap: 4px; margin: 20px 0 18px; border-bottom: 1px solid var(--line); }
+.tab { padding: 8px 14px; color: var(--muted); border-bottom: 2px solid transparent; font-size: .85rem; }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 18px; margin-bottom: 18px; }
+
+/* ── status vocab (existing) ── */
+.status-marker { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+.status-approved, .status-completed { background: var(--approved); }
+.status-running { background: var(--running); }
+.badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 99px; font-size: .7rem; font-weight: 600; }
+.badge-current { background: var(--approved-soft); color: var(--approved); }
+.badge-outcome { background: var(--accent-soft); color: var(--accent-bright); }
+.badge-method { background: var(--surface-raised); color: var(--text-soft); font-family: var(--font-mono); font-size: .68rem; }
+.badge-fresh { background: var(--approved-soft); color: var(--approved); }
+.record-status { font-size: .68rem; line-height: 1.35; display: block; }
+.rs-current { color: var(--approved); }
+.rs-review { color: var(--review); }
+.rs-invalid { color: var(--danger); }
+.rs-notrun { color: var(--muted); }
+.rs-reason { display: block; margin-top: 1px; color: var(--text-soft); font-size: .66rem; }
+
+.muted { color: var(--muted); }
+.field-help { color: var(--muted); font-size: .78rem; margin: 8px 0 0; }
+
+/* ── method picker (existing, compacted) ── */
+.method-list { display: grid; gap: 8px; margin-top: 10px; }
+.method-opt { display: flex; gap: 10px; align-items: flex-start; padding: 11px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); cursor: pointer; }
+.method-opt:hover { border-color: var(--accent); }
+.method-opt.selected { border-color: var(--accent); background: var(--surface-raised); box-shadow: inset 3px 0 0 var(--accent); }
+.method-opt input { margin-top: 3px; }
+.method-title { font-weight: 600; display: block; }
+.method-meta { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: .75rem; margin-top: 2px; }
+fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin: 0 0 16px; }
+legend { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); padding: 0 6px; }
+
+/* ═══ P1 — Run plan digest ═══ */
+.plan-digest {
+  border: 1px solid var(--accent-line); border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--accent-soft), transparent 70%), var(--surface-raised);
+  padding: 14px 16px; margin: 0 0 16px;
+}
+.plan-digest .pd-head { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: .82rem; letter-spacing: .02em; }
+.plan-digest .pd-head .pd-icon { color: var(--accent-bright); }
+.plan-digest dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px 20px; margin: 10px 0 0; }
+.plan-digest dt { font-size: .64rem; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); }
+.plan-digest dd { margin: 1px 0 0; font-size: .84rem; color: var(--text); }
+.plan-digest dd code { font-size: .76rem; color: var(--accent-bright); }
+.plan-digest .pd-freeze { margin-top: 10px; padding-top: 9px; border-top: 1px dashed var(--line); font-size: .72rem; color: var(--muted); }
+
+/* ═══ P2 — Elevated direction panel ═══ */
+.direction-panel {
+  border: 1px solid var(--accent-line); border-radius: var(--radius);
+  background: var(--surface-raised); padding: 14px 16px; margin-bottom: 16px;
+  position: relative;
+}
+.direction-panel::before {
+  content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px;
+  border-radius: 2px; background: linear-gradient(180deg, var(--accent), var(--accent-bright));
+}
+.direction-panel .dp-label { display: flex; align-items: baseline; gap: 10px; font-weight: 700; font-size: .88rem; }
+.direction-panel .dp-label .dp-tag { font-size: .64rem; font-weight: 600; color: var(--accent-bright); background: var(--accent-soft); border-radius: 99px; padding: 2px 9px; text-transform: uppercase; letter-spacing: .07em; }
+.direction-panel textarea {
+  width: 100%; margin-top: 9px; background: var(--canvas); color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 10px 12px; font: inherit; resize: vertical; min-height: 88px;
+}
+.direction-panel textarea:focus { border-color: var(--accent); outline: 0; box-shadow: var(--focus); }
+.direction-panel .dp-foot { display: flex; justify-content: space-between; margin-top: 5px; font-size: .7rem; color: var(--faint); }
+
+/* plain (existing) instruction box */
+.instruction-box-old label { font-size: .8rem; color: var(--text-soft); display: block; margin-bottom: 4px; }
+.instruction-box-old textarea {
+  width: 100%; background: var(--surface); color: var(--text); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); padding: 10px 12px; font: inherit; resize: vertical;
+}
+
+/* ═══ P3 — Decision brief ═══ */
+.decision-brief { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin-top: 14px; }
+.decision-brief .db-row { display: grid; grid-template-columns: 150px 1fr; gap: 14px; padding: 11px 16px; }
+.decision-brief .db-row + .db-row { border-top: 1px solid var(--line); }
+.decision-brief .db-key { font-size: .64rem; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); padding-top: 2px; }
+.decision-brief .db-val { font-size: .85rem; color: var(--text-soft); }
+.decision-brief .db-val strong { color: var(--text); }
+.decision-brief .db-row.risk .db-val { color: #fbbf24; }
+.db-options { display: grid; gap: 7px; }
+.db-option { display: flex; gap: 10px; align-items: baseline; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.db-option .opt-name { font-weight: 700; font-size: .78rem; color: var(--accent-bright); min-width: 64px; }
+.db-option .opt-desc { font-size: .8rem; color: var(--text-soft); }
+.db-option.primary { border-color: var(--accent-line); background: var(--accent-soft); }
+
+/* plain (existing) highlight */
+.summary-old { margin-top: 14px; font-size: .92rem; }
+
+/* ═══ P4 — Branch status rail ═══ */
+.status-rail { display: inline-flex; gap: 3px; align-items: center; margin-top: 6px; }
+.status-rail .seg { display: inline-flex; align-items: center; gap: 4px; font-size: .64rem; font-family: var(--font-mono); padding: 2px 7px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); }
+.status-rail .seg i { width: 6px; height: 6px; border-radius: 50%; font-style: normal; }
+.seg.ok i { background: var(--approved); } .seg.ok { color: var(--approved); }
+.seg.warn i { background: var(--review); } .seg.warn { color: var(--review); }
+.seg.none i { background: var(--line-strong); } .seg.none { color: var(--muted); }
+
+/* ═══ launch footer ═══ */
+.launch-footer { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+.btn-primary {
+  min-width: 180px; padding: 11px 22px; border: 0; border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--accent), var(--accent-bright));
+  color: #0a0e14; font-weight: 700; box-shadow: 0 4px 14px rgba(99,102,241,.42);
+}
+.btn-quiet { padding: 8px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: transparent; color: var(--text-soft); }
+.launch-hint { font-size: .76rem; color: var(--muted); }
+/* P5 inline review */
+.launch-review { display: none; border: 1px solid var(--review); border-radius: var(--radius); background: var(--review-soft); padding: 14px 16px; margin-top: 12px; }
+.launch-review.show { display: block; }
+.launch-review .lr-title { font-weight: 700; color: var(--review); margin-bottom: 6px; }
+.launch-review .lr-actions { display: flex; gap: 10px; margin-top: 10px; }
+.btn-confirm { padding: 9px 18px; border: 0; border-radius: var(--radius); background: var(--review); color: #0a0e14; font-weight: 700; }
+
+/* ═══ Tweaks panel ═══ */
+.tweaks {
+  position: fixed; right: 0; top: 0; bottom: 0; width: 240px; background: var(--sidebar);
+  border-left: 1px solid var(--line); padding: 18px 16px; transform: translateX(196px);
+  transition: transform var(--medium); z-index: 10;
+}
+.tweaks.open, .tweaks:hover { transform: translateX(0); }
+.tweaks .t-handle { position: absolute; left: 0; top: 40%; writing-mode: vertical-rl; font-size: .66rem; letter-spacing: .12em; color: var(--accent-bright); padding: 10px 8px; }
+.tweaks h3 { margin: 0 0 4px; font-size: .9rem; }
+.tweaks .t-sub { font-size: .72rem; color: var(--muted); margin-bottom: 14px; }
+.tweaks label { display: flex; gap: 8px; align-items: flex-start; padding: 8px 6px; border-radius: var(--radius-sm); cursor: pointer; font-size: .8rem; color: var(--text-soft); }
+.tweaks label:hover { background: var(--surface-raised); }
+.tweaks label small { display: block; color: var(--faint); font-size: .68rem; }
+.tweaks .t-reset { margin-top: 14px; width: 100%; }
+body.has-tweaks .main { padding-right: 74px; }
+
+/* toggle visibility mechanics */
+.proposal { display: none; }
+body.p1 .p1-on, body.p2 .p2-on, body.p3 .p3-on, body.p4 .p4-on, body.p5 .p5-on { display: block; }
+body.p1 .p1-off, body.p2 .p2-off, body.p3 .p3-off, body.p4 .p4-off { display: none; }
+body.p4 .status-rail-wrap { display: inline-flex; }
+.demo-banner { background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--accent-bright); border-radius: var(--radius); padding: 8px 14px; font-size: .76rem; margin-bottom: 18px; }
+</style>
+</head>
+<body class="has-tweaks p1 p2 p3 p4 p5">
+
+<div class="tweaks open" id="tweaks">
+  <span class="t-handle">TWEAKS</span>
+  <h3>Proposals</h3>
+  <p class="t-sub">Toggle each proposal to compare against the current UI.</p>
+  <label><input type="checkbox" data-tweak="p1" checked>
+    <span>P1 — Run plan digest<small>Live summary of what launches, above the button</small></span></label>
+  <label><input type="checkbox" data-tweak="p2" checked>
+    <span>P2 — Elevated direction panel<small>The user's voice becomes the hero input</small></span></label>
+  <label><input type="checkbox" data-tweak="p3" checked>
+    <span>P3 — Decision brief card<small>Structured outcome: what changed, evidence, risk, options</small></span></label>
+  <label><input type="checkbox" data-tweak="p4" checked>
+    <span>P4 — Branch status rail<small>Compact P2–P5 segments instead of verbose spans</small></span></label>
+  <label><input type="checkbox" data-tweak="p5" checked>
+    <span>P5 — Inline launch review<small>Replaces the native browser confirm</small></span></label>
+  <button class="btn-quiet t-reset" onclick="document.querySelectorAll('[data-tweak]').forEach(c=>{c.checked=true;c.dispatchEvent(new Event('change'))})">All on</button>
+</div>
+
+<div class="shell">
+  <aside class="mock-sidebar">
+    <div class="brand">◆ Research Hub</div>
+    <div class="nav-sec">Projects</div>
+    <div class="proj current"><span class="dot"></span> Entangled Langevin sampling</div>
+    <div class="nav-sec">Hub tools</div>
+    <div class="proj" style="color:var(--muted)">+ New project</div>
+    <div class="proj" style="color:var(--muted)">@ Agent profiles</div>
+  </aside>
+
+  <main class="main">
+    <p class="eyebrow">Project 4</p>
+    <h1>Entangled Langevin sampling</h1>
+    <div class="tabs">
+      <span class="tab">Overview</span>
+      <span class="tab">Phase 1</span><span class="tab">Phase 2</span>
+      <span class="tab active">Phase 3</span><span class="tab">Phase 4</span><span class="tab">Phase 5</span>
+    </div>
+
+    <div class="demo-banner">Prototype — proposal states are toggled from the Tweaks panel on the right. Content is representative of project-004.</div>
+
+    <!-- ════ UPPER PANEL ════ -->
+    <section class="panel">
+      <h2><span class="roman">Phase 3</span>: Idea Evaluation</h2>
+      <p class="phase-desc">Develop the theory for the selected method: formulation, assumptions, and an honest account of when the method should work.</p>
+
+      <div style="display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap">
+        <strong>Run 2</strong>
+        <span class="badge badge-current">Current result</span>
+        <span class="badge badge-outcome">Scientific outcome: Complete</span>
+        <span class="badge badge-method">method-pail · v1</span>
+        <span class="badge badge-fresh">Up to date</span>
+      </div>
+
+      <!-- P3 OFF: existing plain highlight -->
+      <div class="summary-old p3-off">
+        <p>The PAIL theory package is complete: the augmented-chain construction is formulated, the permutation argument gives dimension-free mixing under explicit isoperimetric assumptions, and two limitations are recorded (log-Sobolev dependence of the burn-in bound; permutation cost scaling in d). Next: Phase 4 preliminary benchmarking against vanilla ULA and MALA.</p>
+      </div>
+
+      <!-- P3 ON: structured decision brief -->
+      <div class="decision-brief proposal p3-on">
+        <div class="db-row">
+          <span class="db-key">What changed</span>
+          <span class="db-val">Rerun 2 replaced the initial package: added the dimension-free mixing theorem and reframed the burn-in bound as a limitation rather than a claim.</span>
+        </div>
+        <div class="db-row">
+          <span class="db-key">Main evidence</span>
+          <span class="db-val">Augmented-chain construction in <code>theory/manuscript.md §3</code>; mixing bound Theorem 4.2 (supports the dimension-free claim under Assumptions A1–A3).</span>
+        </div>
+        <div class="db-row risk">
+          <span class="db-key">Principal risk</span>
+          <span class="db-val">Burn-in bound still scales with the log-Sobolev constant of the target — if that degrades with dimension, the headline claim narrows.</span>
+        </div>
+        <div class="db-row">
+          <span class="db-key">Next decision</span>
+          <div class="db-options">
+            <div class="db-option primary"><span class="opt-name">Proceed</span><span class="opt-desc">Launch Phase 4 (preliminary) to benchmark PAIL against ULA/MALA on the two test beds named in §5.</span></div>
+            <div class="db-option"><span class="opt-name">Rerun</span><span class="opt-desc">Rerun Phase 3 focused on tightening the burn-in analysis before any empirical spend.</span></div>
+            <div class="db-option"><span class="opt-name">Defer</span><span class="opt-desc">Hold; the current theory package remains the canonical record.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════ LOWER PANEL — launch form ════ -->
+    <section class="panel">
+      <fieldset>
+        <legend>Choose a method for this run</legend>
+
+        <!-- method option 1 -->
+        <div class="method-list">
+          <div class="method-opt selected">
+            <input type="radio" checked>
+            <div style="flex:1">
+              <span class="method-title">#1 Permutation-Augmented Independent Langevin (PAIL)</span>
+              <span class="method-meta"><code>method-pail</code><span>v1</span><span class="badge badge-method">active</span></span>
+
+              <!-- P4 OFF: verbose spans (current UI) -->
+              <div class="p4-off" style="margin-top:8px">
+                <span class="record-status rs-current">P2: Reviewed against current Phase 1 basis</span>
+                <span class="record-status rs-current">P3: Current theory package<span class="rs-reason">Run 2 · Complete</span></span>
+                <span class="record-status rs-review">P4: Theory requires re-evaluation<span class="rs-reason">Current Phase 3 theory changed after this run sealed its basis</span></span>
+                <span class="record-status rs-notrun">P5: No manuscript draft</span>
+              </div>
+
+              <!-- P4 ON: compact rail -->
+              <span class="status-rail proposal p4-on" title="P2 aligned · P3 aligned · P4 review needed · P5 not run">
+                <span class="seg ok"><i></i>P2</span>
+                <span class="seg ok"><i></i>P3</span>
+                <span class="seg warn"><i></i>P4</span>
+                <span class="seg none"><i></i>P5</span>
+                <span style="font-size:.66rem;color:var(--review);margin-left:4px">P4: theory changed after its basis was sealed</span>
+              </span>
+            </div>
+          </div>
+
+          <!-- method option 2 -->
+          <div class="method-opt">
+            <input type="radio">
+            <div style="flex:1">
+              <span class="method-title">#2 Tempered Recursive Langevin</span>
+              <span class="method-meta"><code>method-trl</code><span>v2</span><span class="badge badge-method">active</span></span>
+              <div class="p4-off" style="margin-top:8px">
+                <span class="record-status rs-current">P2: Reviewed against current Phase 1 basis</span>
+                <span class="record-status rs-current">P3: Current theory package<span class="rs-reason">Run 4 · Complete</span></span>
+                <span class="record-status rs-current">P4: Current empirical package<span class="rs-reason">Run 3 · Complete</span></span>
+                <span class="record-status rs-current">P5: Manuscript in review<span class="rs-reason">Run 2 · review cycle 2</span></span>
+              </div>
+              <span class="status-rail proposal p4-on">
+                <span class="seg ok"><i></i>P2</span>
+                <span class="seg ok"><i></i>P3</span>
+                <span class="seg ok"><i></i>P4</span>
+                <span class="seg ok"><i></i>P5</span>
+                <span style="font-size:.66rem;color:var(--approved);margin-left:4px">P5-ready</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </fieldset>
+
+      <!-- P2 OFF: existing instruction box -->
+      <div class="instruction-box-old p2-off" style="margin-bottom:16px">
+        <label for="old-feedback">Your instructions for this run</label>
+        <textarea id="old-feedback" rows="5" placeholder="What should the agents focus on? What changed? What would you like to see improved?"></textarea>
+      </div>
+
+      <!-- P2 ON: elevated direction panel -->
+      <div class="direction-panel proposal p2-on">
+        <span class="dp-label">Your direction <span class="dp-tag">frozen into the run record</span></span>
+        <textarea placeholder="What should the agents focus on? What changed since the last run? What would make this run a success?"></textarea>
+        <div class="dp-foot">
+          <span>Read by the research lead first; quoted back to you in the run progress view.</span>
+          <span>0 / 5000</span>
+        </div>
+      </div>
+
+      <!-- P1 ON: run plan digest -->
+      <div class="plan-digest proposal p1-on" aria-live="polite">
+        <div class="pd-head"><span class="pd-icon">▣</span> Run plan — this is what launches</div>
+        <dl>
+          <div><dt>Method</dt><dd><code>method-pail · v1</code> <span class="muted">(definition 4f2a…9c)</span></dd></div>
+          <div><dt>Proof plan</dt><dd>Standard + audit</dd></div>
+          <div><dt>Context</dt><dd>Current theory package only <span class="muted">(archived summaries excluded)</span></dd></div>
+          <div><dt>Rounds</dt><dd>2 refinement rounds · analyst → theorist → lead</dd></div>
+          <div><dt>Estimated scope</dt><dd>~35–60 min · 4 agents</dd></div>
+        </dl>
+        <p class="pd-freeze">At launch, the method definition, branch records, and your direction are frozen and hashed. Later project changes cannot alter this run — a rerun is how you respond to change.</p>
+      </div>
+
+      <div class="launch-footer">
+        <button class="btn-primary" id="launchBtn" type="button">Rerun Idea Evaluation</button>
+        <span class="launch-hint">One run at a time per project. Cancel anytime from the progress view.</span>
+      </div>
+
+      <!-- P5 ON: inline review step -->
+      <div class="launch-review" id="launchReview">
+        <div class="lr-title">Review before launch</div>
+        <p style="margin:0;font-size:.82rem;color:var(--text-soft)">You are about to freeze <code>method-pail · v1</code>, the current P3 theory package, and your direction into Run 3. The plan above is exactly what the agents receive.</p>
+        <div class="lr-actions">
+          <button class="btn-confirm" type="button" onclick="this.textContent='✓ Run 3 launched (demo)';this.disabled=true">Confirm — launch Run 3</button>
+          <button class="btn-quiet" type="button" onclick="document.getElementById('launchReview').classList.remove('show')">Back</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+document.querySelectorAll('[data-tweak]').forEach(cb => {
+  cb.addEventListener('change', () => document.body.classList.toggle(cb.dataset.tweak, cb.checked));
+});
+document.getElementById('launchBtn').addEventListener('click', () => {
+  if (document.body.classList.contains('p5')) {
+    document.getElementById('launchReview').classList.add('show');
+    document.getElementById('launchReview').scrollIntoView({behavior:'smooth', block:'nearest'});
+  } else {
+    alert('Launch this run now?');  // current behavior
+  }
+});
+</script>
+</body>
+</html>
