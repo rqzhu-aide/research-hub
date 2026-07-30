@@ -1,8 +1,23 @@
 # Research Hub — Issue Tracker (remaining issues only)
 
-Pruned July 30, 2026. Resolved issues were removed; they live in git history
-and in `situations/SUMMARY-2026-07-30.md`. Numbering is stable (historical) so
+Pruned July 30, 2026 (second pass). Resolved issues live in git history and in
+`situations/SUMMARY-2026-07-30.md`. Numbering is stable (historical) so
 cross-references from situation docs and the follow-up doc stay valid.
+
+**Fixed in this round** (commits `01a4a8d`, `7ee3cbc`, `bf24c66`, `28e0bb2`):
+
+- **#19** Disaster recovery: missing control dir now fails loudly instead of
+  silently resetting (run-generated artifact dirs detected); index↔project
+  redirect loop killed; corrupt state renders a recovery-guidance page.
+  (Residual: no `adopt` re-registration command — see #19-note below.)
+- **#18** Lead-prompt cap enforced at launch (`check_lead_prompt_size`); P1
+  playbook documents the 5 MiB synthesis / 1 MiB card budget.
+- **#16** Promotion now refuses an outdated frozen method identity
+  (`enforce_catalog_identity_current` at P3/P4/P5 promotion).
+- **#17** Protocol checkpoint disclosed everywhere as a machine-sealed
+  provenance record, not a user gate (UI, playbook, website docs).
+- **#21** Graph alignment note discloses agent-authored fragments: P4
+  machine-checked, P3 content not machine-verified.
 
 Legend: 🔴 code bug / data-loss risk · 🟡 design gap (needs product decision) ·
 🟢 docs/UX housekeeping
@@ -21,25 +36,22 @@ the design gaps (situations 01, 02, 03, 05, 08).
 
 New literature yellows P2 but leaves existing P3/P4 green even though novelty
 claims, assumptions, or benchmarks may be affected. The P1→P2 half is
-implemented (`method_menu.apply_run_provenance(literature_basis=…)` +
-`reviewed_no_change` clears yellow without a method edit); the follow-up doc's
-Priority-2 statement is partially outdated. Remaining gap is P1→P3/P4 only.
+implemented (`reviewed_no_change` clears yellow without a method edit).
+Remaining gap is P1→P3/P4 only.
 
 ## 🟡 Issue 7 — P4 replacement (not accumulation) evidence model
 
 Each P4 promotion replaces the entire evidence index; findings from superseded
-runs (e.g., an instability discovered in a comprehensive run replaced by a
-narrower preliminary one) survive only in backups, invisible to downstream
-phases and P5. Follow-up doc Priority 3 (cumulative P4 package).
+runs survive only in backups, invisible to downstream phases and P5. Follow-up
+doc Priority 3 (cumulative P4 package).
 
 ## 🟡 Issue 8 — P5 does not gate on sibling alignment
 
 `phase_records.current_upstream_basis()` checks existence + method identity
 only; P5 can assemble from P3/P4 heads that haven't seen each other's latest
 rerun (graph flags it, no hard block). Follow-up doc Priority 3. Related:
-pre-redesign runs are never adopted into current-record heads
-(`has_theory_history: False` for legacy projects) — no bootstrap/repair
-tooling.
+pre-redesign runs are never adopted into current-record heads — no
+bootstrap/repair tooling.
 
 ## 🟡 Issue 9 — No storage lifecycle
 
@@ -53,65 +65,13 @@ Full-catalog P2 review is O(n) in method count (~300 KB context per role at 10
 methods); the only alternative is one focused run per method. No batch
 "retire these, revise this, confirm the rest" operation (situation 11).
 
-## 🟡 Issue 16 — Promotion validates only the frozen manifest identity (latent)
-
-P3/P4/P5 promotion checks the record against the run's frozen manifest
-identity, never the live catalog (`phase_records.py:884`, `:890-894`,
-`:905-913`). Today the single-active-run rule (`project_state.py:4765-4773`)
-makes the dangerous sequence impossible, but the invariant is incidental: if
-parallel runs are ever allowed, a stale-identity record would promote as
-current. Related: post-promotion staleness is advisory everywhere except the
-P5 gate (`current_results.py:9-11`), and the legacy `approve_run` path has no
-explicit freshness gate (mitigated by its context-acknowledgement
-requirement).
-
-## 🟡 Issue 17 — The protocol checkpoint is not a user checkpoint
-
-Despite the name and read-only UI disclosure, P4's `protocol_checkpoint` never
-pauses for user review: the lead dispatches the result task immediately after
-machine sealing (`launch_prompts.py:1716-1721`,
-`launch_dispatch.py:360-382`); `grep checkpoint webapp.py` = 0. The only user
-lever is cancelling the entire run; a sealed checkpoint can never be amended
-(`project_state.py:3037`). High expectation gap — either add a real pause or
-rename/disclose honestly.
-
-## 🟡 Issue 18 — Limit enforcement happens after the spend
-
-(a) The lead prompt is written unchecked and the 16 MiB cap bites only at
-worker start — launch-then-immediately-fail (`launch_run.py:1347` vs
-`:1595`). (b) An oversize P1 summary is rejected only at seal, after the full
-run completes (`literature_records.py:674-678`). Both should be pre-checked.
-
-## 🔴 Issue 19 — Disaster recovery gaps
-
-Empirically verified (situation 17). (a) A missing control dir makes `load()`
-silently return empty state and recreate `project.yaml` — total run-history
-loss with zero warning (`project_state.py:784-785`). (b) A deleted workspace
-causes an index↔project redirect loop (`webapp.py:975-1005`). (c) Corrupt
-YAML / stale-backup journal surface as raw Flask 500s (`webapp.py:934`,
-`project_state.py:1711-1714`). (d) hub.db loss has no re-registration path —
-the CLI exposes only `init` (`hub.py:997-1010`); an `adopt` command would
-make it a non-event. Related (situation 21): hand-edits to workspace files
-are all detected and fail closed, but errors name symptoms, not remedies —
-no documented repair path for honest mistakes.
-
 ## 🟡 Issue 20 — Agent memory is an uncontrolled cross-project channel
 
 Multi-project use shares the four Hermes profiles. Runs don't write profile
 memory, but agents' own persistent memories accumulate across projects and
 bypass the hub's frozen per-run context (situation 18). No per-project memory
-namespacing. Secondary: profile contention between concurrent projects'
-runs is invisible in the UI.
-
-## 🟡 Issue 21 — P3 knowledge fragments are machine-unverified
-
-The semantic layer treats agent-declared fragments as ground truth for graph
-edges and sibling context. P4 fragments are machine-bound to the evidence
-index; P3 fragments are validated only structurally — the manuscript is
-hashed, never cross-checked (`theory_records.py:291-306`). A
-manuscript/fragment divergence seals silently and renders green (situation
-19). At minimum, disclose "semantic content is agent-declared" wherever graph
-alignment is shown.
+namespacing. Secondary: profile contention between concurrent projects' runs
+is invisible in the UI.
 
 ## 🟡 Issue 22 — No correction or retraction path for reference cards
 
@@ -127,3 +87,11 @@ indistinguishable from tampering (situation 20). Minimal fix: card-level
 No round caps on P5 review cycles (`run_number` increments freely,
 `project_state.py:4884-4886`), no consolidated objection history — each
 critique lives only in its run's summary (situation 14). Low-Medium.
+
+## 🟢 Issue 19-note — Residual: no re-registration command after hub.db loss
+
+The destructive parts of #19 are fixed (loud failure, no redirect loop,
+guidance page). Remaining: `hub.py` still exposes only `init`
+(`hub.py:997-1010`); an `adopt <directory>` command (re-register a project
+from its surviving workspace/control dir with the original id) would make
+hub.db loss a non-event.
