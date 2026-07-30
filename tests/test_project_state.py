@@ -3189,3 +3189,34 @@ def test_modern_phase_four_workspace_allows_only_the_lead_at_run_root(
         2,
         "theorist",
     ) == output_root / "round-02"
+
+
+def test_missing_state_with_research_artifacts_fails_loudly(
+    tmp_path: Path,
+) -> None:
+    """A lost control directory must not silently reset a used project."""
+
+    project = tmp_path / "project-001-demo"
+    summaries = project / "phase-summaries" / "01-literature-review"
+    summaries.mkdir(parents=True)
+    (summaries / "run-1.html").write_text("<h1>Summary</h1>", encoding="utf-8")
+
+    with pytest.raises(
+        state.StateValidationError,
+        match="control directory",
+    ):
+        state.load(project)
+
+
+def test_missing_state_with_empty_workspace_returns_empty(
+    tmp_path: Path,
+) -> None:
+    """A genuinely new project (scaffolded dirs, no files) loads empty."""
+
+    project = tmp_path / "project-001-demo"
+    for marker in ("references", "ideas", "draft"):
+        (project / marker).mkdir(parents=True)
+    (project / "setting.md").write_text("# Brief\n", encoding="utf-8")
+
+    data = state.load(project)
+    assert data["phases"] == {}

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Project state unavailable | Research Hub{% endblock %}
+{% block content %}
+<section class="empty-state">
+  <span class="empty-mark" aria-hidden="true">!</span>
+  <p class="eyebrow">Project state unavailable</p>
+  <h1>This project's control state could not be read.</h1>
+  <p>{{ message }}</p>
+  <div class="inline-warning" role="status">
+    <strong>What this usually means.</strong> The protected control directory
+    (<code>.research-hub-control/</code>) was lost, restored from an old
+    backup, or its <code>project.yaml</code> is corrupted. Research Hub
+    refuses to guess. Restore the control directory from a backup and reload.
+    If the loss is permanent, the workspace's scientific files
+    (references, methods, branch packages, summaries) are intact on disk,
+    but run history cannot be reconstructed automatically.
+  </div>
+</section>
+{% endblock %}

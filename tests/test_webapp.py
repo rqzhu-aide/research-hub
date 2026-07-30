@@ -5005,3 +5005,37 @@ def test_run_modes_rejects_wrong_plans_order(
     with pytest.raises(hub_module.ConfigurationError, match="plans must contain"):
         hub_module.load_config()
 
+
+
+def test_index_skips_projects_with_missing_workspace(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(webapp.hub, "get_project_dir", lambda _pid: None)
+    client = web_env["client"]
+
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "missing or unreadable" in response.get_data(as_text=True)
+
+    response = client.get(f"/project/{PROJECT_ID}")
+    assert response.status_code == 200
+    assert "workspace" in response.get_data(as_text=True)
+    assert "stale registry entry" in response.get_data(as_text=True)
+
+
+def test_project_view_renders_state_error_page(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken(*_args: object, **_kwargs: object) -> None:
+        raise webapp.project_state.StateValidationError(
+            "project state is not valid UTF-8 YAML"
+        )
+
+    monkeypatch.setattr(webapp, "prepare_overview_data", broken)
+    response = web_env["client"].get(f"/project/{PROJECT_ID}")
+    body = response.get_data(as_text=True)
+    assert response.status_code == 500
+    assert "control state could not be read" in body
+    assert "not valid UTF-8 YAML" in body

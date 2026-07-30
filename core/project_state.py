@@ -773,6 +773,34 @@ def _copy_legacy_state_safely(legacy: Path, destination: Path) -> None:
                 temporary.unlink()
 
 
+def _workspace_has_research_artifacts(project_dir: Path) -> bool:
+    """Return whether the workspace contains any prior research output file.
+
+    Only directories written by *runs or promotions* count: project creation
+    scaffolds these empty, and files appear in them only after a run
+    completes or a record is promoted. Hand-populated seed directories
+    (``ideas/``, ``references/``) are deliberately excluded — a user may
+    legitimately fill those before the first run.
+    """
+
+    markers = (
+        "branches",
+        "phase-summaries",
+        "draft",
+        "evaluations",
+    )
+    for marker in markers:
+        directory = project_dir / marker
+        if not directory.is_dir():
+            continue
+        try:
+            if any(path.is_file() for path in directory.rglob("*")):
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def _read_unlocked(project_dir: str | Path) -> dict[str, Any]:
     path = state_file(project_dir)
     legacy = legacy_state_dir(project_dir)
@@ -782,6 +810,15 @@ def _read_unlocked(project_dir: str | Path) -> dict[str, Any]:
         # folder as a recoverable backup and never trust it again after import.
         _copy_legacy_state_safely(legacy, state_dir(project_dir))
     if not path.exists():
+        workspace = Path(project_dir)
+        if _workspace_has_research_artifacts(workspace):
+            raise StateValidationError(
+                "project state is missing but the workspace contains prior "
+                "research artifacts — the control directory "
+                f"({state_dir(workspace)}) was likely lost. Restore it from a "
+                "backup before continuing; Research Hub refuses to silently "
+                "reset this project's history."
+            )
         return {"schema_version": SCHEMA_VERSION, "project": {}, "phases": {}}
     payload = _read_bounded_file(
         path,

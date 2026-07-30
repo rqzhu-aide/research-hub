@@ -974,9 +974,23 @@ def _redirect_phase(project_id: int, phase_slug: str) -> Response:
 @app.route("/")
 def index() -> Response | str:
     projects = [dict(project) for project in hub.list_projects()]
+    for project in projects:
+        if _project_context(int(project["id"])):
+            return redirect(url_for("project_view", project_id=project["id"]))
+    warning = None
     if projects:
-        return redirect(url_for("project_view", project_id=projects[0]["id"]))
-    return render_template("index.html", projects=[], project=None, profiles=_profiles())
+        warning = (
+            "No registered project's workspace could be opened. Each project "
+            "directory is missing or unreadable — restore the workspace or "
+            "remove the stale registry entry."
+        )
+    return render_template(
+        "index.html",
+        projects=projects,
+        project=None,
+        profiles=_profiles(),
+        warning_message=warning,
+    )
 
 
 @app.route("/project/new", methods=["GET", "POST"])
@@ -1001,8 +1015,17 @@ def new_project() -> Response | str:
 def project_view(project_id: int) -> Response | str:
     resolved = _project_context(project_id)
     if not resolved:
-        flash(f"Project #{project_id} was not found.", "error")
-        return redirect(url_for("index"))
+        return render_template(
+            "index.html",
+            projects=[dict(item) for item in hub.list_projects()],
+            project=None,
+            profiles=_profiles(),
+            warning_message=(
+                f"Project #{project_id} was not found or its workspace "
+                "directory is missing. Restore the workspace or remove the "
+                "stale registry entry."
+            ),
+        )
     project, project_dir = resolved
     try:
         reconcile_active_run(project_dir)
@@ -1028,20 +1051,32 @@ def project_view(project_id: int) -> Response | str:
             )
         except (OSError, ValueError, project_state.ProjectStateError) as exc:
             settings_content = f"Project brief unavailable: {exc}"
-    phase_summaries = prepare_overview_data(project_dir, phases)
-    phase_config = (
-        next(
-            (phase for phase in phases if str(phase.get("slug")) == tab),
-            None,
+    try:
+        phase_summaries = prepare_overview_data(project_dir, phases)
+        phase_config = (
+            next(
+                (phase for phase in phases if str(phase.get("slug")) == tab),
+                None,
+            )
+            if tab != "overview"
+            else None
         )
-        if tab != "overview"
-        else None
-    )
-    phase_data = (
-        prepare_phase_data(project_dir, project_id, phase_config, phases)
-        if phase_config
-        else None
-    )
+        phase_data = (
+            prepare_phase_data(project_dir, project_id, phase_config, phases)
+            if phase_config
+            else None
+        )
+    except project_state.ProjectStateError as exc:
+        app.logger.exception("Project state unavailable for project %s", project_id)
+        return (
+            render_template(
+                "state_error.html",
+                project=project,
+                projects=[dict(item) for item in hub.list_projects()],
+                message=str(exc),
+            ),
+            500,
+        )
     if (
         phase_data is not None
         and tab == IDEA_EVALUATION_PHASE

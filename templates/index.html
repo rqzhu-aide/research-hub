@@ -3,6 +3,9 @@
 {% block content %}
 <section class="empty-state">
   <span class="empty-mark" aria-hidden="true">RH</span>
+  {% if warning_message %}
+  <div class="inline-warning" role="alert">{{ warning_message }}</div>
+  {% endif %}
   <p class="eyebrow">No projects</p>
   <h1>Start with a research brief.</h1>
   <p>Create a project, inspect every phase plan, and launch work only when you choose.</p>
