@@ -667,6 +667,20 @@ def _sync_transaction_parent(parent: Path) -> None:
     project_state._sync_state_directory(parent)
 
 
+def _sync_recovery_parent(parent: Path) -> None:
+    """Sync a completed recovery parent only when it exists.
+
+    A recovery pass that performed no filesystem mutation may complete for a
+    branch whose transaction directory tree was never created (a first
+    promotion interrupted before filesystem prepare). There is then nothing
+    to make durable, so the sync is skipped.
+    """
+
+    if _lstat_package_directory(parent, label="theory recovery parent") is None:
+        return
+    _sync_transaction_parent(parent)
+
+
 def _create_transaction_directory(path: Path) -> None:
     path.mkdir()
     _sync_transaction_parent(path.parent)
@@ -923,7 +937,7 @@ def recover_theory_promotion_intent(
             raise TheoryStageChanged(
                 "no-change theory intent has unexpected transaction paths"
             )
-        _sync_transaction_parent(paths["canonical"].parent)
+        _sync_recovery_parent(paths["canonical"].parent)
         return dict(intent["planned_promotion"]) if make_current else None
 
     for _ in range(8):
@@ -944,7 +958,7 @@ def recover_theory_promotion_intent(
                 else ("new", "absent", "absent", "absent")
             )
             if state == completed:
-                _sync_transaction_parent(canonical.parent)
+                _sync_recovery_parent(canonical.parent)
                 return dict(intent["planned_promotion"])
             if has_previous and state == (
                 "new",
@@ -952,7 +966,7 @@ def recover_theory_promotion_intent(
                 "absent",
                 "absent",
             ):
-                _sync_transaction_parent(canonical.parent)
+                _sync_recovery_parent(canonical.parent)
                 return dict(intent["planned_promotion"])
             if has_previous and state == (
                 "old", "new", "absent", "absent"
@@ -991,7 +1005,7 @@ def recover_theory_promotion_intent(
                 else ("absent", "absent", "absent", "absent")
             )
             if state == completed:
-                _sync_transaction_parent(canonical.parent)
+                _sync_recovery_parent(canonical.parent)
                 return None
             if has_previous and state == (
                 "old", "incomplete", "absent", "absent"

@@ -768,6 +768,20 @@ def _sync(directory: Path) -> None:
         ) from exc
 
 
+def _sync_if_present(directory: Path) -> None:
+    """Sync a completed recovery parent only when it exists.
+
+    A recovery pass that performed no filesystem mutation may complete for a
+    branch whose transaction directory tree was never created (a first
+    promotion interrupted before filesystem prepare). There is then nothing
+    to make durable, so the sync is skipped.
+    """
+
+    if not _path_exists_lstat(directory):
+        return
+    _sync(directory)
+
+
 def _replace(source: Path, destination: Path) -> None:
     try:
         os.replace(source, destination)
@@ -818,7 +832,7 @@ def _recover_unlocked(
                 else ("new", "absent", "absent", "absent")
             )
             if state == completed:
-                _sync(canonical.parent)
+                _sync_if_present(canonical.parent)
                 return copy.deepcopy(intent["planned_promotion"])
             if has_previous and state == (
                 "new",
@@ -826,7 +840,7 @@ def _recover_unlocked(
                 "absent",
                 "absent",
             ):
-                _sync(canonical.parent)
+                _sync_if_present(canonical.parent)
                 return copy.deepcopy(intent["planned_promotion"])
             if (
                 any(
@@ -879,7 +893,7 @@ def _recover_unlocked(
                 else ("absent", "absent", "absent", "absent")
             )
             if state == completed:
-                _sync(canonical.parent)
+                _sync_if_present(canonical.parent)
                 return None
             if has_previous and state in {
                 ("old", "new", "absent", "absent"),

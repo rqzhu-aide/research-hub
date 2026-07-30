@@ -1090,3 +1090,42 @@ def test_legacy_prior_package_produces_bounded_real_event(
         match="legacy unavailable",
     ):
         event_schema.seal_event(unsealed_event)
+
+
+def test_first_install_recovery_without_prepare_is_a_noop(
+    tmp_path: Path,
+) -> None:
+    """A first promotion interrupted before filesystem prepare must recover.
+
+    The promotion journal can become durable before ``promote_output``
+    creates the branch directory tree. Rolling back such an intent is a
+    no-op: nothing was ever prepared, so the transaction parent may not
+    exist and must not be synced.
+    """
+
+    project = tmp_path / "project"
+    project.mkdir()
+    identity = _identity()
+    output, seal = _stage(
+        project,
+        "run-001",
+        identity=identity,
+        wording="The first complete proof.",
+    )
+    intent = _plan(
+        project,
+        output,
+        seal,
+        identity,
+        _operation_id("operation-never-prepared"),
+    )
+    assert not (project / "branches").exists()
+    assert (
+        theory.recover_theory_promotion_intent(
+            project,
+            intent,
+            make_current=False,
+        )
+        is None
+    )
+    assert theory.load_current_theory(project, "method-a") is None
