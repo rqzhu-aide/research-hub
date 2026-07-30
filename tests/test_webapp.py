@@ -1772,7 +1772,7 @@ def test_method_panel_uses_authoritative_current_record_status(
     assert "Aligned" in body
     assert "Review needed" in body
     assert "Cannot verify" in body
-    assert "It does not assess scientific correctness or evidential strength" in body
+    assert "Alignment does not assess scientific correctness or evidential strength" in body
     assert "JavaScript is required to verify current method records" in body
     assert "Later project changes cannot silently alter an active run" in body
     assert 'data-has-theory-history="true"' in body
