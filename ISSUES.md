@@ -283,3 +283,49 @@ records/knowledge/promotion modules that are now the core of the system.
 ## 🟢 Issue 11 — `situations/` untracked
 
 Five verified scenario analyses plus this tracker belong in version control.
+(Update July 30, 2026: the user moved `situations/` to `.gitignore` — local
+scratch only. This tracker remains tracked.)
+
+---
+
+## Issues from the second situation batch (12–17, July 30, 2026)
+
+## 🟡 Issue 16 — Promotion validates only the frozen manifest identity (latent)
+
+Raised by `situations/12`. P3/P4/P5 promotion checks the record against the
+run's frozen manifest identity, never the live catalog
+(`phase_records.py:884`, `:890-894`, `:905-913`). Today the single-active-run
+rule (`project_state.py:4765-4773`) makes the dangerous sequence impossible,
+but the invariant is incidental: if parallel runs are ever allowed, a
+stale-identity record would promote as current. Related: post-promotion
+staleness is advisory everywhere except the P5 gate
+(`current_results.py:9-11`).
+
+## 🟡 Issue 17 — The protocol checkpoint is not a user checkpoint
+
+Raised by `situations/13`. Despite the name and read-only UI disclosure, P4's
+`protocol_checkpoint` never pauses for user review: the lead dispatches the
+result task immediately after machine sealing (`launch_prompts.py:1716-1721`,
+`launch_dispatch.py:360-382`); `grep checkpoint webapp.py` = 0. The only user
+lever is cancelling the entire run. A sealed checkpoint can never be amended
+(`project_state.py:3037`). High expectation gap — either add a real pause or
+rename/disclose honestly.
+
+## 🟡 Issue 18 — Limit enforcement happens after the spend
+
+Raised by `situations/16`. Two timing warts: (a) the lead prompt is written
+unchecked and the 16 MiB cap bites only at worker start — launch-then-
+immediately-fail (`launch_run.py:1347` vs `:1595`); (b) an oversize P1
+summary is rejected only at seal, after the full run completes
+(`literature_records.py:674-678`). Both should be pre-checked.
+
+## 🔴 Issue 19 — Disaster recovery: silent reset, redirect loop, no re-registration
+
+Raised by `situations/17` (empirically verified). (a) A missing control dir
+makes `load()` silently return empty state and recreate `project.yaml` —
+total run-history loss with zero warning (`project_state.py:784-785`).
+(b) A deleted workspace causes an index↔project redirect loop
+(`webapp.py:975-1005`). (c) Corrupt YAML / stale-backup journal surface as
+raw Flask 500s (`webapp.py:934`, `project_state.py:1711-1714`). (d) hub.db
+loss has no re-registration path — the CLI exposes only `init`
+(`hub.py:997-1010`); an `adopt` command would make it a non-event.
