@@ -8,38 +8,33 @@ older situation analyses are in `archived/` (not tracked).
 - **🔴 Error** — current behavior is wrong, produces incorrect results, or loses data. Should be fixed.
 - **🟡 Functionality** — a feature is missing or a design gap exists. Nothing is actively broken; the system works as designed but is incomplete.
 
+**Error-class round (2026-07-30, commits `2e4f7c6`, `5d4a7f4`):**
+
+- **#7 FIXED** — superseded same-version runs (e.g., a comprehensive P4
+  replaced by a narrower rerun) now enter downstream context as labeled
+  non-current history, so their findings are no longer invisible. Also fixed
+  a regression where a newer failed run hid the current record from context.
+- **#8 WITHDRAWN (false report)** — P5 already hard-blocks on yellow sibling
+  edges: `phase_five_branch_readiness` aggregates counterpart edges into the
+  P3/P4 graph nodes and the launch raises on any non-`exact_match` node
+  (`launch_manifest.py:1719-1768`, `launch_run.py:851-858`; test
+  `test_phase_five_readiness_rejects_yellow_p3_or_p4_alignment`). The
+  situation analyses had read `current_upstream_basis()` and missed the gate.
+  Situation docs 03 and 11 corrected.
+- **#20 FIXED** — lead prompts and task briefs now carry a "Project scope and
+  memory" block (namespace memory per project, disregard other projects'
+  memories). Residual: profile contention between concurrent projects' runs
+  is still invisible in the UI (🟡, see below).
+- **#23 ADDRESSED** — a review-revision run now sees the previous cycle's
+  summary in context (via the #7 mechanism; test
+  `test_p5_review_context_includes_prior_review_cycle`). Residual: no hard
+  cap on revision cycles (product decision — see below).
+
 ---
 
 ## 🔴 Errors
 
-### #7 — P4 replacement model loses prior evidence
-
-Each P4 promotion replaces the entire evidence index; findings from superseded
-runs survive only in backups, invisible to downstream phases and P5. Follow-up
-doc Priority 3 (cumulative P4 package). (Situation 09.)
-
-### #8 — P5 does not gate on sibling alignment
-
-`phase_records.current_upstream_basis()` checks existence + method identity
-only; P5 can assemble from P3/P4 heads that haven't seen each other's latest
-rerun. The graph flags the misalignment but P5 does not hard-block — a
-manuscript can be assembled from incompatible theory/empirical heads.
-Follow-up doc Priority 3. Related: pre-redesign runs are never adopted into
-current-record heads — no bootstrap/repair tooling. (Situation 09.)
-
-### #20 — Agent memory is an uncontrolled cross-project channel
-
-Multi-project use shares the four Hermes profiles. Runs don't write profile
-memory, but agents' own persistent memories accumulate across projects and
-bypass the hub's frozen per-run context (situation 18). No per-project memory
-namespacing. Secondary: profile contention between concurrent projects' runs
-is invisible in the UI.
-
-### #23 — Review-revision loops are uncapped and unledgered
-
-No round caps on P5 review cycles (`run_number` increments freely,
-`project_state.py:4884-4886`), no consolidated objection history — each
-critique lives only in its run's summary (situation 14). Low-Medium.
+*(none open)*
 
 ---
 
@@ -87,3 +82,14 @@ P1's delta-only model rejects existing filenames/canonical identities
 library; manual edits are detected (collection digest) but semantically
 indistinguishable from tampering (situation 20). Minimal fix: card-level
 `status: retracted` honored by the index and agent context.
+
+### #23-note — No cap on P5 revision cycles
+
+The visibility half of #23 is fixed (prior cycle's summary enters context).
+Remaining: nothing limits revision rounds (`run_number` increments freely,
+`project_state.py:4884-4886`). A cap is a product decision.
+
+### #20-note — Profile contention between concurrent projects is invisible
+
+When two projects' runs compete for the same Hermes profile, the losing run
+waits with no status or queue hint (situation 18).

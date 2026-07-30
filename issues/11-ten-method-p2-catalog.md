@@ -144,11 +144,20 @@ revise this one, confirm the rest" operation.
 
 ### 🟡 Issue D: P5-alpha from stale P3 + fresh P4
 
-After P4-alpha gen-2 (Step 6), P3-alpha is still gen-1. The sibling edge shows
+**Correction (2026-07-30): this issue is withdrawn.** The claim that P5
+allows the launch was wrong — `phase_five_branch_readiness` aggregates the
+sibling counterpart edges into the P3/P4 graph nodes and the launch path
+hard-blocks on any non-`exact_match` node (`launch_manifest.py:1719-1768`,
+`launch_run.py:851-858`; covered by
+`test_phase_five_readiness_rejects_yellow_p3_or_p4_alignment`). After P4-alpha
+gen-2, P5-alpha is **blocked** until P3 is rerun (or the fragment content
+converges). The misalignment is enforced, not just flagged.
+
+~~After P4-alpha gen-2 (Step 6), P3-alpha is still gen-1. The sibling edge shows
 `review_required`. If the researcher runs P5-alpha at this point (without
 rerunning P3), the manuscript is assembled from P3 gen-1 + P4 gen-2 — a theory
 that predates the latest experiments. The system allows this launch (method
-identity matches), but the graph flags the misalignment.
+identity matches), but the graph flags the misalignment.~~
 
 ## Space summary
 

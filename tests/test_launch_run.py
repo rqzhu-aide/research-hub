@@ -6712,3 +6712,45 @@ def test_lead_prompt_and_task_brief_carry_project_scope_block(
     )
     assert "Project scope and memory" in prompt
     assert "project-001-demo" in prompt
+
+
+def test_p5_review_context_includes_prior_review_cycle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A review-revision run sees the previous cycle's summary (Issue 23)."""
+
+    project = tmp_path / "project"
+    project.mkdir()
+    phase_slug = launcher.PAPER_WRITING_PHASE
+    run_asm = _context_run_fixture(project, "run-asm", "completed", "Complete")
+    run_rev = _context_run_fixture(project, "run-rev", "completed", "Complete")
+    runs = {run["run_id"]: run for run in (run_asm, run_rev)}
+    phase_state = {
+        "current_run": "run-rev",
+        "current_runs": {"method-a": "run-rev"},
+        "stale": False,
+        "runs": [run_asm, run_rev],
+    }
+    _patch_branch_context(monkeypatch, phase_slug, phase_state, runs)
+    config = {
+        "phases": [{
+            "slug": phase_slug,
+            "pattern": "sequential",
+            "method_binding": True,
+            "gated_by": [],
+        }]
+    }
+
+    context = launcher._trusted_context(
+        project,
+        phase_slug,
+        config,
+        selected_method_id="method-a",
+        selected_method_version="v1",
+        selected_method_sha256="a" * 64,
+    )
+
+    by_run = {entry["run_id"]: entry for entry in context}
+    assert set(by_run) == {"run-rev", "run-asm"}
+    assert by_run["run-asm"]["kind"].endswith("_history")
