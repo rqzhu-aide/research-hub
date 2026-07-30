@@ -713,7 +713,8 @@ def _branch_current_run_id(
 
 
 _CONTEXT_RESULT_STATUSES = frozenset({
-    "completed", "approved", "awaiting_review", "revision_requested", "superseded"
+    "completed", "approved", "awaiting_review", "revision_requested",
+    "superseded", "failed",
 })
 _CONTEXT_EVIDENCE_STATUS = {
     "completed": "current completed result",
@@ -721,6 +722,7 @@ _CONTEXT_EVIDENCE_STATUS = {
     "awaiting_review": "completed",
     "revision_requested": "revision requested",
     "superseded": "historical",
+    "failed": "failed prior attempt",
 }
 
 
@@ -740,6 +742,7 @@ def _has_archived_method_summary(
         if not isinstance(run, Mapping):
             continue
         run_id = str(run.get("run_id", "")).strip()
+        run_status = str(run.get("status", ""))
         decision = run.get("decision_record")
         decision_data = (
             decision.get("data") if isinstance(decision, Mapping) else None
@@ -747,7 +750,10 @@ def _has_archived_method_summary(
         if (
             not run_id
             or run_id == current_run_id
-            or str(run.get("status", "")) not in _CONTEXT_RESULT_STATUSES
+            or run_status not in _CONTEXT_RESULT_STATUSES
+            # A failed attempt is advisory context, not a usable archived
+            # result; it must not unlock the archived-summary option.
+            or run_status == "failed"
             or not run.get("final_summary")
             or not isinstance(decision_data, Mapping)
             or decision_data.get("scientific_outcome")
@@ -1083,6 +1089,7 @@ def _trusted_context(
                 and phase_slug == launch_common.IDEA_EVALUATION_PHASE
                 and candidate == launch_common.IDEA_EVALUATION_PHASE
             )
+            failed_history_included = False
             for prior in reversed(phase_state.get("runs", [])):
                 if (
                     not isinstance(prior, Mapping)
@@ -1100,11 +1107,20 @@ def _trusted_context(
                         not include_candidate_history
                         and prior_id != branch_current_run_id
                     ):
-                        continue
+                        # Non-current history is excluded by default, except
+                        # the latest failed attempt: its summary tells the
+                        # rerun what went wrong last time.
+                        if (
+                            str(prior.get("status", "")) != "failed"
+                            or failed_history_included
+                        ):
+                            continue
+                        failed_history_included = True
                     if (
                         phase_slug == launch_common.IDEA_EVALUATION_PHASE
                         and candidate == launch_common.IDEA_EVALUATION_PHASE
                         and not include_candidate_history
+                        and str(prior.get("status", "")) != "failed"
                     ):
                         prior_digest = _sealed_run_method_definition_sha256(
                             project_dir, candidate, prior_id
@@ -1140,15 +1156,37 @@ def _trusted_context(
                     )
                 ]
             else:
-                for prior in reversed(phase_state.get("runs", [])):
-                    if (
-                        isinstance(prior, Mapping)
-                        and str(prior.get("status", ""))
-                        in {"completed", "approved", "awaiting_review"}
-                        and prior.get("final_summary")
+                runs_list = phase_state.get("runs", [])
+                latest_usable = None
+                latest_failed = None
+                for prior in reversed(runs_list):
+                    if not isinstance(prior, Mapping) or not prior.get(
+                        "final_summary"
                     ):
-                        source_runs.append(prior)
-                        break  # Latest run only
+                        continue
+                    prior_status = str(prior.get("status", ""))
+                    if (
+                        latest_usable is None
+                        and prior_status
+                        in {"completed", "approved", "awaiting_review"}
+                    ):
+                        latest_usable = prior
+                    elif latest_failed is None and prior_status == "failed":
+                        latest_failed = prior
+                    if latest_usable is not None and latest_failed is not None:
+                        break
+                source_runs = []
+                # A failed run newer than the latest usable result is
+                # included as advisory failure context; an older failure is
+                # already superseded by the newer result.
+                if latest_failed is not None and (
+                    latest_usable is None
+                    or runs_list.index(latest_failed)
+                    > runs_list.index(latest_usable)
+                ):
+                    source_runs.append(latest_failed)
+                if latest_usable is not None:
+                    source_runs.append(latest_usable)
 
         for run in source_runs:
             run_id = str(run.get("run_id", "")).strip()

@@ -143,8 +143,9 @@ Phase 3 and Phase 4 require an active Phase 2 method, but neither requires the
 other to have run.
 
 Phase 5 has stricter conditions. It requires a usable current result from each
-of Phases 1 through 4. Phase 1, Phase 2, and Phase 4 may be Complete or Partial;
-Phase 3 must be Complete, and Failed never qualifies. The Phase 3 and Phase 4
+of Phases 1 through 4. Every phase, including Phase 3, may be Complete or
+Partial — a Partial theory feeds Phase 5 with its stated limitations carried
+forward; Failed never qualifies. The Phase 3 and Phase 4
 results must match the same selected method stable ID, version, and definition
 digest. These integrity and method-matching requirements cannot be overridden.
 

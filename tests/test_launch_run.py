@@ -2106,10 +2106,16 @@ def test_phase_five_readiness_uses_methods_older_phase_two_review_run(
     assert required[phase_two] == f"{phase_two}-result"
 
 
-def test_phase_five_readiness_requires_complete_current_theory(
+def test_phase_five_readiness_accepts_partial_current_theory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """A Partial Phase 3 theory may feed Phase 5 with its limitations.
+
+    Policy change (ISSUES.md #12): Partial theory outcomes are promotable
+    and Phase-5-eligible, matching the Partial policy of every other phase.
+    """
+
     project = tmp_path / "project"
     project.mkdir()
     outcomes = {
@@ -2128,13 +2134,8 @@ def test_phase_five_readiness_requires_complete_current_theory(
     requirements = {
         item["phase"]: item for item in readiness["requirements"]
     }
-    assert readiness["ready"] is False
-    assert requirements[launcher.IDEA_EVALUATION_PHASE]["satisfied"] is False
-    assert any(
-        "current scientific outcome is Partial; Phase 5 requires Complete"
-        in blocker
-        for blocker in readiness["blockers"]
-    )
+    assert readiness["ready"] is True
+    assert requirements[launcher.IDEA_EVALUATION_PHASE]["satisfied"] is True
 
 
 def test_phase_five_readiness_rejects_yellow_p3_or_p4_alignment(
@@ -6341,3 +6342,163 @@ def test_production_workspace_exposes_package_root_only_to_research_lead(
     assert specialist_root == output_root / "round-02"
     assert specialist_round == specialist_root
     assert "round workspace" in specialist_label
+
+
+def _context_run_fixture(project: Path, run_id: str, status: str, outcome: str) -> dict[str, object]:
+    """Write summary + decision files for one context-selection test run."""
+
+    summary = project / f"{run_id}.html"
+    summary.write_text(f"<p>{run_id}</p>", encoding="utf-8")
+    decision_data = _valid_decision_record()
+    decision_data["scientific_outcome"] = outcome
+    decision = project / f"{run_id}.decision.json"
+    decision.write_text(json.dumps(decision_data), encoding="utf-8")
+    payload = decision.read_bytes()
+    return {
+        "run_id": run_id,
+        "status": status,
+        "final_summary": summary.name,
+        "decision_record": {
+            "path": decision.relative_to(project).as_posix(),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "size": len(payload),
+            "schema_version": 1,
+            "data": launcher.project_state.validate_decision_record(decision_data),
+        },
+    }
+
+
+def _patch_context_selection(
+    monkeypatch: pytest.MonkeyPatch,
+    phase_slug: str,
+    phase_state: dict[str, object],
+    runs: dict[str, dict[str, object]],
+    selections: dict[str, dict[str, str]],
+) -> None:
+    monkeypatch.setattr(
+        launcher.project_state,
+        "load",
+        lambda _project: {"phases": {phase_slug: phase_state}},
+    )
+    monkeypatch.setattr(
+        launcher.project_state,
+        "get_run",
+        lambda _project, _phase, run_id: runs[run_id],
+    )
+    monkeypatch.setattr(
+        launcher.project_state,
+        "run_integrity_report",
+        lambda *_args: {"ok": True, "reason": ""},
+    )
+    monkeypatch.setattr(
+        launcher.launch_prompts.launch_manifest,
+        "_read_manifest",
+        lambda *_args: {"schema_version": 11, "phase": {"stages": []}},
+    )
+    monkeypatch.setattr(
+        launcher.launch_prompts,
+        "_sealed_run_method_selection",
+        lambda _project, _phase, run_id: selections.get(run_id),
+    )
+
+
+def test_latest_failed_attempt_enters_branch_context_as_advisory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rerun must see the latest failed attempt on its branch.
+
+    The failed run is advisory only: not trusted, not usable, and labeled
+    with its Failed outcome. Older failed attempts stay excluded.
+    """
+
+    project = tmp_path / "project"
+    project.mkdir()
+    phase_slug = launcher.IDEA_EVALUATION_PHASE
+    run_good = _context_run_fixture(project, "run-good", "completed", "Complete")
+    run_fail_old = _context_run_fixture(project, "run-fail-old", "failed", "Failed")
+    run_fail_new = _context_run_fixture(project, "run-fail-new", "failed", "Failed")
+    runs = {run["run_id"]: run for run in (run_good, run_fail_old, run_fail_new)}
+    phase_state = {
+        "current_run": "run-good",
+        "current_runs": {"method-a": "run-good"},
+        "stale": False,
+        "runs": [run_good, run_fail_old, run_fail_new],
+    }
+    config = {
+        "phases": [{
+            "slug": phase_slug,
+            "pattern": "sequential",
+            "method_binding": True,
+            "gated_by": [],
+        }]
+    }
+    selections = {
+        run_id: {"stable_id": "method-a", "version": "v1"} for run_id in runs
+    }
+    _patch_context_selection(
+        monkeypatch, phase_slug, phase_state, runs, selections
+    )
+    monkeypatch.setattr(
+        launcher.launch_prompts,
+        "_sealed_run_method_definition_sha256",
+        lambda *_args: "a" * 64,
+    )
+
+    context = launcher._trusted_context(
+        project,
+        phase_slug,
+        config,
+        selected_method_id="method-a",
+        selected_method_version="v1",
+        selected_method_sha256="a" * 64,
+    )
+
+    by_run = {entry["run_id"]: entry for entry in context}
+    assert "run-fail-new" in by_run
+    assert "run-fail-old" not in by_run
+    failed_entry = by_run["run-fail-new"]
+    assert failed_entry["source_status"] == "failed"
+    assert failed_entry["trusted"] is False
+    assert failed_entry["usable"] is False
+    assert failed_entry["kind"].endswith("_history")
+    assert "Failed" in failed_entry["evidence_status"]
+
+
+def test_failed_run_enters_global_context_only_when_newer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Global phases surface a failed run only if it is the latest attempt."""
+
+    phase_slug = "01-literature-review"
+    config = {"phases": [{"slug": phase_slug, "gated_by": []}]}
+
+    def build(order: list[str]) -> list[dict[str, object]]:
+        project = tmp_path / f"project-{''.join(item[0] for item in order)}"
+        project.mkdir()
+        fixtures = {
+            "good": _context_run_fixture(project, "run-good", "approved", "Complete"),
+            "failed": _context_run_fixture(project, "run-failed", "failed", "Failed"),
+        }
+        runs = {name: fixtures[name] for name in dict.fromkeys(order)}
+        phase_state = {"runs": [fixtures[name] for name in order]}
+        _patch_context_selection(
+            monkeypatch, phase_slug, phase_state, runs, {}
+        )
+        return launcher._trusted_context(project, phase_slug, config)
+
+    newer_failure = build(["good", "failed"])
+    assert {entry["run_id"] for entry in newer_failure} == {
+        "run-good",
+        "run-failed",
+    }
+    failed_entry = next(
+        entry for entry in newer_failure if entry["run_id"] == "run-failed"
+    )
+    assert failed_entry["trusted"] is False
+    assert failed_entry["usable"] is False
+    assert "Failed" in failed_entry["evidence_status"]
+
+    older_failure = build(["failed", "good"])
+    assert {entry["run_id"] for entry in older_failure} == {"run-good"}

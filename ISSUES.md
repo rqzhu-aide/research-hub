@@ -190,7 +190,22 @@ Retired branches and sealed per-run context copies accumulate forever
 
 ## 🟡 Issue 12 — P3 Partial trap: Partial theory can neither promote nor feed Phase 5
 
-Raised by `situations/06-p3-partial-trap.md`; **verified against code**
+**Status: FIXED (July 30, 2026).** Both gates relaxed:
+
+1. `phase_records.py:664` — theory seal gate now uses the standard
+   Complete-or-Partial `eligible` check (was `outcome == "Complete"`).
+2. `launch_manifest.PHASE_FIVE_ACCEPTED_SCIENTIFIC_OUTCOMES` — P3 now accepts
+   `("Complete", "Partial")`.
+
+Contract docs updated (README, architecture/pipeline/phase-4/decisions,
+P3 playbook): a Partial theory feeds Phase 5 with its stated limitations
+carried forward; Failed still never qualifies. Tests:
+`test_theory_seal_accepts_partial_outcome`,
+`test_theory_seal_still_rejects_failed_outcome`,
+`test_phase_five_readiness_accepts_partial_current_theory` (replaces the old
+requires-Complete test).
+
+**Original report.** Raised by `situations/06-p3-partial-trap.md`; **verified against code**
 (July 30, 2026). Two independent gates create the trap:
 
 1. **Seal gate** — `phase_records.py` (~line 664): theory sealing requires
@@ -212,7 +227,19 @@ visible limitation marker carried into the manuscript.
 
 ## 🟡 Issue 13 — Failed runs are invisible to rerun context
 
-Raised by `situations/10-failed-runs-recovery-loop.md`; **verified**.
+**Status: FIXED (July 30, 2026).** `launch_prompts.py`:
+`_CONTEXT_RESULT_STATUSES` now includes `failed` (label "failed prior
+attempt"). Branch-scoped phases admit the **latest** failed attempt on the
+branch alongside the current record (older failures stay excluded); global
+phases surface a failed run only when it is newer than the latest usable
+result. Failed entries render as untrusted/unusable advisory evidence with
+the pre-existing "scientific outcome Failed" label, so agents see what went
+wrong without mistaking it for a valid result. The archived-summary option
+still requires a *usable* non-current result (failed runs do not unlock it).
+Tests: `test_latest_failed_attempt_enters_branch_context_as_advisory`,
+`test_failed_run_enters_global_context_only_when_newer`.
+
+**Original report.** Raised by `situations/10-failed-runs-recovery-loop.md`; **verified**.
 `launch_prompts.py:715-717` — `_CONTEXT_RESULT_STATUSES = {"completed",
 "approved", "awaiting_review", "revision_requested", "superseded"}` excludes
 `failed`. A rerun's agents never see why the previous attempt failed; the
@@ -231,7 +258,16 @@ method-heavy projects.
 
 ## 🟢 Issue 15 — No accidental-run prevention or undo
 
-Raised by `situations/09-premature-p4-scoping-errors.md`. Launching a phase
+**Status: WON'T FIX / largely mitigated (July 30, 2026 assessment).** The
+method-bound launch picker already renders per-method P2/P3/P4/P5 record
+status badges next to every radio (`templates/_tab_phase.html` ~:574-585),
+so branch maturity is visible at selection time. A hard confirmation dialog
+would add friction to every launch and conflicts with the deliberate
+user-in-control design (the system does not second-guess the user). The
+residual risk (a slip despite visible badges) is accepted; cleanup of a
+mistaken run follows `references/run-cleanup.md`.
+
+**Original report.** Raised by `situations/09-premature-p4-scoping-errors.md`. Launching a phase
 for the wrong method creates permanent branch artifacts; cleanup requires
 state-file surgery (`references/run-cleanup.md`). Not a bug — the system
 deliberately doesn't second-guess the user — but a confirmation hint ("branch

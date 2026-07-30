@@ -1242,7 +1242,7 @@ COMPLETED_SCIENTIFIC_OUTCOMES = frozenset({"Complete", "Partial"})
 PHASE_FIVE_ACCEPTED_SCIENTIFIC_OUTCOMES = {
     "01-literature-review": ("Complete", "Partial"),
     project_state.METHOD_DEVELOPMENT_PHASE: ("Complete", "Partial"),
-    launch_common.IDEA_EVALUATION_PHASE: ("Complete",),
+    launch_common.IDEA_EVALUATION_PHASE: ("Complete", "Partial"),
     launch_common.DRAFT_ASSEMBLY_PHASE: ("Complete", "Partial"),
 }
 

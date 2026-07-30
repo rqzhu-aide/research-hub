@@ -661,7 +661,7 @@ def seal_output(
                 else None
             ),
         )
-    elif phase_slug == THEORY_PHASE and outcome == "Complete":
+    elif phase_slug == THEORY_PHASE and eligible:
         kind = "theory"
         data = theory_records.seal_staged_theory(
             project_dir,

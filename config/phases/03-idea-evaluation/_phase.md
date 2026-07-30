@@ -137,9 +137,10 @@ Write all outputs under the exact run output root, normally
 
 Research Hub prepares both run-root files from the verified current package when
 the method identity matches. For a first run or revised method definition, it
-prepares new templates. A Complete valid run atomically replaces the branch's
-current Phase 3 package. An incomplete or invalid run leaves the previous
-current theory package unchanged.
+prepares new templates. A Complete or Partial valid run atomically replaces the
+branch's current Phase 3 package (a Partial package carries its named gaps
+forward). An incomplete or invalid run leaves the previous current theory
+package unchanged.
 
 Before a Complete submission, `knowledge-fragment.json` must have complete
 coverage, preserve its prepared identity fields, include every current

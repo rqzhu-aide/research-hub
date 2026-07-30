@@ -276,8 +276,8 @@ must be redesigned. You decide when to start either run.
 ## Use in Phase 5
 
 Phase 5 requires a usable current result from each of Phases 1 through 4. A
-current Phase 4 result may be Complete or Partial, while Phase 3 must be
-Complete. Phase 3 and Phase 4 must match the selected method and each other's
+current Phase 4 result may be Complete or Partial, and so may Phase 3 — a
+Partial theory feeds Phase 5 with its stated limitations carried forward. Phase 3 and Phase 4 must match the selected method and each other's
 recorded semantic basis. The Phase 4 package can have no outdated or unresolved
 evidence. Phase 4 alone does not make the branch ready or start Phase 5.
 

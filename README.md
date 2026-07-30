@@ -35,9 +35,9 @@ A calculation-defining Phase 2 change advances the method version. Earlier
 Phase 3 proofs and Phase 4 code or results remain historical until a rerun
 checks or recomputes them for the new version.
 
-Phase 5 requires usable current results from Phases 1 through 4. Phase 1,
-Phase 2, and Phase 4 may be Complete or Partial; Phase 3 must be Complete, and
-Failed never qualifies. The Phase 3 and Phase 4 results must be tied to the same
+Phase 5 requires usable current results from Phases 1 through 4. Every
+phase, including Phase 3, may be Complete or Partial — a Partial theory feeds
+Phase 5 with its stated limitations carried forward; Failed never qualifies. The Phase 3 and Phase 4 results must be tied to the same
 selected method snapshot. A Partial Phase 2 result requires an explicit
 prerequisite override before Phase 3 or Phase 4 can start.
 

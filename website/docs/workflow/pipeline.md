@@ -173,8 +173,9 @@ when selected. Phase 4 uses the current theory manuscript and cumulative
 empirical package.
 
 Phase 5 requires a usable current result from each of Phases 1 through 4.
-Phase 1, Phase 2, and Phase 4 may be Complete or Partial; Phase 3 must be
-Complete, and Failed never qualifies. Phase 3 and Phase 4 must match the
+Every phase, including Phase 3, may be Complete or Partial — a Partial
+Phase 3 theory feeds Phase 5 with its stated limitations carried forward;
+Failed never qualifies. Phase 3 and Phase 4 must match the
 selected method and the current sibling basis recorded by each phase. Phase 5
 freezes the Phase 1 reference collection and literature synthesis as separate
 inputs. Phase 4 can have no outdated or unresolved evidence.

@@ -117,7 +117,8 @@ selected method, its recorded Phase 2 literature basis must match the current
 Phase 1 reference collection and synthesis. Research Hub uses that method's
 review-source run as the Phase 2 prerequisite, which may differ from the newest
 Phase 2 run after a focused update. Phase 1, that Phase 2 review, and Phase 4 may
-be Complete or Partial; Phase 3 must be Complete, and Failed never qualifies.
+be Complete or Partial — a Partial Phase 3 theory feeds Phase 5 with its
+stated limitations carried forward; Failed never qualifies.
 The Phase 3 and Phase 4 results must match the selected method and the current
 sibling semantic basis recorded by each phase. Phase 4 must also have no
 outdated or unresolved evidence.

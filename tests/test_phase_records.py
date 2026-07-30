@@ -395,3 +395,110 @@ def test_current_context_rejects_literature_changed_after_validation(
         match="changed after its current record was validated",
     ):
         phase_records.current_context_records(project)
+
+
+def test_theory_seal_accepts_partial_outcome(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Partial Phase 3 outcome seals and promotes a theory record.
+
+    Policy change (ISSUES.md #12): the theory seal gate uses the same
+    Complete-or-Partial eligibility as every other phase.
+    """
+
+    captured: dict[str, object] = {}
+
+    def seal_theory(
+        *_args: object, **kwargs: object
+    ) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"record": "sealed-partial-theory"}
+
+    monkeypatch.setattr(
+        phase_records.theory_records,
+        "seal_staged_theory",
+        seal_theory,
+    )
+    manifest = {
+        "schema_version": 13,
+        "phase_slug": phase_records.THEORY_PHASE,
+        "knowledge_heads": None,
+        "method_selection": {
+            "kind": "method",
+            "stable_id": "method-a",
+            "version": "v1",
+            "definition_sha256": "a" * 64,
+        },
+        "method_catalog_basis": None,
+        "counterpart_basis": None,
+        "snapshots": {
+            "selected_method": {
+                "stable_id": "method-a",
+                "version": "v1",
+                "sha256": "a" * 64,
+            }
+        },
+    }
+
+    seal = phase_records.seal_output(
+        tmp_path,
+        phase_records.THEORY_PHASE,
+        tmp_path / "run",
+        run_id="p3-run",
+        scientific_outcome="Partial",
+        manifest=manifest,
+    )
+
+    assert seal["kind"] == "theory"
+    assert seal["eligible"] is True
+    assert seal["data"] == {"record": "sealed-partial-theory"}
+    assert captured["scientific_outcome"] == "Partial"
+    assert captured["source_run_id"] == "p3-run"
+
+
+def test_theory_seal_still_rejects_failed_outcome(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def seal_theory(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise AssertionError("Failed outcome must not reach theory sealing")
+
+    monkeypatch.setattr(
+        phase_records.theory_records,
+        "seal_staged_theory",
+        seal_theory,
+    )
+    manifest = {
+        "schema_version": 13,
+        "phase_slug": phase_records.THEORY_PHASE,
+        "knowledge_heads": None,
+        "method_selection": {
+            "kind": "method",
+            "stable_id": "method-a",
+            "version": "v1",
+            "definition_sha256": "a" * 64,
+        },
+        "method_catalog_basis": None,
+        "counterpart_basis": None,
+        "snapshots": {
+            "selected_method": {
+                "stable_id": "method-a",
+                "version": "v1",
+                "sha256": "a" * 64,
+            }
+        },
+    }
+
+    seal = phase_records.seal_output(
+        tmp_path,
+        phase_records.THEORY_PHASE,
+        tmp_path / "run",
+        run_id="p3-run",
+        scientific_outcome="Failed",
+        manifest=manifest,
+    )
+
+    assert seal["kind"] == "none"
+    assert seal["eligible"] is False
+    assert seal["data"] is None
