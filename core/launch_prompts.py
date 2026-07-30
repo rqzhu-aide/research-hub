@@ -1089,7 +1089,8 @@ def _trusted_context(
                 and phase_slug == launch_common.IDEA_EVALUATION_PHASE
                 and candidate == launch_common.IDEA_EVALUATION_PHASE
             )
-            failed_history_included = False
+            failed_history: Mapping[str, Any] | None = None
+            replaced_history: Mapping[str, Any] | None = None
             for prior in reversed(phase_state.get("runs", [])):
                 if (
                     not isinstance(prior, Mapping)
@@ -1099,36 +1100,26 @@ def _trusted_context(
                     continue
                 prior_id = str(prior.get("run_id", "")).strip()
                 selection = _sealed_run_method_selection(project_dir, candidate, prior_id)
-                if (
+                if not (
                     isinstance(selection, Mapping)
                     and str(selection.get("stable_id", "")) == selected_method_id
                 ):
+                    continue
+                is_branch_current = bool(
+                    branch_current_run_id and prior_id == branch_current_run_id
+                )
+                if is_branch_current or include_candidate_history:
                     if (
-                        not include_candidate_history
-                        and prior_id != branch_current_run_id
-                    ):
-                        # Non-current history is excluded by default, except
-                        # the latest failed attempt: its summary tells the
-                        # rerun what went wrong last time.
-                        if (
-                            str(prior.get("status", "")) != "failed"
-                            or failed_history_included
-                        ):
-                            continue
-                        failed_history_included = True
-                    if (
-                        phase_slug == launch_common.IDEA_EVALUATION_PHASE
+                        is_branch_current
+                        and phase_slug == launch_common.IDEA_EVALUATION_PHASE
                         and candidate == launch_common.IDEA_EVALUATION_PHASE
                         and not include_candidate_history
-                        and str(prior.get("status", "")) != "failed"
                     ):
                         prior_digest = _sealed_run_method_definition_sha256(
                             project_dir, candidate, prior_id
                         )
                         exact_current_theory = bool(
-                            branch_current_run_id
-                            and prior_id == branch_current_run_id
-                            and str(selection.get("version", ""))
+                            str(selection.get("version", ""))
                             == selected_method_version
                             and prior_digest
                             and selected_method_sha256
@@ -1139,8 +1130,71 @@ def _trusted_context(
                         if not exact_current_theory:
                             continue
                     source_runs.append(prior)
-                    if not include_candidate_history:
-                        break
+                    continue
+                # Non-current history: excluded by default, with two labeled
+                # exceptions collected below and appended after the loop.
+                if str(prior.get("status", "")) == "failed":
+                    # The latest failed attempt — but only when it is newer
+                    # than the current record (or no current exists): its
+                    # summary tells the rerun what went wrong last time.
+                    if failed_history is None and not source_runs:
+                        failed_history = prior
+                    continue
+                # The latest same-version result the current record replaced
+                # (e.g., a comprehensive P4 superseded by a narrower rerun):
+                # keeps superseded evidence visible downstream. Requires a
+                # current record to exist (this run is then older by order),
+                # a usable outcome, and the current artifact contract.
+                if (
+                    replaced_history is not None
+                    or not source_runs
+                    or not branch_current_run_id
+                ):
+                    continue
+                if str(selection.get("version", "")) != str(
+                    selected_method_version
+                ):
+                    continue
+                decision = prior.get("decision_record")
+                decision_data = (
+                    decision.get("data") if isinstance(decision, Mapping) else None
+                )
+                if (
+                    not isinstance(decision_data, Mapping)
+                    or decision_data.get("scientific_outcome")
+                    not in _CONTEXT_USABLE_SCIENTIFIC_OUTCOMES
+                ):
+                    continue
+                if selected_method_sha256:
+                    prior_digest = _sealed_run_method_definition_sha256(
+                        project_dir, candidate, prior_id
+                    )
+                    if not (
+                        prior_digest
+                        and hmac.compare_digest(
+                            prior_digest, selected_method_sha256
+                        )
+                    ):
+                        continue
+                try:
+                    prior_manifest = launch_manifest._read_manifest(
+                        project_dir, candidate, prior_id
+                    )
+                except (
+                    KeyError,
+                    OSError,
+                    ValueError,
+                    launch_common.LaunchError,
+                    project_state.ProjectStateError,
+                ):
+                    continue
+                if int(prior_manifest.get("schema_version", 0) or 0) < 13:
+                    continue
+                replaced_history = prior
+            if failed_history is not None:
+                source_runs.append(failed_history)
+            if replaced_history is not None:
+                source_runs.append(replaced_history)
         else:
             if exact_required_run_id:
                 source_runs = [

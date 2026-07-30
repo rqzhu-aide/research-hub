@@ -6512,3 +6512,146 @@ def test_check_lead_prompt_size_enforces_cap_before_launch() -> None:
         launch_common.check_lead_prompt_size(
             b"x" * (launch_common.MAX_LEAD_PROMPT_BYTES + 1)
         )
+
+
+def _patch_branch_context(
+    monkeypatch: pytest.MonkeyPatch,
+    phase_slug: str,
+    phase_state: dict[str, object],
+    runs: dict[str, dict[str, object]],
+    *,
+    digest: str = "a" * 64,
+) -> None:
+    _patch_context_selection(
+        monkeypatch,
+        phase_slug,
+        phase_state,
+        runs,
+        {run_id: {"stable_id": "method-a", "version": "v1"} for run_id in runs},
+    )
+    monkeypatch.setattr(
+        launcher.launch_prompts.launch_manifest,
+        "_read_manifest",
+        lambda *_args: {"schema_version": 14, "phase": {"stages": []}},
+    )
+    monkeypatch.setattr(
+        launcher.launch_prompts,
+        "_sealed_run_method_definition_sha256",
+        lambda *_args: digest,
+    )
+
+
+def _p3_config() -> dict[str, object]:
+    return {
+        "phases": [{
+            "slug": launcher.IDEA_EVALUATION_PHASE,
+            "pattern": "sequential",
+            "method_binding": True,
+            "gated_by": [],
+        }]
+    }
+
+
+def test_failed_run_newer_than_current_does_not_hide_current(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: a newer failed run must not drop the current record."""
+
+    project = tmp_path / "project"
+    project.mkdir()
+    phase_slug = launcher.IDEA_EVALUATION_PHASE
+    run_good = _context_run_fixture(project, "run-good", "completed", "Complete")
+    run_fail = _context_run_fixture(project, "run-fail", "failed", "Failed")
+    runs = {run["run_id"]: run for run in (run_good, run_fail)}
+    phase_state = {
+        "current_run": "run-good",
+        "current_runs": {"method-a": "run-good"},
+        "stale": False,
+        "runs": [run_good, run_fail],
+    }
+    _patch_branch_context(monkeypatch, phase_slug, phase_state, runs)
+
+    context = launcher._trusted_context(
+        project,
+        phase_slug,
+        _p3_config(),
+        selected_method_id="method-a",
+        selected_method_version="v1",
+        selected_method_sha256="a" * 64,
+    )
+
+    by_run = {entry["run_id"]: entry for entry in context}
+    assert set(by_run) == {"run-good", "run-fail"}
+    assert by_run["run-good"]["kind"] == "prior_method_branch_result"
+    assert by_run["run-fail"]["source_status"] == "failed"
+    assert by_run["run-fail"]["trusted"] is False
+
+
+def test_replaced_same_version_run_stays_visible_as_history(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A superseded same-version result (e.g. comprehensive P4) is kept."""
+
+    project = tmp_path / "project"
+    project.mkdir()
+    phase_slug = launcher.IDEA_EVALUATION_PHASE
+    run_old = _context_run_fixture(project, "run-old", "completed", "Complete")
+    run_new = _context_run_fixture(project, "run-new", "completed", "Complete")
+    runs = {run["run_id"]: run for run in (run_old, run_new)}
+    phase_state = {
+        "current_run": "run-new",
+        "current_runs": {"method-a": "run-new"},
+        "stale": False,
+        "runs": [run_old, run_new],
+    }
+    _patch_branch_context(monkeypatch, phase_slug, phase_state, runs)
+
+    context = launcher._trusted_context(
+        project,
+        phase_slug,
+        _p3_config(),
+        selected_method_id="method-a",
+        selected_method_version="v1",
+        selected_method_sha256="a" * 64,
+    )
+
+    by_run = {entry["run_id"]: entry for entry in context}
+    assert set(by_run) == {"run-new", "run-old"}
+    replaced = by_run["run-old"]
+    assert replaced["kind"].endswith("_history")
+    assert replaced["trusted"] is False
+    assert "non-current branch history" in replaced["evidence_status"]
+
+
+def test_replaced_history_requires_usable_outcome(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A superseded run with a Failed outcome is not useful history."""
+
+    project = tmp_path / "project"
+    project.mkdir()
+    phase_slug = launcher.IDEA_EVALUATION_PHASE
+    run_old = _context_run_fixture(project, "run-old", "completed", "Failed")
+    run_new = _context_run_fixture(project, "run-new", "completed", "Complete")
+    runs = {run["run_id"]: run for run in (run_old, run_new)}
+    phase_state = {
+        "current_run": "run-new",
+        "current_runs": {"method-a": "run-new"},
+        "stale": False,
+        "runs": [run_old, run_new],
+    }
+    _patch_branch_context(monkeypatch, phase_slug, phase_state, runs)
+
+    context = launcher._trusted_context(
+        project,
+        phase_slug,
+        _p3_config(),
+        selected_method_id="method-a",
+        selected_method_version="v1",
+        selected_method_sha256="a" * 64,
+    )
+
+    assert {entry["run_id"] for entry in context} == {"run-new"}
