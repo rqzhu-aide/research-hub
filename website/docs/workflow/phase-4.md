@@ -183,7 +183,10 @@ evidence.
 Research Hub separately freezes and hashes the declared launch inputs, prompt,
 and manifest, and records submitted artifacts. The shipped Phase 4
 configuration enables a protocol checkpoint: the analyst's protocol is sealed
-before the main result work proceeds. The checkpoint, its declared protocol
+before the main result work proceeds. The checkpoint is a machine-sealed
+provenance record, not a user approval gate — the run proceeds to the result
+stage automatically once the protocol is sealed, and a sealed checkpoint
+cannot be amended. To change a protocol, cancel the run and launch a new one. The checkpoint, its declared protocol
 files, and the protocol-stage report are also frozen for later same-branch
 work. Inspect the protocol and every reported deviation when judging the run.
 The checkpoint establishes the identity and sequence of the recorded protocol;

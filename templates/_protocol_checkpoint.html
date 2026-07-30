@@ -5,6 +5,13 @@
 {% set protocol_report = checkpoint.protocol_report | default(none) %}
 <details class="protocol-checkpoint-details" data-progress-details="protocol-checkpoint">
   <summary data-progress-focus="protocol-checkpoint">Inspect sealed protocol checkpoint</summary>
+  <p class="field-help record-status-note">
+    This checkpoint is a machine-sealed provenance record, not a review gate.
+    The run proceeds to the result stage automatically once the protocol is
+    sealed — it does not pause for your approval. If the protocol should
+    change, cancel the run and launch a new one; a sealed checkpoint cannot
+    be amended.
+  </p>
   <dl class="protocol-checkpoint-record">
     <div><dt>Checkpoint file</dt><dd><code>{{ checkpoint.path | default('Not recorded') }}</code></dd></div>
     <div><dt>Checkpoint SHA-256</dt><dd><code>{{ checkpoint.sha256 | default('Not recorded') }}</code></dd></div>

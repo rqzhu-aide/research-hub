@@ -85,8 +85,12 @@ examining the main results, record:
 7. results that would support, weaken, or contradict each claim.
 
 Complete the protocol checkpoint before executing the result-producing part of
-the study. Record every later deviation and its reason. Exploratory analyses
-are allowed when labeled as exploratory.
+the study. Note: the checkpoint is a tamper-evident seal, not a pause — the run
+continues to the result stage automatically once the protocol is sealed, and
+the user is not asked to approve it mid-run. A sealed checkpoint cannot be
+amended; the only way to change the protocol is to cancel and rerun. Record
+every later deviation and its reason. Exploratory analyses are allowed when
+labeled as exploratory.
 
 ## Required empirical work
 
