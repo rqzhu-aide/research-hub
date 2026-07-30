@@ -3,8 +3,8 @@
 These tests load the repository's real ``config.yaml`` and exercise the
 launch-plan code paths for every configured phase. Feature logic that keys
 off hardcoded phase slugs (theory run plans, method binding, protocol
-checkpoints) previously broke repurposed phases while the unit tests — all
-using their own fixture configs — stayed green. This suite would have caught
+checkpoints) previously broke repurposed phases while unit tests using their
+own fixture configs stayed green. This suite would have caught
 that: it fails whenever the shipped configuration cannot build a round plan
 or validate a launch manifest for one of its own phases.
 """
@@ -17,7 +17,7 @@ import pytest
 
 
 import hub  # noqa: E402
-from core import launch_run  # noqa: E402
+from core import knowledge_heads, launch_run, phase_options  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -55,6 +55,7 @@ def _manifest_for_phase(phase: dict, tmp_path: Path) -> dict:
                 "_phase.md": leaf("_phase.md"),
             },
             "summaries": [],
+            "current_records": [],
         },
         "submission_outputs": {},
         "summary_path": str(summary),
@@ -63,12 +64,15 @@ def _manifest_for_phase(phase: dict, tmp_path: Path) -> dict:
         "prerequisite_report_version": "b" * 64,
         "hermes_root": str((tmp_path / "hermes").resolve()),
         "method_selection": None,
+        "knowledge_heads": None,
+        "method_catalog_basis": None,
     }
     if launch_run.phase_requires_method_binding(phase) and not phase.get(
         "audit_only"
     ):
         manifest["snapshots"]["selected_method"] = {
             **leaf("selected-method.md"),
+            "definition_sha256": "d" * 64,
             "stable_id": "contract-method",
             "version": "v1",
             "label": "Contract method",
@@ -83,6 +87,29 @@ def _manifest_for_phase(phase: dict, tmp_path: Path) -> dict:
             "source_run_id": None,
             "decision_record": None,
         }
+        project_dir = tmp_path / "project"
+        project_dir.mkdir(exist_ok=True)
+        manifest["project_dir"] = str(project_dir)
+        manifest["run_id"] = "run-contract"
+        manifest["knowledge_heads"] = knowledge_heads.derive_frozen_heads(
+            project_dir,
+            manifest,
+            "contract-method",
+        )
+    if phase["slug"] == "02-method-development":
+        manifest["run_scope"] = phase_options.phase_two_scope(
+            phase_options.METHOD_SCOPE_FULL_CATALOG
+        )
+        manifest["method_catalog_basis"] = {
+            "schema_version": 1,
+            "sha256": "c" * 64,
+        }
+    if phase["slug"] == "03-idea-evaluation" and not phase.get("audit_only"):
+        manifest["context_policy"] = phase_options.phase_three_context_policy(
+            phase_options.THEORY_CONTEXT_CURRENT,
+            has_archived_summaries=False,
+        )
+
     if phase.get("protocol_checkpoint"):
         output_root = tmp_path / "project" / "run" / "01"
         manifest["output_root"] = str(output_root)
@@ -202,3 +229,86 @@ def test_shipped_playbooks_exist_for_every_phase(shipped_config: dict) -> None:
             f"{role}.md" for role in phase.get("members", [])
         ]:
             assert (phase_dir / name).is_file(), f"{phase['slug']}/{name}"
+
+
+def _playbook_contract_text(phase_slug: str, filename: str) -> str:
+    """Return case-folded playbook prose with line wrapping removed."""
+
+    repository_root = Path(hub.__file__).resolve().parent
+    path = repository_root / "config" / "phases" / phase_slug / filename
+    return " ".join(path.read_text(encoding="utf-8").casefold().split())
+
+
+def _assert_contract_terms(text: str, *terms: str) -> None:
+    missing = [term for term in terms if term.casefold() not in text]
+    assert not missing, f"playbook is missing contract vocabulary: {missing}"
+
+
+def _assert_specialist_package_is_read_only(
+    phase_slug: str,
+    role: str,
+    *package_terms: str,
+) -> None:
+    text = _playbook_contract_text(phase_slug, f"{role}.md")
+    _assert_contract_terms(text, *package_terms)
+    assert "run root" in text or "run-root" in text
+    assert "do not edit" in text or "read-only" in text
+
+
+def test_phase_three_knowledge_fragment_playbook_contract() -> None:
+    phase = "03-idea-evaluation"
+    lead = _playbook_contract_text(phase, "research_lead.md")
+
+    _assert_contract_terms(
+        lead,
+        "sole writer",
+        "theory-manuscript.md",
+        "knowledge-fragment.json",
+        "coverage",
+        "complete",
+        "current scientific checkpoint",
+        "statements",
+        "dependencies",
+        "not a change log",
+        "partial",
+        "complete current statement set",
+    )
+    for role in ("theorist", "data_scientist"):
+        _assert_specialist_package_is_read_only(
+            phase,
+            role,
+            "knowledge-fragment.json",
+            "theory manuscript",
+        )
+
+
+def test_phase_four_knowledge_fragment_playbook_contract() -> None:
+    phase = "04-draft-assembly"
+    package_files = (
+        "empirical-synthesis.md",
+        "evidence-index.json",
+        "knowledge-fragment.json",
+    )
+    lead = _playbook_contract_text(phase, "research_lead.md")
+
+    _assert_contract_terms(
+        lead,
+        "sole finalizer",
+        *package_files,
+        "evidence_bindings",
+        "exactly one",
+        "every evidence id",
+        "evidence_id",
+        "evidence_status",
+    )
+    assert (
+        "same status" in lead
+        or "status must exactly match" in lead
+        or "status must match" in lead
+    )
+    for role in ("data_scientist", "theorist"):
+        _assert_specialist_package_is_read_only(
+            phase,
+            role,
+            *package_files,
+        )

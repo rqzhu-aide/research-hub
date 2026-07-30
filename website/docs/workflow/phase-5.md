@@ -16,29 +16,54 @@ specialists required by the study.
 
 ## Before you launch
 
-Phase 5 requires an intact completed result from each of Phases 1 through 4.
-Its launch form uses the Phase 2 catalog to identify the selected method. The
-Phase 3 and Phase 4 results must both match that method's stable ID, version,
-and definition digest. Research Hub verifies the integrity of all four results
-and the sibling branch match before launch.
+Phase 5 requires a usable current record from each of Phases 1 through 4. Its
+launch form uses the Phase 2 catalog to identify the selected method.
 
-It does not combine theory for one method with empirical results for another,
-and a result bound to an older method version or definition does not silently
+For that method, the recorded Phase 2 literature basis must match both the
+current Phase 1 reference collection and the current literature synthesis.
+Research Hub uses the method's own review-source run as the Phase 2 prerequisite,
+not simply the newest Phase 2 run in the project. This matters after a focused
+Phase 2 run, because the newest run may have reviewed a different method.
+
+The current Phase 3 theory and Phase 4 empirical packages must match the method
+and the decision-relevant sibling conclusions and evidence recorded by each
+phase. Phase 4 must have no outdated or unresolved evidence. Research Hub
+rebuilds this alignment before launch.
+
+A usable current Phase 1 record, the selected method's Phase 2 review, and its
+Phase 4 result may have scientific outcome Complete or Partial. A current Phase
+3 theory package must have outcome Complete. A Failed result never qualifies.
+Partial means that the retained result has scientific limitations; it does not
+mean that a technically failed run was accepted.
+
+Research Hub does not combine theory for one method with empirical results for
+another, and a result bound to an older method definition does not silently
 satisfy the current branch.
 
-Available summaries, role reports, and supporting evidence from both sibling
-phases are included as same-branch evidence. A Phase 3 or Phase 4 result must
-have a complete artifact inventory to satisfy this strict gate. Older records
-created before complete artifact tracking remain visible as advisory history,
-but the affected phase must be rerun before Phase 5. The same applies when a
-required result is missing, fails its integrity check, or is incompatible with
-the selected method.
+Phase 5 fixes the exact current Phase 1 reference collection and literature
+synthesis at launch. It also reads the current method definition, complete
+current theory manuscript, current empirical synthesis and evidence index, and
+their verified supporting artifacts. The method's definition source and review
+source may be different runs. Older run summaries remain provenance records,
+but they are not substitutes for the current packages.
+
+If the selected method's Phase 2 literature status is yellow, Phase 5 is
+unavailable until you choose a full-catalog or focused Phase 2 rerun that reviews
+that method against the current Phase 1 basis. If the method is retained without
+a definition change, matching Phase 3 and Phase 4 results remain aligned. If the
+definition changes, Phase 3 and Phase 4 require review against the new
+definition.
+
+Phase 5 is also unavailable if either Phase 3 or Phase 4 is yellow. A yellow
+Phase 5 manuscript means that one of its recorded inputs changed and it may need
+Assembly or, when the current manuscript remains valid, Review & Revision. A red
+record has an integrity failure. No status launches a run. You explicitly
+choose whether to run or rerun any phase.
 
 | Choice | When to use it | Who works |
 |---|---|---|
-| **Assembly** | Intact completed results from Phases 1 through 4 have not yet been combined into one manuscript, or that evidence has changed substantially. The Phase 3 and Phase 4 results match the selected method snapshot. | Research Lead |
-| **Review & Revision** | A same-branch Assembly run already has the legacy `approved` status required by the current launcher. The phase panel does not create this status; see [Current Limitations](../known-limitations). | Paper Reviewer, then Research Lead |
-| **Review target** | The selector is shown and you want a fresh assessment of one exact sealed post-review manuscript without revising it in the same run. | Paper Reviewer only, in two stages |
+| **Assembly** | Usable current results from Phases 1 through 4 have not yet been combined into one manuscript, or that evidence has changed substantially. The Phase 3 and Phase 4 results match the selected method snapshot. | Research Lead |
+| **Review & Revision** | The branch has a verified current `manuscript.md` that you want independently reviewed and revised. | Paper Reviewer, then Research Lead |
 
 In your launch instructions, identify the intended audience or venue, the claims
 that need particular scrutiny, sections that remain uncertain, and any reporting
@@ -69,13 +94,7 @@ stage.
 
 ### Review & Revision
 
-The intended sequence is review followed by revision. The current launcher
-still requires a same-branch Assembly run with legacy `approved` status. The
-phase panel does not provide an approval action, so this mode is not normally
-available after a newly completed Assembly run. See
-[Current Limitations](../known-limitations).
-
-When the legacy gate is satisfied:
+This mode uses the branch's verified current manuscript:
 
 1. **Context-separated internal review.** The Paper Reviewer uses a separate
    Hermes profile and evaluates the assembled manuscript for soundness, clarity,
@@ -83,42 +102,14 @@ When the legacy gate is satisfied:
    The reviewer ranks the issues and recommends specific changes.
 2. **Revision.** The Research Lead addresses every material point. The lead may
    correct it, revise the claim, defer it with a reason, or disagree with a
-   scientific justification. The run produces a revised manuscript and a
-   revision record.
+   scientific justification. The run replaces the branch's one current
+   `manuscript.md`, records the response, and writes an exact
+   `manuscript-post-review.diff`.
 
 The separate reviewer profile reduces direct carryover from the authoring
 conversation. It does not make the reviewer external or fully independent, and
 it does not guarantee that the review identifies every error.
 
-### Review target
-
-The **Review target** selector has a narrower current behavior than Review &
-Revision:
-
-- It lists completed prior Phase 5 runs that contain a valid, sealed
-  `manuscript-post-review.md` artifact. It does not select the `manuscript.md`
-  produced by a standard assembly run.
-- The selected manuscript and its hash are preserved as the exact object of
-  review.
-- The Paper Reviewer first records a first-reader assessment using only that
-  sealed manuscript.
-- The Paper Reviewer then compares the preserved first reading with the internal
-  scientific record.
-- No Research Lead revision occurs in this review-target run, and the selected
-  manuscript is not modified.
-
-The same Paper Reviewer profile performs both assessments. The first assessment
-uses only the selected manuscript; the second uses the internal scientific
-record as additional context.
-
-Choose a Review target when you want an assessment of a specific post-review
-version. Choose Review & Revision only when the legacy launch gate is already
-satisfied and you want the lead to revise that Assembly after review.
-
-There is currently no one-click continuation that revises the exact manuscript
-selected as a Review target. Standard Review & Revision starts from the
-Assembly recognized by the legacy gate, not from that selected post-review
-manuscript.
 
 ## Evidence you should receive
 
@@ -135,16 +126,11 @@ manuscript.
 
 - a structured internal review with issues ranked by scientific importance;
 - a response or disposition for every material review point;
-- a separate revised manuscript;
+- an updated current `manuscript.md`;
 - an exact record of changes from the reviewed manuscript;
 - clear labeling when a changed post-review manuscript has not itself received
   another review.
 
-### From a review-target run
-
-- a preserved first-reader assessment of the exact selected manuscript;
-- a second reviewer assessment informed by the internal scientific record;
-- no automatic author revision and no change to the selected manuscript.
 
 ## Review checklist
 
@@ -191,12 +177,10 @@ needs correction, or the manuscript needs a different scientific structure.
 State the required changes in the new run instructions. The prior Assembly
 remains available for comparison.
 
-Assembly produces the manuscript and its sealed record. The current launcher
-still accepts only an Assembly record with legacy `approved` status as the
-source for standard Review & Revision. Because the phase panel no longer
-provides an approval action, a newly completed Assembly cannot normally become
-that source. This is an implementation restriction, not a scientific
-acceptance step. See [Current Limitations](../known-limitations).
+Assembly writes the complete result to the run's `manuscript.md`. After a valid
+Complete run, Research Hub makes it the branch's one current manuscript. You can
+then start Review & Revision directly, rerun Assembly after upstream changes, or
+defer further work.
 
 ### After Review & Revision
 
@@ -206,29 +190,33 @@ review. Return to Phase 1, 2, 3, or 4 when the review identifies a literature,
 method, proof, implementation, or empirical gap that cannot be repaired through
 writing.
 
-If important text changed during revision, consider reviewing that exact
-post-review manuscript again before submission.
-
-### After a review-target run
-
-Use the two reviewer assessments to decide whether the selected manuscript needs
-a new authoring run, work in an earlier phase, or human review. The review-target
-run itself does not revise the manuscript. If you start another authoring run,
-carry the reviewer comments forward explicitly and verify the manuscript version
-shown as its source.
+If important text changed during revision, consider another Review & Revision
+run on the current manuscript or seek independent human review before submission.
 
 ## Reruns and downstream effects
 
-Every rerun creates a separate sealed record. Earlier manuscripts and reviews
-remain available for comparison.
+A change in the Phase 1 reference collection or literature synthesis makes both
+the selected method's Phase 2 literature status and the current manuscript
+yellow. Before starting another Phase 5 run, review that method in a full-catalog
+or focused Phase 2 run. If its definition remains unchanged, this updates the
+literature basis without requiring Phase 3 or Phase 4 to be rerun. If the
+definition changes, bring both downstream records into alignment before Phase 5.
+
+The interface distinguishes the reference collection from the synthesis so you
+can judge whether the paper's citations, positioning, or claims need revision.
+A manuscript created before Research Hub recorded the collection identity is
+also yellow. It remains yellow unless Phase 5 is rerun, but you may inspect it
+and defer. No yellow status starts a rerun.
+
+Every rerun creates a separate sealed run record. The newest valid Complete
+result becomes the branch's one current manuscript. Earlier summaries, reviews,
+and diffs remain available for provenance and comparison.
 
 Research Hub does not submit a Phase 5 manuscript or represent it as accepted,
 published, externally reviewed, or verified.
 
-The same legacy gate restricts repeated Review & Revision launches. Even when an
-eligible Assembly record exists, a later Phase 5 result can cause it to stop
-satisfying the gate. See [Current Limitations](../known-limitations) before
-planning repeated review cycles.
+You may start another Review & Revision run whenever the branch has a verified
+current manuscript and the Phase 1 to Phase 4 launch conditions remain satisfied.
 
 For artifact names, run records, manuscript variants, and branch layout, see
 [Files and records](../reference/files-and-records).

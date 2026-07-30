@@ -93,7 +93,9 @@ A run already in progress continues with the version of the brief recorded when 
 
 ## Start and review the first run
 
-Open **Literature Review** and inspect the launch plan. Check the participating roles, number of rounds, available prior context, and any direction you want to add. Start the run only when the plan, available context, and your direction match your purpose.
+Open **Literature Review** and inspect the launch plan. Check the participating
+roles, number of rounds, current reference-library baseline, and any direction
+you want to add. Start the run only when they match your purpose.
 
 When the run finishes:
 
@@ -104,14 +106,15 @@ When the run finishes:
 5. If more work is needed, start another run with clearer instructions.
 
 You decide when to start every run or rerun. Completion of one run does not start
-another phase. Compatible prior results remain available as context, subject to
-the prerequisite, integrity, and method-branch checks shown at launch.
+another phase. Research Hub assembles verified current records according to the
+target phase's storage rule and applies the scope or context choice shown at
+launch.
 
 ## Files and records
 
 You do not need to manage the project directory during normal use. The Web UI
-presents the brief, run history, summaries, and available context. For
-provenance, artifact locations, and immutable records, see
+presents the brief, current record status, run summaries, history, and available
+launch choices. For provenance, artifact locations, and immutable records, see
 [Files and Records](./reference/files-and-records).
 
 ## Next steps

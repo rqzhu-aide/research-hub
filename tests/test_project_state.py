@@ -334,6 +334,67 @@ def test_exact_completed_run_policy_accepts_unchanged_awaiting_review_result(
     assert approval_context["changed_sources"] == []
     assert approval_context["launch_override"] is None
 
+
+def test_exact_policy_accepts_superseded_phase_two_only_for_citing_method(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    phase_two = state.METHOD_DEVELOPMENT_PHASE
+    run_id = "phase-two-review-a"
+    run = {
+        "run_id": run_id,
+        "status": "superseded",
+        "submitted_at": "2026-07-30T00:00:00+00:00",
+        "final_summary": "phase-two-review-a.html",
+        "decision_record": {
+            "data": {"scientific_outcome": "Complete"}
+        },
+    }
+    data = {
+        "phases": {
+            phase_two: {
+                "runs": [run],
+                "approved_run": None,
+                "stale": False,
+                "status": "completed",
+            }
+        }
+    }
+    cited = {"method-a": run_id, "method-b": "phase-two-review-b"}
+    monkeypatch.setattr(
+        state.method_menu,
+        "catalog_references_review_run",
+        lambda _project, candidate_run, *, stable_id="": (
+            cited.get(stable_id) == candidate_run
+        ),
+    )
+    monkeypatch.setattr(
+        state,
+        "_validate_run_integrity",
+        lambda *_args, **_kwargs: None,
+    )
+
+    accepted = state._required_completed_report_from_data(
+        data,
+        state.PAPER_WRITING_PHASE,
+        {phase_two: run_id},
+        tmp_path,
+        required_method_id="method-a",
+    )
+    rejected = state._required_completed_report_from_data(
+        data,
+        state.PAPER_WRITING_PHASE,
+        {phase_two: run_id},
+        tmp_path,
+        required_method_id="method-b",
+    )
+
+    assert accepted["satisfied"] is True
+    assert accepted["required_method_id"] == "method-a"
+    assert rejected["satisfied"] is False
+    assert rejected["blockers"] == [phase_two]
+
+
 def test_exact_completed_run_policy_ignores_newer_results_and_frozen_history() -> None:
     phase_five = state.PAPER_WRITING_PHASE
     required_phases = (
@@ -2565,6 +2626,26 @@ def install_fake_method_menu_transaction(
     return calls
 
 
+def test_method_menu_promotion_invalidation_supports_legacy_fallback() -> None:
+    legacy = {
+        "changed_stable_ids": ["method-b", "method-a"],
+        "changes": [],
+    }
+    modern_prose_only = {
+        **legacy,
+        "downstream_invalidated_stable_ids": [],
+    }
+
+    assert state._promotion_downstream_invalidated_method_ids(legacy) == {
+        "method-a",
+        "method-b",
+    }
+    assert (
+        state._promotion_downstream_invalidated_method_ids(modern_prose_only)
+        == set()
+    )
+
+
 def stage_phase_two_submission(
     project: Path,
     *,
@@ -2742,8 +2823,10 @@ def test_real_phase_two_rerun_publishes_atomically_and_feeds_web_catalog(
         "label: Robust Baseline\n"
         "status: viable\n"
         "number: 1\n"
-        "---\n\n"
-        "# Robust Baseline\n\nOriginal scientific definition.\n",
+            "---\n\n"
+            "# Robust Baseline\n\n"
+            "## Mathematical definition\n\n"
+            "Original scientific definition.\n",
         encoding="utf-8",
         newline="",
     )
@@ -2768,8 +2851,10 @@ def test_real_phase_two_rerun_publishes_atomically_and_feeds_web_catalog(
         "label: Robust Baseline\n"
         "status: retired\n"
         "number: 1\n"
-        "---\n\n"
-        "# Robust Baseline\n\nRetired after the updated comparison.\n",
+            "---\n\n"
+            "# Robust Baseline\n\n"
+            "## Mathematical definition\n\n"
+            "Retired after the updated comparison.\n",
         encoding="utf-8",
         newline="",
     )
@@ -3087,3 +3172,20 @@ def test_legacy_phase_two_completion_is_historical_not_awaiting_review(
         dependencies=dependencies,
     )
     assert state.get_run_status(project, phase, replacement) == "starting"
+
+def test_modern_phase_four_workspace_allows_only_the_lead_at_run_root(
+    tmp_path: Path,
+) -> None:
+    output_root = (tmp_path / "branch" / "run" / "01").resolve()
+    manifest = {"output_root": str(output_root)}
+
+    assert state._phase_four_standard_task_workspace(
+        manifest,
+        3,
+        "research_lead",
+    ) == output_root
+    assert state._phase_four_standard_task_workspace(
+        manifest,
+        2,
+        "theorist",
+    ) == output_root / "round-02"

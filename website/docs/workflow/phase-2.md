@@ -49,9 +49,78 @@ progress.
 ### Lower panel: instructions and launch
 
 Use the lower panel to state the scientific question for a new run or rerun,
-choose the number of rounds, and launch the work. The instructions should say
-what needs to be added, reconsidered, or compared. Starting the run does not
-select a method and does not start Phase 3 or Phase 4.
+choose the catalog scope and number of rounds, and launch the work:
+
+- **Full catalog** may add, revise, merge, retain, or retire methods.
+- **Focus on one method** may revise only the selected active method. It cannot
+  add, remove, rename, merge, or retire methods, and all nonselected entries must
+  remain unchanged.
+
+The focused option is unavailable until the catalog contains an active method.
+The instructions should say what needs to be added, reconsidered, or compared
+within the selected scope. Starting the run does not choose a method for a later
+phase and does not start Phase 3 or Phase 4.
+
+## How Phase 1 evidence is attached to each method
+
+At launch, Research Hub fixes the exact current Phase 1 reference collection and
+literature synthesis for the run. Later changes to Phase 1 cannot alter that
+active run.
+
+After a validated Complete or Partial publication, Research Hub writes
+system-managed provenance for each method covered by the selected scope:
+
+| Record | Meaning |
+|---|---|
+| **Definition source** | The Phase 2 run that last changed the exact current method definition. |
+| **Review source** | The most recent Phase 2 run that assessed the method against its recorded Phase 1 basis. |
+| **Literature basis** | The exact Phase 1 reference collection and literature synthesis assessed in that review. |
+
+The team provides the scientific assessment. Research Hub calculates the method
+identity and writes these provenance fields. The agents do not maintain them.
+
+A full-catalog run reviews every catalog entry and advances its review source
+and literature basis, including entries retained without a definition change. A
+focused run reviews only the selected method. Every nonselected method keeps its
+earlier review source and literature basis.
+
+The definition and review sources may therefore differ. If a method is retained
+without a definition change, its review source advances but its definition
+source does not. Matching Phase 3 and Phase 4 records remain aligned because the
+method definition is unchanged.
+
+## When a method version changes
+
+Every method file has one authoritative `## Mathematical definition` section.
+This section contains all material that determines the calculation, such as the
+estimator or objective, algorithm or update rule, tuning definition,
+normalization, and any assumption that changes a computed quantity. Research
+Hub calculates `definition_sha256` from this section.
+
+Advance the version whenever that mathematical content changes in a way that
+can change a calculation. Keep the version unchanged when a rerun changes only
+the method's status, literature comparison, explanatory prose, downstream
+research questions, or formatting outside the authoritative section. Leave
+that section exactly unchanged when retaining the version. Research Hub rejects
+a changed definition published under the same version.
+
+Downstream work uses the exact tuple `stable_id`, `version`, and
+`definition_sha256`. If a new version changes the calculation, earlier Phase 3
+proofs and Phase 4 method-dependent computations remain available as history,
+but they are not current support for the new version. You decide whether to
+rerun Phase 3, Phase 4, or both. During a rerun, the team judges how much of the
+earlier reasoning or study can be reused after checking it against the new
+definition.
+
+If Phase 1 later changes, the interface marks the affected method's Phase 2
+literature status yellow until that method is reviewed again. A method published
+before this basis was recorded is also yellow. Yellow means that the literature
+comparison needs review; it is not a claim that the method is invalid. You may
+choose a full-catalog rerun, a focused rerun, or no immediate action. No status
+starts a run.
+
+Phase 5 is unavailable for a selected method while this Phase 2 literature
+status is yellow or cannot be verified.
 
 ## What you decide before launch
 
@@ -64,7 +133,7 @@ State the design problem the team should address:
   guarantees;
 - practical constraints such as sample size, data structure, computation,
   memory, numerical stability, or experimental feasibility;
-- whether the run should search broadly or focus on named catalog methods.
+- how the selected catalog scope should be used.
 
 Phase 2 uses 2 to 3 rounds, with 2 as the default. In round 1, the roles generate
 ideas independently. A later round is useful for comparing mechanisms,
@@ -83,8 +152,8 @@ example:
 
 ### Independent proposals
 
-Each role initially proposes several methods without reading the other roles'
-proposals:
+In full-catalog mode, each role initially proposes several methods without
+reading the other roles' proposals:
 
 - **The theorist** develops mathematical mechanisms, representations,
   identities, or frameworks. Each serious idea should have a precise core
@@ -98,6 +167,10 @@ proposals:
   evaluated.
 
 ### Comparison and refinement
+In focused mode, each role instead develops several concrete repairs, variants,
+or stress tests for the selected method. These alternatives inform one revised
+method entry; they do not create additional catalog entries.
+
 
 In later rounds, the roles compare their proposals. They may combine compatible
 ideas, sharpen definitions, identify contradictions, and propose new candidates
@@ -116,10 +189,11 @@ The research lead organizes the full idea set and compares the methods using:
 - empirical testability;
 - material assumptions and failure modes.
 
-The lead may mark methods as recommended, viable, frontier, or retired, but
-does not choose one for you. The final recommendation concerns the next action:
-proceed to Phase 3 or Phase 4, rerun Phase 2, return to Phase 1, or defer
-further work.
+In full-catalog mode, the lead may mark methods as recommended, viable, frontier,
+or retired. In focused mode, the lead may update only the selected active method
+and must preserve every nonselected file exactly. The lead does not choose a
+method for you. The final recommendation concerns the next action: proceed to
+Phase 3 or Phase 4, rerun Phase 2, return to Phase 1, or defer further work.
 
 ## How a run updates the catalog
 
@@ -177,6 +251,8 @@ Before using a method or planning a rerun, ask:
 - [ ] Is the scientific question, estimand, or prediction target explicit?
 - [ ] Does each serious candidate contain enough mathematics or algorithmic
       detail to distinguish it from a general research theme?
+- [ ] Is there one authoritative mathematical definition, and does the version
+      advance exactly when its calculation changes?
 - [ ] Are assumptions stated separately from claimed consequences?
 - [ ] Is the novelty argument tied to specific Phase 1 evidence?
 - [ ] Does the proposed method preserve the quantities or structures it is
@@ -211,14 +287,23 @@ Phase 2 to resolve the missing work before developing theory or experiments.
 ### Rerun Phase 2
 
 Rerun when the catalog needs new ideas, a sharper definition, a revised
-literature comparison, or a different assessment. The new run starts from the
-complete current catalog and can:
+literature comparison, or a different assessment. Every rerun starts from an
+isolated complete copy of the current catalog.
+
+Choose **Full catalog** when the run may:
 
 - retain a method without changing it;
-- revise a method and record a new version;
+- revise a calculation-defining method and record a new version;
+- revise only status, positioning, or explanation without changing the version;
 - add a genuinely distinct method;
 - merge methods that represent the same mechanism;
 - retire a method with a scientific reason.
+
+Choose **Focus on one method** when only one active method needs repair or
+refinement. The selected method may receive a new version, but its stable ID is
+preserved. A new version is required only for a calculation-defining change.
+Every other method must remain byte-for-byte unchanged, and the run cannot
+change catalog membership.
 
 Stable method numbers are never reused. Retired and merged identities remain in
 the catalog so that earlier work stays interpretable.
@@ -243,10 +328,13 @@ does not start another phase.
 ## Rerun guidance
 
 Use a rerun to answer a specific design question, not simply to make the catalog
-larger. Ask the team to compare against the current publication and explain:
+larger. Ask the team to compare against the current publication and explain the
+changes allowed by the selected scope:
 
 - what changed in the literature, target, or constraints;
-- which methods were retained, revised, added, merged, or retired;
+- for a full-catalog run, which methods were retained, revised, added, merged,
+  or retired;
+- for a focused run, what changed in the selected method and why;
 - why each material status or version changed;
 - which claims remain unresolved;
 - whether the catalog is ready for Phase 3 and Phase 4, or should be improved

@@ -28,22 +28,33 @@ status, and version before launching.
 | **Method to study** | Choose any active method from the current Phase 2 catalog. Compare its definition, version, assumptions, and status before selecting it. |
 | **Theoretical focus** | State the central claim, difficult lemma, limiting regime, or assumption class that deserves attention. |
 | **Scope of the result** | Say whether you need a full theorem, a rigorous partial result, a counterexample, a complexity analysis, or a precise account of what remains open. |
+| **Prior theory context** | Use current records only, or also include archived Phase 3 summaries when they exist. The archive option is disabled for a first run. |
 
 The selected method's canonical definition, stable identity, version, and
-content digest are frozen for this run. Every team member receives the same
-sealed definition. A later change to the Phase 2 catalog cannot silently change
-the mathematical object being studied. Selecting a method here does not alter
-its Phase 2 status and does not select it for every future run.
+`definition_sha256` are frozen for this run. Every team member receives the
+same sealed definition. The tuple `stable_id`, `version`, and
+`definition_sha256` identifies the exact mathematical object. A later change to
+the Phase 2 catalog cannot silently change the object being studied. Selecting
+a method here does not alter its Phase 2 status and does not select it for every
+future run.
 
-Available results and discussion from earlier Phase 3 and Phase 4 runs on the
-exact same method branch are also supplied as prior evidence. Phase 4 evidence
-may motivate a theorem, expose a failure regime, or challenge an assumption, but
-it cannot replace a proof.
+If Phase 2 changes any calculation-defining part of the method, it advances the
+version. Proofs for the earlier version remain available as historical records,
+but they do not become proofs for the new version automatically. In a rerun,
+the theorist and analyst check each carried assumption, lemma, theorem, bound,
+and complexity result against the new definition. The replacement theory
+manuscript retains only results that survive that check.
+
+By default, the run receives frozen copies of the current same-branch
+`theory-manuscript.md` and Phase 4 empirical package when they exist. The new
+Phase 3 record states the exact Phase 4 semantic basis available at launch. A
+legacy record without this basis stays yellow until Phase 3 is rerun. Phase 4
+evidence can challenge an assumption, but it cannot replace a proof.
 
 Each stage keeps its report and any proof supplement, code, data, table, or
 figure inside its assigned run folder. Research Hub inventories and hashes these
-files when the stage finishes. Later Phase 3 and Phase 4 runs on the same branch
-receive frozen copies as part of the prior scientific record.
+files when the stage finishes. They remain provenance records, but the next run
+does not load every older artifact by default.
 
 A Complete Phase 2 publication satisfies the normal catalog prerequisite. A
 Partial publication is visible and its active methods can still be chosen, but
@@ -76,9 +87,10 @@ prepares the decision summary.
    same-branch empirical evidence, and states the strongest defensible
    conclusion.
 
-All three roles receive the frozen method and available results and discussion
-from earlier Phase 3 and Phase 4 runs on the same branch. Within the current run,
-each later stage receives the reports from earlier stages. The lead preserves
+All three roles receive the frozen method, current theory manuscript, and
+current empirical package when available. If you selected archived summaries,
+they also receive that compact Phase 3 context. Within the current run, each
+later stage receives the reports from earlier stages. The lead preserves
 material objections, responses, and unresolved disagreements rather than
 averaging them away. If an earlier role needs to respond again, carry the issue
 into a rerun with focused instructions.
@@ -115,11 +127,22 @@ the gap and its consequences are identified precisely. A run marked Complete
 means that the authorized analysis was completed, not that every theorem is
 correct.
 
+## How to read the status
+
+Read method applicability, sibling-basis alignment, and scientific outcome as
+separate statements. Exact method applicability says whether the theory refers
+to the current `stable_id`, version, and definition digest. Sibling-basis
+alignment says whether the recorded Phase 4 context is still the current one.
+The Complete, Partial, or Failed outcome describes how much of the authorized
+Phase 3 work was completed. None of these statements establishes the others,
+and none is a substitute for reading the proofs.
+
 ## Review checklist
 
 Before using the result, ask:
 
-- Are the method identity and version the ones you intended to study?
+- Are the stable ID, version, and definition digest the exact method you
+  intended to study?
 - Are the object of study, quantifiers, probability statements, and limiting
   regime unambiguous?
 - Are all assumptions stated before they are used, and are they plausible for
@@ -145,18 +168,18 @@ verification guarantee.
 
 ## How to use the result
 
-A completed Phase 3 run remains a separate scientific record. Read its summary,
-role reports, proofs, calculations, and supporting artifacts before deciding
-whether the material is adequate for your intended use.
+A valid Complete Phase 3 run publishes one self-contained current
+`theory-manuscript.md` for the selected method. Read it with the run summary,
+role reports, and supporting artifacts before deciding whether the theory is
+adequate for your intended use.
 
 ### Use it in later work
 
-Completed, intact results and discussion may be supplied to later Phase 3 and
-Phase 4 runs on the same method branch. Phase 4 does not require Phase 3 and can
-be launched directly from the Phase 2 catalog. When compatible theory is
-available, the Phase 4 team can use it to define diagnostics and interpret
-results. Availability does not certify a proof or require later work to rely on
-it.
+The current theory manuscript is supplied to later same-branch Phase 3 and Phase
+4 runs. Phase 4 does not require Phase 3 and can be launched directly from the
+Phase 2 catalog. When compatible theory is available, the Phase 4 team can use it
+to define diagnostics and interpret results. Availability does not certify a
+proof or require later work to rely on it.
 
 ### Rerun Phase 3
 
@@ -166,9 +189,16 @@ new theoretical target, or a fresh analysis after the literature or method
 catalog changed. Choose an active method in the launch form and state exactly
 what the team should retain, challenge, or reconsider.
 
-Each rerun freezes its own method identity and version. Available results and
-discussion from earlier Phase 3 and Phase 4 runs on that exact branch remain
-available as context. Earlier records are not overwritten.
+Each rerun freezes the current method, theory manuscript, and Phase 4 basis. A
+valid Complete result replaces the theory manuscript with a self-contained
+version and records that basis. If its scientific content changes, Phase 4 can
+become yellow. You decide whether to rerun Phase 4; nothing starts automatically.
+Older runs remain provenance, not working theory versions.
+
+When the selected method version changed, use the rerun to judge the old
+arguments under the new mathematical definition. The amount of repair may be
+small or substantial, but the new current manuscript must state the complete
+valid theory for the exact new version.
 
 ### Return to another phase
 
@@ -179,14 +209,18 @@ start either run.
 
 ## Use in Phase 5
 
-Phase 5 requires an intact completed result from each of Phases 1 through 4.
-The Phase 3 and Phase 4 results must both match the selected method's stable ID,
-version, and definition digest. Phase 3 alone does not start Phase 5 or make the
-branch ready for manuscript assembly.
+Phase 5 requires a usable current result from each of Phases 1 through 4. The
+current Phase 3 theory package must have scientific outcome Complete. The
+Phase 3 and Phase 4 results must match the selected method and each other's
+recorded semantic basis. Phase 4 can have no outdated or unresolved evidence.
+Phase 3 alone does not make the branch ready or start Phase 5.
 
-If the Phase 2 catalog later revises, merges, or retires the method, the frozen
-Phase 3 record remains interpretable. Inspect any later work that used the
-changed method and decide whether the change requires another theory run.
+If the Phase 2 catalog later revises, merges, or retires the method, its earlier
+Phase 3 run record remains interpretable. The current theory package no longer
+matches a calculation-changing revision. Rerun Phase 3 before treating the
+branch's theory as current for that version. A status or prose-only Phase 2 edit
+that leaves the authoritative mathematical definition and version unchanged
+does not invalidate the theory package.
 
 If a newer Phase 3 result materially changes an assumption or conclusion,
 recheck Phase 4 or Phase 5 material that relied on the earlier theory. The

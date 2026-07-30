@@ -6,10 +6,10 @@ not to select a single method.
 
 ## Responsibilities
 1. For a rerun, begin from the current published Phase 02 method menu and its
-   scientific record when supplied. Otherwise use a current approved Phase 01
-   record. Treat an older Phase 02 result only as comparison evidence. If
-   neither is available, initialize a proposed scientific record and state this
-   explicitly.
+   scientific record when supplied. Assess the catalog against the exact
+   Phase 01 reference collection and literature synthesis fixed for this run.
+   Treat an older Phase 02 result only as comparison evidence. If no Phase 01
+   record is available, state the missing evidence explicitly.
 2. Define the target and obstacle in plain language.
 3. Formulate distinct creative directions for all three roles in round 1.
 4. In later rounds, encourage cross-pollination - members read each other's
@@ -35,7 +35,8 @@ Read:
 - the shared team norms and the scientific record established for this run
 - the current published Phase 02 menu for a rerun, with older Phase 02 runs used
   only for comparison
-- the approved Phase 01 summary provided for this run, when available
+- the Phase 01 reference collection and literature synthesis fixed for this run,
+  when available
 - `references/literature-summary.md` - the consolidated literature summary
   from Phase 01. Read this first for orientation: it explains what prior work
   exists, what's been classified, and what gaps remain.
@@ -43,7 +44,11 @@ Read:
   new method idea, check these files to see exactly which prior papers are
   relevant and how they relate to the project. Do not propose a method that
   merely redoes classified prior work.
-- `references/` and prior `ideas/` runs
+- the staged method menu named in the run prompt
+
+Use only the fixed Phase 01 basis named in the run record for the formal
+literature assessment. Do not infer that a live file changed after launch was
+part of this run.
 
 State the target and obstacle in plain language. Frame the creative space: what
 is the project trying to achieve, and what landscape of possibilities does the
@@ -53,6 +58,30 @@ references in the library - state which papers it builds on, which it differs
 from, and what gap it fills.
 
 ## Step 2: Round 1 - Brainstorm
+
+First read the catalog scope in the run prompt.
+
+### Full-catalog scope (`full_catalog`)
+
+Use the broad brainstorm below. Each role proposes several candidate methods,
+including refinements that are genuinely distinct from the current menu. The
+lead may add, revise, merge, retain, or retire methods under the catalog rules.
+Explicitly reassess every catalog entry against the fixed Phase 01 basis, even
+when its definition and status remain unchanged.
+
+### Focused-method scope (`focused_method`)
+
+Give every role the selected stable ID and its current method file. Each role
+analyzes only that method and proposes precise improvements to its mathematical
+definition, scientific position, Phase 3 questions, or Phase 4 questions. Do not
+ask for new methods. The multiple-idea requirement in the role files is replaced
+by multiple independent improvements or stress tests of the selected method.
+Explicitly reassess the selected method against the fixed Phase 01 basis.
+The selected filename and stable ID are immutable. The method cannot be retired
+in this mode. Leave every nonselected method file byte-for-byte unchanged, and
+do not add, remove, merge, or rename methods.
+
+For either scope, use the following scientific standard:
 Give each role a distinct creative direction. Require every proposal set to
 include **multiple ideas** (at least 2-3 per role), each with:
 
@@ -97,6 +126,10 @@ Organize the full idea set:
 2. **Cross-role connections** - ideas that combined or built on each other.
 3. **Assessment of the idea set** - which ideas are most promising and why,
    what gaps remain, and what additional knowledge would strengthen the set.
+4. **Literature review disposition** for every method covered by the run. State
+   whether it was added, changed, or reviewed without a definition change, and
+   identify any Phase 01 evidence that materially changed its novelty or
+   differentiation assessment.
 
 Then recommend a path forward:
 
@@ -121,6 +154,36 @@ must contain a rigorous mathematical definition of the proposed method, not
 just a prose summary.** The user reads these to understand what is being
 proposed and to compare methods. Format:
 
+Apply the run scope exactly:
+
+- In full-catalog scope, apply the complete add, revise, merge, retain, and
+  retirement rules below.
+- In focused-method scope, update only the selected method file and its matching
+  registry fields when necessary. Do not change its stable ID, number, filename,
+  or status to `retired`. Do not add or remove any method. Do not alter any
+  nonselected method file, including whitespace. Research Hub rejects a focused
+  catalog that changes another method.
+
+Research Hub writes the per-method provenance after validating the staged
+catalog. It distinguishes the run that last changed the exact method definition
+from the most recent run that reviewed the method against a fixed Phase 01
+basis. Do not add, edit, or infer the system-managed `provenance` block in
+`_registry.yaml`. A method retained without a definition change still needs an
+explicit scientific assessment in the summary; Research Hub will advance its
+review source without changing its definition source.
+
+Classify every covered method as either definition-preserving or
+definition-changing. A definition-changing revision alters an estimator,
+objective, algorithm, update rule, tuning definition, normalization, or another
+mathematical object that can change a calculation. Advance the version for such
+a revision. Keep the version unchanged for a status change, literature review,
+explanatory edit outside the authoritative definition, or revised Phase 03 or
+Phase 04 question that leaves the calculation unchanged. Leave the
+`## Mathematical definition` section exactly unchanged when retaining the
+version. Research Hub rejects a changed definition under an unchanged version.
+
+Each new or changed method file uses this format:
+
     ---
     stable_id: spectral-graph-coupling
     number: 1
@@ -139,12 +202,17 @@ proposed and to compare methods. Format:
     - The **core definition**: the proposed mechanism written as an explicit
       equation or system of equations (e.g., $D_N(X) = L_G \otimes K$ with
       the generator $L_N = \sum_i [\nabla_i \cdot D_N \nabla_i + \nabla_i U]$).
-    - The **key mathematical property** that makes it innovative: the
-      invariant measure condition, the rate bound conjecture, the stationarity
-      condition, or whatever mathematical claim is the heart of the innovation.
-      Write it as a display equation with stated assumptions.
-    - The **relationship to prior work**: how existing methods (e.g., ALDI,
-      independent Langevin) appear as special cases or limits.
+    - The inputs, parameter spaces, tuning definitions, normalization, and
+      defining constraints needed to determine the calculation.
+    - The complete algorithm or update rule when the method is procedural.
+
+    ## Mathematical targets
+    <the invariance, stationarity, identification, rate, or other property to
+    establish later, stated as a conjecture or target unless already proved.>
+
+    ## Relation to prior work
+    <how named existing methods appear as special cases or limits, without
+    introducing another operative definition.>
 
     ## Unique position
     <what it enables that no existing method can - stated in mathematical terms.>
@@ -156,6 +224,13 @@ proposed and to compare methods. Format:
     ## Phase 04 focus
     <the implementation questions, diagnostics, outcomes, and failure regimes a
     Phase 04 run should examine.>
+
+The file must contain exactly one `## Mathematical definition` heading. Its
+content is the authoritative calculation-defining object and is digested
+separately from the rest of the file. Keep literature positioning,
+interpretation, status explanation, and downstream questions outside this
+section. Do not place a second operative formula elsewhere that changes what
+the method computes.
 
 Rules:
 
@@ -169,16 +244,20 @@ Rules:
 - `number` is a permanent integer assigned from the registry (see "Method
   registry" below). Once assigned, it is never reused, even after retirement
   or merge.
-- On reruns: add files for new ideas, update `version`/`status` in place for
-  retained ideas, and never delete a file - mark it `status: retired` with the
-  reason in the body instead.
+- On full-catalog reruns: add files for new ideas, update `version`/`status` in
+  place for retained ideas, and never delete a file. Mark a retired method as
+  `status: retired` and state the reason in the body.
+- A new method begins with an explicit mathematical definition and a declared
+  initial version. For an existing method, advance `version` if and only if its
+  calculation-defining content changes. Do not advance it merely to record a
+  new review, status, explanation, or run.
 - **Mathematical rigor is required.** A method file that only describes the
   idea in prose without precise mathematical notation is incomplete. The
   mathematical definition section must be substantial enough for a theorist
   to begin formal proofs from it.
 
-**Re-evaluate and retire on reruns.** When this is a rerun, the run-local menu
-is preloaded with the current published files. The lead must re-evaluate every
+**Re-evaluate and retire on full-catalog reruns.** The run-local menu is
+preloaded with the current published files. The lead must re-evaluate every
 existing method against the
 current criteria (novelty, tractability, acceleration potential, differentiation
 from literature). For each method, the lead decides: keep (update status if the
@@ -199,7 +278,7 @@ When retiring, set `status: retired` in the method file's frontmatter and add
 a `## Retirement reason` section to the body stating which criteria it failed
 and when the retirement was decided (run ID). Do not delete the file.
 
-**Merge duplicate methods on reruns.** When this is a rerun, the lead must also
+**Merge duplicate methods on full-catalog reruns.** The lead must also
 check whether any methods in the menu are **substantially identical** - same
 core mechanism, same mathematical definition, same unique position - even if
 worded differently or proposed by different roles. When two methods are
@@ -230,12 +309,16 @@ genuinely differ (even slightly), keep both.
 **Method registry - permanent numbering.** Every proposed method has a
 permanent integer number that survives retirement and merge. The registry is
 the single source of truth within that run-local menu at `_registry.yaml`.
+The lead maintains the scientific and historical fields described below.
+Research Hub maintains each entry's `provenance` block.
 Protocol:
 
 1. **Read the registry first.** Before writing any method file this run, read
    the run-local `_registry.yaml` (create it if missing - see "initializing"
-   below). It lists every method ever proposed with its number, status, and
-   provenance.
+   below). It lists every method ever proposed with its number, status,
+   historical fields, and system-managed provenance. Preserve any existing
+   `provenance` block exactly; Research Hub replaces the appropriate blocks
+   during validated publication.
 
 2. **Number assignment for a new method.** When a genuinely new method is
    being added (not a revision of an existing stable_id), assign it the
@@ -307,7 +390,7 @@ does not select a method or launch another phase.
 The user alone decides the next step.
 
 ## Requirements
-- Follow the shared team norms and the accepted scientific record for this run.
+- Follow the shared team norms and the current scientific record for this run.
 - Encourage creativity and intellectual risk-taking in round 1. The bar is
   *new, innovative, and logically reasonable* - not *proven*.
 - Do not force convergence on a single method. Multiple strong ideas are a

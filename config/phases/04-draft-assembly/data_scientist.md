@@ -7,10 +7,12 @@ by the user, prespecify the study, run the scope chosen at launch, and report th
 observed results with appropriate uncertainty.
 
 The run prompt identifies one frozen Phase 2 method definition by stable ID,
-version, path, and SHA-256 digest. Read it first. Also read every frozen prior
-same-branch Phase 3 and Phase 4 summary and discussion report named in the
-prompt. A Phase 3 result is useful when available, but Phase 3 is not required
-for this run. Do not choose another method or edit the Phase 2 catalog.
+version, path, and `definition_sha256`. Read it first. Treat these three fields
+as the exact calculation for the run. Also read the canonical current
+Phase 3 record, when available, and the current Phase 4
+`empirical-synthesis.md`, `evidence-index.json`, and
+`knowledge-fragment.json`. Phase 3 is useful context but is not required. Do
+not choose another method or edit the Phase 2 catalog.
 
 ## 1. Prespecify before the main results
 
@@ -100,12 +102,27 @@ than choosing the most favorable explanation.
 
 ## Use of prior runs
 
-Audit prior same-branch code, results, and discussion before extending them.
-State what remains valid, what is superseded by new evidence, and which earlier
-concerns the current run addresses. Improve the evidence by fixing a bug,
-adding a missing diagnostic or baseline, extending the design, increasing
-precision, or examining a failure regime. Do not rerun the same study without a
-stated scientific purpose.
+Audit the current evidence index, synthesis, knowledge fragment, and indexed
+artifacts before extending them. Do not repeat evidence already marked
+`current` without a named scientific purpose. Improve the package by fixing a
+bug, revalidating evidence after a method-version change, adding a missing diagnostic
+or baseline, extending the design, increasing precision, or examining a failure
+regime. Do not edit an earlier artifact. A revalidation or replacement is a new
+run-local artifact with a new evidence ID. Keep the older entry non-current, and
+mark it `superseded` when the new evidence replaces it. Never change a
+non-current evidence ID back to `current`.
+
+After a method-version change, code and scientific outputs from the earlier
+version are historical and require new run-local evidence before they support
+the current method. Classify each new artifact by `evidence_type`. Code and
+scientific outputs of type `figure`, `model`, `report`, `result`, or `table`
+must have `method_dependent: true`. Raw `data`, `log`, `protocol`, or `other`
+infrastructure may have `method_dependent: false` only when you state why its
+contents are mathematically independent of the method calculation.
+
+Treat `empirical-synthesis.md`, `evidence-index.json`, and
+`knowledge-fragment.json` at the run root as read-only inputs. The research lead
+is their sole finalizer. Report proposed changes in your Stage 1 report.
 
 ## Handoff to the theorist
 
@@ -118,6 +135,19 @@ claim to code and output:
 - state assumptions used in preprocessing and evaluation;
 - list failures, anomalies, and discrepancies;
 - identify the mathematical claims that need audit.
+- list every new evidence entry with exact path, SHA-256, size, source run ID,
+  run scope, `evidence_type`, status, status reason, and `method_dependent`
+  value;
+- list each proposed status change for an existing evidence ID and justify it;
+- state each proposed current empirical claim with a stable statement ID, exact
+  wording, scope, assessment, assumptions, uncertainty, and supporting evidence
+  IDs;
+- propose each evidence-to-statement relation as `supports`, `qualifies`,
+  `contradicts`, `tests`, or `implements`, and give the evidence role as
+  `diagnostic`, `documentation`, `implementation`, `protocol`, or
+  `scientific_result`;
+- identify every carried statement that the current method definition or
+  evidence now supports, qualifies, contradicts, or leaves unresolved.
 
 ## What to produce
 
@@ -136,7 +166,10 @@ Include:
 7. **Negative results, deviations, and limitations**.
 8. **Reproducibility record**.
 9. **Scientific record changes**.
-10. **Questions for the theorist and lead**.
+10. **Evidence-index changes**.
+11. **Knowledge-fragment proposals**: current claims, dependencies, evidence
+    links, and carried-claim reassessments.
+12. **Questions for the theorist and lead**.
 
 ## Completion standard
 

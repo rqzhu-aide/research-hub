@@ -14,17 +14,18 @@ Distinguish four kinds of precedent:
 State the candidate contribution in terms of the research question or estimand,
 the proposed method or mechanism, the scientific or statistical advance, and
 the conditions under which that advance is expected to hold. Record evidence
-and uncertainty as proposed changes to the accepted scientific record rather
+and uncertainty as changes to the current scientific record rather
 than treating originality as a binary judgment.
 
 ## When this phase may be run
 The user may run or rerun this phase at any time. No earlier phase is required.
 
-**On rerun:** the prior Phase 01 run is provided as **comparison evidence** —
-"here is what the team found before." The new run should conduct a fresh search,
-informed by but not constrained to prior findings. A focused re-scan (narrower
-scope, specific gap to chase) and an initial survey use the same role
-instructions; they differ only in the lead's directives.
+**On rerun:** begin from the current reference library and synthesis. Search only
+for new unique sources that are not already represented. Do not regenerate,
+replace, or delete existing source cards. Do not repeat a search merely to
+reproduce evidence already represented in the current library. A focused rescan
+and an initial survey use the same role
+instructions; they differ only in the lead's scientific questions.
 
 ## Study structure
 All three roles search independently from their scientific perspective. The
@@ -33,11 +34,25 @@ best-supported conclusion, disagreements, uncertainty, and choices available to
 the user.
 
 ## Files and outputs
-Write all outputs under `references/literature-review/run/NN/`:
+Write role reports and the run summary under the exact run output root, normally
+`references/literature-review/run/NN/`:
 
 - `round-01/<role>.md`, `round-02/<role>.md`, ...: per-round outputs
 - Write the HTML summary to the exact path provided for this run and do not
   overwrite earlier summaries.
+
+Research Hub prepares a run-local reference delta at `reference-delta/` inside
+the run root. The research lead must leave these exact deliverables there:
+
+- `reference-delta/papers/`: one complete card for each new unique source;
+- `reference-delta/literature-summary.md`: the complete current synthesis after
+  incorporating this run.
+
+Do not edit `reference-delta/_baseline.json`. Do not write directly to the live
+`references/papers/`, `references/reference-index.json`, or
+`references/literature-summary.md` paths during a run. Research Hub validates
+and promotes a valid delta atomically. Existing reference cards are never
+deleted by a Phase 1 run.
 
 Each role report begins with Complete, Partial, or Failed as defined in the team
 norms. Nonempty Partial and Failed reports preserve usable evidence and do not
@@ -59,21 +74,21 @@ prevent the lead from completing the configured run.
 - Phrase negative conclusions as "not found within the searched scope," then
   state that scope. Absence from a search is not proof of absence.
 - State unresolved overlap with prior work and missing evidence explicitly.
-- Follow the shared team norms. Import the accepted scientific record only from
-  a current summary approved by the user. If none is available, initialize a
-  proposed scientific record and say so explicitly. Role reports include a
+- Follow the shared team norms. Use the canonical current literature summary and
+  reference cards when available. If none is available, initialize the record
+  and say so explicitly. Role reports include a
   **Scientific record changes** section. The final summary provides one
-  consolidated **Scientific record changes** section and the **Proposed
-  scientific baseline**, which becomes accepted only after user approval. It
-  does not alter an earlier accepted record before that decision.
+  consolidated **Scientific record changes** section and a compact current
+  literature synthesis.
 
 ## User decisions
 The user starts each run from the web UI and selects the number of rounds.
 Completing a run reports the evidence but does not establish originality or the
-contribution and does not start another phase. The user may approve the report as
-the current evidence base, request changes, or rerun the phase with a narrower
-search at any time. The final summary begins with the User Decision Brief and
-Comparison with the approved run defined in the team norms.
+contribution and does not start another phase. After a valid run, the current
+reference record contains the cumulative library and new synthesis. The user may
+rerun the phase with a narrower search, start another phase, or defer further
+work at any time. The final summary begins with the User Decision Brief and a
+comparison with the current literature record defined in the team norms.
 
 ## Files in this folder
 - `_lead.md`: instructions for the research lead. Read this file first if you are

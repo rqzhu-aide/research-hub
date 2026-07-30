@@ -50,21 +50,18 @@ defined in the team norms.
    exclude each central resource. State that this is the data analyst's
    conclusion for later comparison with the other roles.
 7. **Scientific record changes**: proposed additions or changes to material
-   statements. Do not reproduce the full accepted scientific record.
+   statements. Do not reproduce the full current scientific record.
 
-**Reference library.** For every repository, package, or software resource you
-classify in your software and data table, write a per-reference summary file to
-`references/papers/{source}-{id}.md` (e.g. `github-nksvgd.md`,
-`pypi-proximal-ipla.md`). Use the format specified in the lead's reference
-library instructions: YAML frontmatter (use `github_repo`, `pypi_package`, or
-`arxiv_id` as appropriate; title, authors, year, venue, relation, found_in_run,
-found_by_role, also_found_in) + one-line summary + relevance to this project +
-key results/tools + classification. If a file already exists from a prior run,
-append this run's number to `also_found_in` and amend the notes — do not
-overwrite. This is mandatory, not optional.
+**Reference candidates.** For every repository, package, or software resource
+you classify, include a complete candidate card in this report using the format
+in the lead instructions and the appropriate canonical identity field. Identify
+the intended `{source}-{id}.md` filename. If its canonical identity or filename
+already exists, label it as already represented and do not propose a card. Do
+not write to the canonical reference library or the shared run-local delta. The
+lead reconciles all new role candidates and writes the delta.
 
 ## Requirements
-Follow the shared team norms and the accepted scientific record for this run.
+Follow the shared team norms and the current scientific record for this run.
 Cite specific software, data, documentation, and versions. For every proposed
 reuse, state why it computes the intended target. Continue targeted searches
 until additional repositories, documentation, and citation links do not change

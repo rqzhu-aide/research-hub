@@ -29,8 +29,14 @@ def _entry(
     status: str = "viable",
     number: int = 1,
     body: str = "A precise mathematical and scientific method description.",
+    explicit_definition: bool = True,
 ) -> str:
     display = label or stable_id.replace("-", " ").title()
+    scientific_body = (
+        f"## Mathematical definition\n\n{body}"
+        if explicit_definition
+        else body
+    )
     return (
         "---\n"
         f"stable_id: {stable_id}\n"
@@ -39,7 +45,7 @@ def _entry(
         f"status: {status}\n"
         f"number: {number}\n"
         "---\n\n"
-        f"# {display}\n\n{body}\n"
+        f"# {display}\n\n{scientific_body}\n"
     )
 
 
@@ -68,6 +74,44 @@ def _registry_row(
         "status": status,
         "added_in_run": "run-1",
     }
+
+
+def _literature_basis(
+    *,
+    source_run_id: str = "p1-run-1",
+    generation: int = 1,
+    synthesis: str = "a",
+    collection: str = "b",
+) -> dict[str, Any]:
+    return {
+        "schema_version": method_menu.LITERATURE_BASIS_SCHEMA_VERSION,
+        "availability": "available",
+        "source_run_id": source_run_id,
+        "generation": generation,
+        "synthesis_sha256": synthesis * 64,
+        "collection_sha256": collection * 64,
+    }
+
+
+def _method_provenance(
+    method_sha256: str,
+    *,
+    definition_run_id: str | None = "p2-definition-run",
+    review_run_id: str = "p2-review-run",
+    review_scope: str = "full_catalog",
+    disposition: str = "changed",
+    literature_basis: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return method_menu.normalize_method_provenance({
+        "schema_version": method_menu.METHOD_PROVENANCE_SCHEMA_VERSION,
+        "method_sha256": method_sha256,
+        "definition_source_run_id": definition_run_id,
+        "review_source_run_id": review_run_id,
+        "review_scientific_outcome": "Complete",
+        "review_scope": review_scope,
+        "disposition": disposition,
+        "literature_basis": literature_basis or _literature_basis(),
+    })
 
 
 def _write_registry(project_dir: Path, *rows: dict[str, Any]) -> Path:
@@ -214,6 +258,222 @@ def test_version_may_use_a_launch_identity_slash(tmp_path: Path) -> None:
 
     assert entry["version"] == "v2.1/finite-sample"
     assert entry["errors"] == []
+
+
+def test_prose_only_edit_preserves_scoped_definition_identity(
+    tmp_path: Path,
+) -> None:
+    original_text = (
+        _entry(
+            "robust-score",
+            body=(
+                "Define the score as $S(\\theta)=\\sum_i \\psi_i(\\theta)$.\n\n"
+                "### Computation\n\nSolve $S(\\theta)=0$ by safeguarded Newton steps."
+            ),
+        )
+        + "\n## Scientific interpretation\n\nOriginal interpretation.\n"
+    )
+    _write(tmp_path, "robust-score.md", original_text)
+    before = _current_entry(tmp_path, "robust-score")
+    row = _registry_row("robust-score")
+    row["provenance"] = _method_provenance(
+        before["sha256"],
+        definition_run_id="p2-definition-run",
+    )
+    _write_registry(tmp_path, row)
+    output = tmp_path / "ideas" / "method-development" / "run" / "02"
+    method_menu.stage_method_menu(tmp_path, output)
+    staged_path = _staged_dir(tmp_path, output) / "robust-score.md"
+    staged_path.write_text(
+        original_text.replace(
+            "Original interpretation.",
+            "Revised interpretation with clearer scientific motivation.",
+        ),
+        encoding="utf-8",
+        newline="",
+    )
+
+    provenance = method_menu.apply_run_provenance(
+        tmp_path,
+        output,
+        run_id="p2-prose-revision",
+        scientific_outcome="Complete",
+        review_scope="focused_method",
+        focused_method_id="robust-score",
+        literature_basis=_literature_basis(),
+    )
+    staged = method_menu._load_menu_directory(
+        tmp_path.resolve(),
+        _staged_dir(tmp_path, output),
+        require_registry=True,
+    )["entries"][0]
+
+    assert before["sha256"] != staged["sha256"]
+    assert before["definition_sha256"] == staged["definition_sha256"]
+    assert staged["definition_digest_basis"] == "explicit_section"
+    assert provenance["robust-score"]["definition_source_run_id"] == (
+        "p2-definition-run"
+    )
+    assert provenance["robust-score"]["disposition"] == "changed"
+
+
+def test_empty_explicit_mathematical_definition_is_rejected(
+    tmp_path: Path,
+) -> None:
+    _write(
+        tmp_path,
+        "empty-definition.md",
+        _entry("empty-definition", body=""),
+    )
+
+    entry = _current_entry(tmp_path, "empty-definition")
+
+    assert "method mathematical definition is empty" in entry["errors"]
+
+
+def test_same_version_cannot_change_mathematical_definition(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, "one.md", _entry("one", version="v1"))
+    _write_registry(tmp_path, _registry_row("one"))
+    output = tmp_path / "ideas" / "method-development" / "run" / "02"
+    method_menu.stage_method_menu(tmp_path, output)
+    (_staged_dir(tmp_path, output) / "one.md").write_text(
+        _entry(
+            "one",
+            version="v1",
+            body="A different estimator and calculation rule.",
+        ),
+        encoding="utf-8",
+        newline="",
+    )
+
+    with pytest.raises(
+        method_menu.MethodMenuValidationError,
+        match="without advancing the version",
+    ):
+        method_menu.apply_run_provenance(
+            tmp_path,
+            output,
+            run_id="p2-definition-change",
+            scientific_outcome="Complete",
+            review_scope="focused_method",
+            focused_method_id="one",
+            literature_basis=_literature_basis(),
+        )
+
+
+def test_new_method_requires_explicit_mathematical_definition(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "ideas" / "method-development" / "run" / "01"
+    method_menu.stage_method_menu(tmp_path, output)
+    staged = _staged_dir(tmp_path, output)
+    (staged / "new-method.md").write_text(
+        _entry("new-method", explicit_definition=False),
+        encoding="utf-8",
+        newline="",
+    )
+    (staged / method_menu.METHOD_REGISTRY_FILENAME).write_text(
+        _registry_rows(_registry_row("new-method")),
+        encoding="utf-8",
+        newline="",
+    )
+
+    with pytest.raises(
+        method_menu.MethodMenuValidationError,
+        match="new method 'new-method'.*explicit",
+    ):
+        method_menu.apply_run_provenance(
+            tmp_path,
+            output,
+            run_id="p2-add-method",
+            scientific_outcome="Complete",
+            review_scope="full_catalog",
+            literature_basis=_literature_basis(),
+        )
+
+
+def test_version_only_advance_preserves_definition_source_history(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, "one.md", _entry("one", version="v1"))
+    before = _current_entry(tmp_path, "one")
+    row = _registry_row("one")
+    row["provenance"] = _method_provenance(
+        before["sha256"],
+        definition_run_id="p2-original-definition",
+    )
+    _write_registry(tmp_path, row)
+    output = tmp_path / "ideas" / "method-development" / "run" / "02"
+    method_menu.stage_method_menu(tmp_path, output)
+    (_staged_dir(tmp_path, output) / "one.md").write_text(
+        _entry("one", version="v2"),
+        encoding="utf-8",
+        newline="",
+    )
+
+    provenance = method_menu.apply_run_provenance(
+        tmp_path,
+        output,
+        run_id="p2-version-only",
+        scientific_outcome="Complete",
+        review_scope="focused_method",
+        focused_method_id="one",
+        literature_basis=_literature_basis(),
+    )["one"]
+
+    assert provenance["definition_source_run_id"] == "p2-original-definition"
+    history = provenance["revision"]["history"]
+    assert [item["version"] for item in history] == ["v1", "v2"]
+    assert [item["change"] for item in history] == [
+        "legacy_import",
+        "version_advanced",
+    ]
+    assert history[0]["source_run_id"] == "p2-original-definition"
+    assert history[1]["source_run_id"] == "p2-version-only"
+    assert history[0]["definition_sha256"] == history[1]["definition_sha256"]
+
+
+def test_run_provenance_rejects_stale_published_revision(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, "one.md", _entry("one", version="v1"))
+    before = _current_entry(tmp_path, "one")
+    provenance = _method_provenance(
+        before["sha256"],
+        definition_run_id="p2-original-definition",
+    )
+    provenance["revision"] = {
+        "schema_version": method_menu.METHOD_REVISION_SCHEMA_VERSION,
+        "current_version": "v2",
+        "definition_sha256": before["definition_sha256"],
+        "history": [{
+            "version": "v2",
+            "definition_sha256": before["definition_sha256"],
+            "source_run_id": "p2-original-definition",
+            "change": "added",
+        }],
+    }
+    row = _registry_row("one")
+    row["provenance"] = provenance
+    _write_registry(tmp_path, row)
+    output = tmp_path / "ideas" / "method-development" / "run" / "02"
+    method_menu.stage_method_menu(tmp_path, output)
+
+    with pytest.raises(
+        method_menu.MethodMenuValidationError,
+        match="published method revision provenance is stale",
+    ):
+        method_menu.apply_run_provenance(
+            tmp_path,
+            output,
+            run_id="p2-review-stale",
+            scientific_outcome="Complete",
+            review_scope="focused_method",
+            focused_method_id="one",
+            literature_basis=_literature_basis(),
+        )
 
 
 def test_duplicate_frontmatter_keys_are_rejected(tmp_path: Path) -> None:
@@ -397,6 +657,111 @@ def test_stage_seeds_current_menu_and_creates_missing_registry(
     assert stage["warnings"] == []
 
 
+def test_fresh_stage_preserves_the_reviewed_empty_source_digest(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "ideas" / "method-development" / "run" / "01"
+    expected = method_menu.catalog_version(tmp_path)
+
+    stage = method_menu.stage_method_menu(
+        tmp_path,
+        output,
+        expected_catalog_sha256=expected,
+    )
+
+    assert stage["source_files"] == []
+    assert stage["source_catalog_sha256"] == expected
+    assert [record["path"] for record in stage["staged_files"]] == [
+        method_menu.METHOD_REGISTRY_FILENAME
+    ]
+    assert stage["staged_catalog_sha256"] != expected
+
+
+def test_stage_rejects_a_stale_reviewed_source_digest(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, "one.md", _entry("one"))
+    output = tmp_path / "ideas" / "method-development" / "run" / "01"
+
+    with pytest.raises(
+        method_menu.StaleMethodMenu,
+        match="changed after it was reviewed",
+    ):
+        method_menu.stage_method_menu(
+            tmp_path,
+            output,
+            expected_catalog_sha256="0" * 64,
+        )
+
+    assert not _staged_dir(tmp_path, output).exists()
+
+
+def test_stage_rejects_a_source_catalog_change_during_copy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _write(tmp_path, "one.md", _entry("one"))
+    expected = method_menu.catalog_version(tmp_path)
+    output = tmp_path / "ideas" / "method-development" / "run" / "01"
+    original_copy = method_menu._copy_catalog
+
+    def copy_then_mutate(source_dir: Path, destination: Path) -> None:
+        original_copy(source_dir, destination)
+        source.write_text(
+            _entry(
+                "one",
+                body="A concurrent change during catalog staging.",
+            ),
+            encoding="utf-8",
+            newline="",
+        )
+
+    monkeypatch.setattr(method_menu, "_copy_catalog", copy_then_mutate)
+
+    with pytest.raises(
+        method_menu.StaleMethodMenu,
+        match="changed while it was staged",
+    ):
+        method_menu.stage_method_menu(
+            tmp_path,
+            output,
+            expected_catalog_sha256=expected,
+        )
+
+    assert not _staged_dir(tmp_path, output).exists()
+
+
+def test_seal_rejects_a_published_catalog_change_after_staging(
+    tmp_path: Path,
+) -> None:
+    published = _write(tmp_path, "one.md", _entry("one"))
+    expected = method_menu.catalog_version(tmp_path)
+    output = tmp_path / "ideas" / "method-development" / "run" / "01"
+    method_menu.stage_method_menu(
+        tmp_path,
+        output,
+        expected_catalog_sha256=expected,
+    )
+    published.write_text(
+        _entry(
+            "one",
+            body="A concurrent change before the run was submitted.",
+        ),
+        encoding="utf-8",
+        newline="",
+    )
+
+    with pytest.raises(
+        method_menu.StaleMethodMenu,
+        match="changed after this run was frozen",
+    ):
+        method_menu.seal_staged_menu(
+            tmp_path,
+            output,
+            expected_published_catalog_sha256=expected,
+        )
+
+
 def test_fresh_stage_has_an_empty_registry_and_can_be_sealed(
     tmp_path: Path,
 ) -> None:
@@ -498,6 +863,88 @@ def test_promotion_reports_changes_and_rollback_restores_exact_catalog(
     assert not (menu_dir / "two.md").exists()
 
 
+@pytest.mark.parametrize(
+    ("change_kind", "expected_invalidated"),
+    [
+        ("prose", []),
+        ("status", []),
+        ("version", ["one"]),
+        ("definition", ["one"]),
+        ("retirement", ["one"]),
+    ],
+)
+def test_promotion_invalidates_only_scientific_method_identity_changes(
+    tmp_path: Path,
+    change_kind: str,
+    expected_invalidated: list[str],
+) -> None:
+    original = (
+        _entry("one", version="v1", status="viable", body="Estimator A.")
+        + "\n## Scientific interpretation\n\nOriginal interpretation.\n"
+    )
+    _write(tmp_path, "one.md", original)
+    _write_registry(tmp_path, _registry_row("one", status="viable"))
+    output = tmp_path / "ideas" / "method-development" / "run" / "01"
+    method_menu.stage_method_menu(tmp_path, output)
+    staged = _staged_dir(tmp_path, output)
+
+    staged_text = original
+    staged_status = "viable"
+    if change_kind == "prose":
+        staged_text = original.replace(
+            "Original interpretation.", "Revised interpretation."
+        )
+    elif change_kind == "status":
+        staged_status = "recommended"
+        staged_text = _entry(
+            "one",
+            version="v1",
+            status=staged_status,
+            body="Estimator A.",
+        ) + "\n## Scientific interpretation\n\nOriginal interpretation.\n"
+    elif change_kind == "version":
+        staged_text = _entry(
+            "one", version="v2", status="viable", body="Estimator A."
+        ) + "\n## Scientific interpretation\n\nOriginal interpretation.\n"
+    elif change_kind == "definition":
+        staged_text = _entry(
+            "one", version="v2", status="viable", body="Estimator B."
+        ) + "\n## Scientific interpretation\n\nOriginal interpretation.\n"
+    elif change_kind == "retirement":
+        staged_status = "retired"
+        staged_text = _entry(
+            "one",
+            version="v1",
+            status=staged_status,
+            body="Estimator A.",
+        ) + "\n## Scientific interpretation\n\nOriginal interpretation.\n"
+    else:
+        raise AssertionError(f"unsupported change kind {change_kind!r}")
+    (staged / "one.md").write_text(
+        staged_text,
+        encoding="utf-8",
+        newline="",
+    )
+    if staged_status != "viable":
+        registry_path = staged / method_menu.METHOD_REGISTRY_FILENAME
+        registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
+        registry["entries"][0]["status"] = staged_status
+        registry_path.write_text(
+            yaml.safe_dump(registry, sort_keys=False),
+            encoding="utf-8",
+            newline="",
+        )
+
+    seal = method_menu.seal_staged_menu(tmp_path, output)
+    promotion = method_menu.promote_staged_menu(tmp_path, output, seal)
+
+    assert promotion["changed_stable_ids"] == ["one"]
+    assert promotion["downstream_invalidated_stable_ids"] == (
+        expected_invalidated
+    )
+    method_menu.commit_method_menu_promotion(tmp_path, promotion)
+
+
 def test_commit_removes_backup_and_keeps_published_menu(tmp_path: Path) -> None:
     _write(tmp_path, "one.md", _entry("one", number=1))
     _write_registry(tmp_path, _registry_row("one", number=1))
@@ -516,6 +963,371 @@ def test_commit_removes_backup_and_keeps_published_menu(tmp_path: Path) -> None:
 
     assert not backup.exists()
     assert _current_entry(tmp_path, "one")["version"] == "v2"
+
+
+def test_focused_promotion_changes_only_the_selected_method(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, "one.md", _entry("one", version="v1", number=1))
+    original_two = _write(
+        tmp_path, "two.md", _entry("two", version="v1", number=2)
+    ).read_bytes()
+    _write_registry(
+        tmp_path,
+        _registry_row("one", number=1),
+        _registry_row("two", number=2),
+    )
+    output = tmp_path / "ideas" / "method-development" / "run" / "01"
+    method_menu.stage_method_menu(tmp_path, output)
+    staged = _staged_dir(tmp_path, output)
+    (staged / "one.md").write_text(
+        _entry("one", version="v2", number=1),
+        encoding="utf-8",
+    )
+    seal = method_menu.seal_staged_menu(tmp_path, output)
+
+    promotion = method_menu.promote_staged_menu(
+        tmp_path,
+        output,
+        seal,
+        focused_method_id="one",
+    )
+
+    assert promotion["changed_stable_ids"] == ["one"]
+    assert (tmp_path / method_menu.METHOD_MENU_DIR / "two.md").read_bytes() == (
+        original_two
+    )
+    method_menu.commit_method_menu_promotion(tmp_path, promotion)
+
+
+def test_focused_promotion_rejects_non_selected_changes(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, "one.md", _entry("one", number=1))
+    original_two = _write(
+        tmp_path, "two.md", _entry("two", version="v1", number=2)
+    ).read_bytes()
+    _write_registry(
+        tmp_path,
+        _registry_row("one", number=1),
+        _registry_row("two", number=2),
+    )
+    output = tmp_path / "ideas" / "method-development" / "run" / "01"
+    method_menu.stage_method_menu(tmp_path, output)
+    staged = _staged_dir(tmp_path, output)
+    (staged / "one.md").write_text(
+        _entry("one", version="v2", number=1),
+        encoding="utf-8",
+    )
+    (staged / "two.md").write_text(
+        _entry("two", version="v2", number=2),
+        encoding="utf-8",
+    )
+    seal = method_menu.seal_staged_menu(tmp_path, output)
+
+    with pytest.raises(
+        method_menu.MethodMenuValidationError,
+        match="non-selected",
+    ):
+        method_menu.promote_staged_menu(
+            tmp_path,
+            output,
+            seal,
+            focused_method_id="one",
+        )
+
+    assert (tmp_path / method_menu.METHOD_MENU_DIR / "two.md").read_bytes() == (
+        original_two
+    )
+
+
+def test_focused_promotion_rejects_non_selected_registry_metadata_change(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, "one.md", _entry("one", number=1))
+    _write(tmp_path, "two.md", _entry("two", number=2))
+    _write_registry(
+        tmp_path,
+        _registry_row("one", number=1),
+        _registry_row("two", number=2),
+    )
+    output = tmp_path / "ideas" / "method-development" / "run" / "01"
+    method_menu.stage_method_menu(tmp_path, output)
+    staged = _staged_dir(tmp_path, output)
+    (staged / "one.md").write_text(
+        _entry("one", version="v2", number=1),
+        encoding="utf-8",
+    )
+    changed_two = _registry_row("two", number=2)
+    changed_two["added_in_run"] = "run-2"
+    (staged / method_menu.METHOD_REGISTRY_FILENAME).write_text(
+        _registry_rows(
+            _registry_row("one", number=1),
+            changed_two,
+        ),
+        encoding="utf-8",
+    )
+    seal = method_menu.seal_staged_menu(tmp_path, output)
+
+    with pytest.raises(
+        method_menu.MethodMenuValidationError,
+        match="non-selected registry row.*'two'",
+    ):
+        method_menu.promote_staged_menu(
+            tmp_path,
+            output,
+            seal,
+            focused_method_id="one",
+        )
+
+
+def test_focused_promotion_rejects_registry_next_number_change(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, "one.md", _entry("one", number=1))
+    _write(tmp_path, "two.md", _entry("two", number=2))
+    rows = (
+        _registry_row("one", number=1),
+        _registry_row("two", number=2),
+    )
+    _write_registry(tmp_path, *rows)
+    output = tmp_path / "ideas" / "method-development" / "run" / "01"
+    method_menu.stage_method_menu(tmp_path, output)
+    staged = _staged_dir(tmp_path, output)
+    (staged / "one.md").write_text(
+        _entry("one", version="v2", number=1),
+        encoding="utf-8",
+    )
+    (staged / method_menu.METHOD_REGISTRY_FILENAME).write_text(
+        yaml.safe_dump(
+            {
+                "next_number": 10,
+                "entries": list(rows),
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    seal = method_menu.seal_staged_menu(tmp_path, output)
+
+    with pytest.raises(
+        method_menu.MethodMenuValidationError,
+        match="cannot change the registry next_number",
+    ):
+        method_menu.promote_staged_menu(
+            tmp_path,
+            output,
+            seal,
+            focused_method_id="one",
+        )
+
+
+def test_full_run_provenance_reviews_all_methods_without_redefining_them(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, "one.md", _entry("one", number=1))
+    _write(tmp_path, "two.md", _entry("two", number=2))
+    entries = {
+        entry["stable_id"]: entry
+        for entry in method_menu.load_method_menu(tmp_path)["entries"]
+    }
+    rows = [
+        _registry_row("one", number=1),
+        _registry_row("two", number=2),
+    ]
+    rows[0]["provenance"] = _method_provenance(
+        entries["one"]["sha256"],
+        definition_run_id="one-definition-run",
+    )
+    rows[1]["provenance"] = _method_provenance(
+        entries["two"]["sha256"],
+        definition_run_id="two-definition-run",
+    )
+    _write_registry(tmp_path, *rows)
+    output = tmp_path / "ideas" / "method-development" / "run" / "02"
+    method_menu.stage_method_menu(tmp_path, output)
+    reviewed_basis = _literature_basis(
+        source_run_id="p1-run-2",
+        generation=2,
+        synthesis="c",
+        collection="d",
+    )
+
+    provenance = method_menu.apply_run_provenance(
+        tmp_path,
+        output,
+        run_id="p2-full-review",
+        scientific_outcome="Complete",
+        review_scope="full_catalog",
+        literature_basis=reviewed_basis,
+    )
+
+    assert set(provenance) == {"one", "two"}
+    assert provenance["one"]["definition_source_run_id"] == (
+        "one-definition-run"
+    )
+    assert provenance["two"]["definition_source_run_id"] == (
+        "two-definition-run"
+    )
+    for value in provenance.values():
+        assert value["review_source_run_id"] == "p2-full-review"
+        assert value["review_scope"] == "full_catalog"
+        assert value["disposition"] == "reviewed_no_change"
+        assert value["literature_basis"] == reviewed_basis
+
+
+def test_focused_no_change_provenance_updates_only_the_selected_method(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, "one.md", _entry("one", number=1))
+    _write(tmp_path, "two.md", _entry("two", number=2))
+    entries = {
+        entry["stable_id"]: entry
+        for entry in method_menu.load_method_menu(tmp_path)["entries"]
+    }
+    one_prior = _method_provenance(
+        entries["one"]["sha256"],
+        definition_run_id="one-definition-run",
+    )
+    two_prior = _method_provenance(
+        entries["two"]["sha256"],
+        definition_run_id="two-definition-run",
+    )
+    rows = [
+        _registry_row("one", number=1),
+        _registry_row("two", number=2),
+    ]
+    rows[0]["provenance"] = one_prior
+    rows[1]["provenance"] = two_prior
+    _write_registry(tmp_path, *rows)
+    output = tmp_path / "ideas" / "method-development" / "run" / "02"
+    method_menu.stage_method_menu(tmp_path, output)
+    staged_registry_path = (
+        _staged_dir(tmp_path, output)
+        / method_menu.METHOD_REGISTRY_FILENAME
+    )
+    staged_registry = yaml.safe_load(
+        staged_registry_path.read_text(encoding="utf-8")
+    )
+    staged_registry["entries"][1]["provenance"]["review_source_run_id"] = (
+        "agent-authored-out-of-scope-value"
+    )
+    staged_registry_path.write_text(
+        yaml.safe_dump(staged_registry, sort_keys=False),
+        encoding="utf-8",
+        newline="",
+    )
+    reviewed_basis = _literature_basis(
+        source_run_id="p1-run-2",
+        generation=2,
+        synthesis="c",
+        collection="d",
+    )
+
+    provenance = method_menu.apply_run_provenance(
+        tmp_path,
+        output,
+        run_id="p2-focused-review",
+        scientific_outcome="Partial",
+        review_scope="focused_method",
+        focused_method_id="one",
+        literature_basis=reviewed_basis,
+    )
+
+    assert set(provenance) == {"one"}
+    selected = provenance["one"]
+    assert selected["definition_source_run_id"] == "one-definition-run"
+    assert selected["review_source_run_id"] == "p2-focused-review"
+    assert selected["review_scientific_outcome"] == "Partial"
+    assert selected["review_scope"] == "focused_method"
+    assert selected["disposition"] == "reviewed_no_change"
+    assert selected["literature_basis"] == reviewed_basis
+    staged_rows = {
+        row["stable_id"]: row
+        for row in yaml.safe_load(
+            staged_registry_path.read_text(encoding="utf-8")
+        )["entries"]
+    }
+    assert staged_rows["two"]["provenance"] == two_prior
+
+
+def test_focused_changed_definition_gets_a_new_definition_source_run(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, "one.md", _entry("one", number=1))
+    _write(tmp_path, "two.md", _entry("two", number=2))
+    entries = {
+        entry["stable_id"]: entry
+        for entry in method_menu.load_method_menu(tmp_path)["entries"]
+    }
+    two_prior = _method_provenance(
+        entries["two"]["sha256"],
+        definition_run_id="two-definition-run",
+    )
+    rows = [
+        _registry_row("one", number=1),
+        _registry_row("two", number=2),
+    ]
+    rows[0]["provenance"] = _method_provenance(
+        entries["one"]["sha256"],
+        definition_run_id="one-definition-run",
+    )
+    rows[1]["provenance"] = two_prior
+    _write_registry(tmp_path, *rows)
+    output = tmp_path / "ideas" / "method-development" / "run" / "02"
+    method_menu.stage_method_menu(tmp_path, output)
+    staged = _staged_dir(tmp_path, output)
+    (staged / "one.md").write_text(
+        _entry(
+            "one",
+            version="v2",
+            number=1,
+            body="A revised mathematical and scientific method definition.",
+        ),
+        encoding="utf-8",
+        newline="",
+    )
+
+    provenance = method_menu.apply_run_provenance(
+        tmp_path,
+        output,
+        run_id="p2-definition-update",
+        scientific_outcome="Complete",
+        review_scope="focused_method",
+        focused_method_id="one",
+        literature_basis=_literature_basis(),
+    )
+
+    selected = provenance["one"]
+    assert selected["definition_source_run_id"] == "p2-definition-update"
+    assert selected["review_source_run_id"] == "p2-definition-update"
+    assert selected["disposition"] == "changed"
+    staged_menu = method_menu._load_menu_directory(
+        tmp_path.resolve(),
+        staged,
+        require_registry=True,
+    )
+    staged_entries = {
+        entry["stable_id"]: entry for entry in staged_menu["entries"]
+    }
+    assert selected["method_sha256"] == staged_entries["one"]["sha256"]
+    staged_rows = {
+        row["stable_id"]: row
+        for row in staged_menu["registry"]["entries"]
+    }
+    assert staged_rows["two"]["provenance"] == two_prior
+
+
+def test_legacy_registry_without_provenance_remains_readable(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, "one.md", _entry("one"))
+    _write_registry(tmp_path, _registry_row("one"))
+
+    entry = _current_entry(tmp_path, "one")
+
+    assert entry["provenance"] is None
+    assert entry["provenance_error"] == ""
 
 
 def test_promotion_failure_restores_previous_catalog(
@@ -738,6 +1550,42 @@ def test_seal_rejects_renumbering_a_valid_published_method(tmp_path: Path) -> No
     with pytest.raises(
         method_menu.MethodMenuValidationError,
         match="keep method number 1",
+    ):
+        method_menu.seal_staged_menu(tmp_path, output)
+
+    assert method_path.read_bytes() == original_method
+    assert registry_path.read_bytes() == original_registry
+
+
+def test_seal_rejects_reactivating_a_retired_published_method(
+    tmp_path: Path,
+) -> None:
+    method_path = _write(
+        tmp_path,
+        "one.md",
+        _entry("one", status="retired", number=1),
+    )
+    registry_path = _write_registry(
+        tmp_path,
+        _registry_row("one", status="retired", number=1),
+    )
+    original_method = method_path.read_bytes()
+    original_registry = registry_path.read_bytes()
+    output = tmp_path / "ideas" / "method-development" / "run" / "01"
+    method_menu.stage_method_menu(tmp_path, output)
+    staged = _staged_dir(tmp_path, output)
+    (staged / "one.md").write_text(
+        _entry("one", version="v2", status="viable", number=1),
+        encoding="utf-8",
+    )
+    (staged / method_menu.METHOD_REGISTRY_FILENAME).write_text(
+        _registry_rows(_registry_row("one", status="viable", number=1)),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        method_menu.MethodMenuValidationError,
+        match="reactivates retired method 'one'",
     ):
         method_menu.seal_staged_menu(tmp_path, output)
 

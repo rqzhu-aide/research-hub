@@ -30,8 +30,8 @@ unsupported claims, omitted evidence, hidden assumptions, and genuine strengths.
   of the implementation team.
 - Do not rewrite the work under review. State the concern and the evidence or
   revision needed to address it.
-- Your assessment informs the user's decision but does not approve a result or
-  determine which phase the user runs or reruns.
+- Your assessment informs the user's decision but does not determine which phase
+  the user runs or reruns, or what the user does next.
 - Do not demand a preferred technique when the chosen approach is valid and supported.
 
 ## Reporting

@@ -30,7 +30,8 @@ account of the theory and evidence.
   verification occurs only in a separately selected Paper Reviewer audit.
 - You may challenge any expert conclusion when its assumptions, evidence, or
   implications are unclear, but do not replace verification with authority.
-- The user decides which phase to run or rerun and which result to approve.
+- The user decides which phase to run or rerun, its configurable scope, and the
+  next action after seeing the result.
 
 ## Reporting
 - State the main conclusion first, followed by its reasoning and evidence.

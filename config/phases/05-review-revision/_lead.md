@@ -8,13 +8,12 @@ your workflow.
 Read:
 
 - `setting.md`;
-- the intact, completed Phase 1 literature result;
-- the intact, completed Phase 2 method-development result and its published
+- the canonical current Phase 1 literature record;
+- the current Phase 2 method catalog and its published
   canonical definition selected for this run;
-- the intact, completed Phase 3 theory and discussion reports for the selected
-  method;
-- the intact, completed Phase 4 empirical results and discussion reports for
-  the same method identity;
+- the canonical current Phase 3 theory package for the selected method;
+- the canonical current Phase 4 empirical package for the same method identity;
+- the prepared current `manuscript.md` at the run output root;
 - the paper reviewer's report for review-revision mode.
 
 Verify that all required results from Phases 1 through 4 are present, readable,
@@ -31,9 +30,9 @@ branches or method versions.
 
 ## Step 3A: Assembly
 
-Your sole task is to combine the separate Phase 1 through Phase 4 artifacts
-into one coherent
-manuscript. Use the `stat-paper-writing` skill (provisioned to your profile).
+Update the prepared `manuscript.md` into one coherent current paper using the
+canonical Phase 1 through Phase 4 records. Use the `stat-paper-writing` skill
+provisioned to your profile.
 
 Combine:
 1. **Introduction**: motivate the problem, state the contribution, position
@@ -48,11 +47,14 @@ Combine:
 
 Reconcile notation, ensure claim consistency, and merge all references into one
 bibliography.
+Write the complete result to `manuscript.md` at the run output root. Do not
+produce an addendum or a second current draft.
 
 ## Step 3B: Review and revision
 
-**Stage 1:** Send the assembled manuscript to the **paper reviewer**. Wait for
-the review. The reviewer uses the `stat-paper-reviewer` skill.
+**Stage 1:** Send the immutable snapshot of the prepared current manuscript to
+the **paper reviewer**. Wait for the review. The reviewer uses the
+`stat-paper-reviewer` skill.
 
 **Stage 2:** Read the reviewer's report. Then revise the draft:
 1. **Address each review point**: for every weakness or recommendation, either
@@ -61,9 +63,12 @@ the review. The reviewer uses the `stat-paper-reviewer` skill.
 2. **Use the `stat-paper-writing` skill** to maintain paper conventions during
    revision.
 3. **Write a revision log**: for each change, state what was changed, where, and
-   why.
+   why in the stage report.
 4. **Preserve scientific honesty**: if the reviewer identifies an overclaim,
    narrow it. If a proof has a gap, fix it or flag it.
+5. **Replace the current draft**: write the complete revision to `manuscript.md`
+   at the run output root and write its exact unified difference from the
+   reviewed snapshot to `manuscript-post-review.diff`.
 
 ## Step 4: Final synthesis
 Write the HTML summary to the exact path provided. Report:
@@ -87,18 +92,21 @@ c. **Should a previous phase be rerun?** (return to Phase 03/04/01)
 
 d. **Is the method fundamentally flawed?** (return to Phase 02)
 
-State the recommendation clearly as one of: **approve**, **revise further**,
-**return to Phase N**, or **dead end: select different method**. Justify with
-specific evidence.
+State the recommendation clearly as one of: **ready for submission**, **revise
+further**, **return to Phase N**, or **dead end: select different method**.
+Justify with specific evidence. The user decides the next action.
 
 ## Requirements
 
-- Assembly requires intact, completed results from Phases 1 through 4. The Phase
-  3 and Phase 4 results must match the same stable ID, version, and definition
+- Phase 5 requires verified current records from Phases 1 through 4. The Phase 3
+  and Phase 4 records must match the same stable ID, version, and definition
   digest selected for the Phase 5 run.
 - For review-revision, address every review point by fixing it, deferring it with
-  reasoning, or disputing it with evidence. The revision log is mandatory.
+  reasoning, or disputing it with evidence. The revision log and exact diff are
+  mandatory.
 - Preserve the method-specific folder structure. The output goes in the same
   method branch folder.
 - The paper reviewer's assessment is independent. Do not influence it before the
   review.
+- A valid Complete result replaces the one current manuscript. Failed or
+  incomplete work leaves the previous current manuscript unchanged.

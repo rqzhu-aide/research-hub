@@ -209,83 +209,6 @@ def _phase_for_run_mode(
     return shaped
 
 
-def _review_revision_gate_satisfied(
-    project_dir: Path,
-    branch_stable_id: str,
-) -> bool:
-    """True when an approved assembly Phase 05 run exists for this branch.
-
-    Scans prior Phase 05 runs by reading each run's sealed manifest to verify:
-      - its manifest's phase.run_plan == "assembly"
-      - its manifest's method_selection.stable_id == branch_stable_id
-      - its run status == "approved"
-    """
-    return _find_approved_assembly_run(project_dir, branch_stable_id) is not None
-
-
-def _find_approved_assembly_run(
-    project_dir: Path,
-    branch_stable_id: str,
-) -> dict[str, Any] | None:
-    """Return the most recent approved assembly run's manifest for this branch.
-
-    Returns a dict with ``output_root`` and ``manifest_sha256``, or ``None``
-    if no approved assembly run exists.  Used by the launcher to freeze the
-    assembly manuscript into the new review_revision run's review path.
-    """
-    # R6 fix: if the Phase 05 phase is stale, its approved assembly runs
-    # no longer satisfy the gate; the reviewer must not review a
-    # version-drifted manuscript.
-    state = project_state.load(project_dir)
-    if bool(
-        state.get("phases", {})
-        .get(launch_common.PAPER_WRITING_PHASE, {})
-        .get("stale")
-    ):
-        return None
-
-    root = Path(project_dir).resolve()
-    runs = project_state.get_runs(root, launch_common.PAPER_WRITING_PHASE)
-    for run in runs:
-        if str(run.get("status", "")) != "approved":
-            continue
-        raw_manifest_path = run.get("manifest_path")
-        expected_hash = str(run.get("manifest_sha256") or "").lower()
-        if not raw_manifest_path or not expected_hash:
-            continue
-        try:
-            manifest_path = Path(str(raw_manifest_path)).resolve(strict=True)
-            manifest_root = (
-                project_state.state_dir(root) / "runs" / launch_common.PAPER_WRITING_PHASE
-            ).resolve()
-            manifest_path.relative_to(manifest_root)
-            payload = project_state.bounded_file_bytes(
-                manifest_path,
-                maximum=project_state.MAX_CONTROL_FILE_BYTES,
-                label="run manifest",
-            )
-            import hashlib
-            if hashlib.sha256(payload).hexdigest() != expected_hash:
-                continue
-            manifest = json.loads(payload.decode("utf-8"))
-        except (OSError, TypeError, ValueError, UnicodeError, json.JSONDecodeError):
-            continue
-        if not isinstance(manifest, Mapping):
-            continue
-        frozen_phase = manifest.get("phase")
-        if not isinstance(frozen_phase, Mapping):
-            continue
-        if str(frozen_phase.get("run_plan", "")) != launch_common.RUN_MODE_ASSEMBLY:
-            continue
-        method_selection = manifest.get("method_selection")
-        if not isinstance(method_selection, Mapping):
-            continue
-        if str(method_selection.get("stable_id", "")) == str(branch_stable_id):
-            return {
-                "output_root": str(manifest.get("output_root", "")),
-                "manifest_sha256": expected_hash,
-            }
-    return None
 
 
 def paper_review_only_phase(phase: Mapping[str, Any]) -> dict[str, Any]:
@@ -1412,7 +1335,26 @@ def exact_rerun_options(
     ):
         raise launch_common.LaunchError("The prior run has no verified frozen phase plan")
 
+    if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE:
+        run_scope = manifest.get("run_scope")
+        if not isinstance(run_scope, Mapping):
+            return {"kind": "standard"}
+        result = {
+            "kind": "method_scope",
+            "method_catalog_scope": str(run_scope.get("scope", "")).strip(),
+        }
+        focused_id = str(run_scope.get("focused_method_id") or "").strip()
+        if focused_id:
+            result["focused_method_id"] = focused_id
+        return result
+
     if phase_slug == launch_common.IDEA_EVALUATION_PHASE:
+        context_policy = manifest.get("context_policy")
+        preserved_policy = (
+            str(context_policy.get("policy", "")).strip()
+            if isinstance(context_policy, Mapping)
+            else ""
+        )
         plan = str(frozen_phase.get("run_plan", "")).strip()
         if not plan:
             if frozen_phase.get("audit_only"):
@@ -1422,10 +1364,15 @@ def exact_rerun_options(
         if not plan:
             # A phase without declared theory plans (for example a debate)
             # records no special plan; preserving it is a plain rerun.
-            return {"kind": "standard"}
+            result = {"kind": "standard"}
+            if preserved_policy:
+                result["theory_context_policy"] = preserved_policy
+            return result
         if plan not in launch_common.THEORY_RUN_PLANS:
             raise launch_common.LaunchError("The prior Phase 03 run plan cannot be reproduced")
         result = {"kind": "theory", "theory_plan": plan}
+        if preserved_policy:
+            result["theory_context_policy"] = preserved_policy
         if plan == launch_common.THEORY_PLAN_AUDIT_ONLY:
             try:
                 frozen_source = _verified_frozen_theory_audit_source(root, manifest)

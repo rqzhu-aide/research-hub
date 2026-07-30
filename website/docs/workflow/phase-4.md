@@ -19,17 +19,29 @@ or invalid entries remain visible for context but cannot be selected. Choose an
 active method to inspect its summary, mathematical definition, assumptions,
 status, and version before launching.
 
-The chosen method's stable identity, version, and content digest are frozen for
-the run. Work is stored in the same durable branch that Phase 3 uses for that
-method. Available results and discussion from earlier Phase 3 and Phase 4 runs
-on the exact same branch are supplied as prior evidence. If no Phase 3 result is
-available, the empirical work proceeds from the Phase 2 definition and labels
-any theoretical interpretation that remains unresolved.
+The chosen method's `stable_id`, `version`, and `definition_sha256` are frozen
+for the run. This tuple identifies the exact calculation. The run receives the
+current Phase 3 theory when available and the cumulative Phase 4 package. The
+new Phase 4 record states the exact Phase 3 semantic basis available at launch.
+If Phase 3 is absent, that absence is recorded and empirical work proceeds from
+the Phase 2 definition. A legacy record without an explicit basis stays yellow
+until Phase 4 is rerun.
 
 Each stage keeps its report, code, data, tables, figures, and other supporting
 evidence inside its assigned run folder. Research Hub inventories and hashes
-these files when the stage finishes. Later Phase 3 and Phase 4 runs on the same
-branch receive frozen copies rather than untracked working files.
+these files when the stage finishes. Later runs use the cumulative evidence index
+to locate applicable artifacts instead of loading every older run folder. If the
+method definition changes in a calculation-defining way, the version advances
+and prior exact-method evidence is marked outdated. A later run records
+recomputation or revalidation as a new current evidence entry instead of
+reactivating the old evidence ID.
+
+Code and scientific outputs, including figures, models, reports, results, and
+tables, are always bound to the exact method version that produced them. Raw
+source data and generic logs, protocols, or other infrastructure may remain
+reusable only when the record states why they are mathematically independent of
+the changed calculation. The team decides during a rerun whether the necessary
+repair is small or substantial.
 
 | Run mode | Scope | Main result |
 |---|---|---|
@@ -82,8 +94,8 @@ Analyst performs the primary implementation and empirical work.
    findings, and states what the evidence supports, contradicts, or leaves
    unresolved.
 
-All three roles receive the frozen method and available results and discussion
-from earlier Phase 3 and Phase 4 runs on the same branch. Within the current run,
+All three roles receive the frozen method, current theory manuscript when
+available, and current cumulative empirical package. Within the current run,
 each later stage receives the reports from earlier stages. The lead preserves
 material objections, responses, protocol deviations, and unresolved
 disagreements. If an earlier role needs to respond again, carry the issue into a
@@ -145,6 +157,22 @@ from technical replication, identify the experimental unit, address batches and
 known confounders, and avoid treating repeated measurements on the same
 biological unit as independent samples.
 
+## How to read the status
+
+The Phase 4 page reports three different scientific questions separately:
+
+1. **Method applicability:** does the current package use the exact current
+   `stable_id`, version, and definition digest?
+2. **Research attention:** how many evidence entries are outdated or unresolved
+   and therefore need reanalysis, revalidation, or an explicit limitation?
+3. **Scientific outcome:** did the authorized Phase 4 work finish as Complete,
+   Partial, or Failed under the selected scope?
+
+A package can match the current method and still contain weak, negative, or
+inconclusive evidence. A Complete run can still require research attention, and
+a Partial run can contain valid current results. Read these fields separately
+before deciding whether to rerun.
+
 ## Scientific standards and application checks
 
 The items above are **scientific completion standards for the agents**. They
@@ -182,8 +210,8 @@ Before using the result, ask:
 
 - Was the protocol recorded before the main results, and are all deviations
   identified with reasons?
-- Does the code implement the exact Phase 2 method definition and version selected
-  for this branch?
+- Does the code implement the exact Phase 2 stable ID, version, and definition
+  digest selected for this branch?
 - Do known-answer tests and failure tests cover the main implementation risks?
 - Are data provenance, preprocessing, exclusions, and missingness documented?
 - Are sample size, seeds, replications, and uncertainty appropriate to the
@@ -203,14 +231,16 @@ Before using the result, ask:
 
 ## How to use the result
 
-A completed Phase 4 run remains a separate scientific record. Read its summary,
-role reports, protocol, deviations, and supporting artifacts before deciding
-whether its evidence is adequate for your intended use.
+A valid Complete or Partial Phase 4 run updates the branch's cumulative
+`evidence-index.json` and compact current `empirical-synthesis.md`. Read those
+current records with the new run's summary, role reports, protocol, deviations,
+and supporting artifacts before deciding whether the evidence is adequate.
 
-Completed, intact results and discussion may be supplied to later Phase 3 and
-Phase 4 runs on the same method branch. This makes prior work available for
-comparison and extension. It does not certify the implementation or establish
-that every statistical or scientific claim is valid.
+The evidence index retains every evidence identity and its current disposition.
+Current entries can be reused without repeating completed work. Outdated,
+superseded, withdrawn, or unresolved entries remain visible but are not treated
+as current support. The synthesis states what the present method currently
+supports rather than narrating every run.
 
 ### Rerun Phase 4
 
@@ -219,10 +249,23 @@ different scope. Examples include a failed diagnostic, missing baseline, unfair
 tuning comparison, revised uncertainty calculation, different dataset or
 parameter regime, new replication design, or changed implementation.
 
-State the required changes in the new run instructions and identify which prior
-results remain useful. Research Hub creates a new record and preserves the
-earlier code, results, reports, and discussion. It does not place corrections
-into a separate revision queue.
+State the required changes in the new run instructions. The team starts from the
+current evidence index, preserves existing evidence IDs and immutable artifact
+fields, adds new evidence under new IDs, and updates dispositions with reasons.
+A non-current evidence ID cannot return to current. Revalidation or replacement
+therefore appends a new run-local entry and may mark the older entry
+`superseded`.
+A valid result atomically updates the index and synthesis. Failed or invalid
+output leaves the current package unchanged.
+
+When Phase 2 advances the method version after a calculation-defining change,
+Phase 4 marks earlier exact-method evidence outdated. This includes all earlier
+code and scientific outputs. Rerun the
+diagnostics or experiments needed to establish whether those results still
+apply. Record any successful recomputation or revalidation under a new evidence
+ID; do not relabel the outdated entry as current. Raw data and generic
+infrastructure may remain current only when their mathematical independence
+from the changed calculation is recorded explicitly.
 
 ### Return to an earlier phase
 
@@ -232,10 +275,11 @@ must be redesigned. You decide when to start either run.
 
 ## Use in Phase 5
 
-Phase 5 requires an intact completed result from each of Phases 1 through 4. The
-Phase 3 and Phase 4 results must both match the selected method's stable ID,
-version, and definition digest. Phase 4 alone does not start Phase 5 or make the
-branch ready for manuscript assembly.
+Phase 5 requires a usable current result from each of Phases 1 through 4. A
+current Phase 4 result may be Complete or Partial, while Phase 3 must be
+Complete. Phase 3 and Phase 4 must match the selected method and each other's
+recorded semantic basis. The Phase 4 package can have no outdated or unresolved
+evidence. Phase 4 alone does not make the branch ready or start Phase 5.
 
 For artifact names, run records, and branch layout, see
 [Files and records](../reference/files-and-records).

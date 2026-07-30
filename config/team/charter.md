@@ -23,12 +23,12 @@ concern.
 ## Scientific collaboration
 - Expertise is distributed. No role is assumed correct by title alone.
 - Disagreements are resolved with explicit assumptions, evidence, and tests.
-- Roles propose scientific record changes so that one accepted scientific
-  record preserves statement identity and revision history.
+- Roles propose scientific record changes so that canonical current records
+  preserve statement identity and revision history.
 - Complete, Partial, and Failed reports all preserve usable evidence and state
   the scientific consequences of missing work.
 - Use the narrower claim when the evidence does not distinguish alternatives.
 - Criticism should improve the work while preserving valid contributions.
-- The user alone decides which phase to run or rerun and which result to approve.
-  `norms.md` defines the shared standards for evidence, decisions, and use of
-  results from earlier rounds.
+- The user alone decides which phase to run or rerun, the method and scope of
+  that run, and the next action after seeing its result. `norms.md` defines the
+  shared standards for evidence, decisions, and canonical current records.

@@ -4,8 +4,8 @@ Coordinate independent searches by the three roles. In the final report, combine
 the evidence by its source quality and relevance to the stated contribution.
 
 ## Responsibilities
-1. Import the accepted scientific record from the selected user-approved
-   summary, or initialize a proposed scientific record when none is available.
+1. Read the canonical current literature record, or initialize the literature
+   record when no current record is available.
 2. State the research question or estimand, proposed method or mechanism,
    scientific or statistical contribution, and conditions or scope of validity.
 3. Formulate specific research questions for each role.
@@ -32,13 +32,11 @@ as the synthesis itself.
 Read:
 
 - `setting.md`
-- the team norms and the accepted scientific record imported only from a
-  current summary approved by the user, when available
-- prior `references/literature-review/run/` outputs
-- `references/papers/` — the per-reference summary files (one `.md` per cited
+- the team norms and the canonical current literature record, when available
+- `references/papers/`, the per-reference summary files (one `.md` per cited
   paper, built by prior runs). These are the project's structured reference
   library. Read them to understand what has already been found and classified.
-- `references/literature-summary.md` — the consolidated literature summary
+- `references/literature-summary.md`, the consolidated literature summary
   (updated each run). Read it first for orientation.
 - `ideas/` and `branches/` when present
 
@@ -51,9 +49,8 @@ current candidate:
 - conditions and scope under which the advance is expected to hold.
 
 If any component is unclear, make its clarification part of the search.
-If no current summary approved by the user supplies an accepted scientific
-record, initialize a proposed scientific record and state that it has no
-approved earlier version.
+If no current literature record exists, initialize it and state that this is
+the first generation.
 
 ## Step 2: Assign research questions
 The instructions for each role must specify:
@@ -68,10 +65,11 @@ The instructions for each role must specify:
    citation chaining, software searches, and a stopping rule.
 7. a **Scientific record changes** section containing only proposed additions
    or changes to material statements.
-8. **Reference library maintenance.** Each role must write a per-reference
-   summary file for every new paper it classifies, and update existing files
-   when it re-confirms or extends a prior finding. Details in the
-   **Reference library** section below.
+8. **Reference candidates.** Each role must include a complete candidate card
+   for every new source it classifies. A source already represented by canonical
+   identity or filename is not a delta candidate. The lead reconciles the new
+   candidates and writes the run-local delta.
+   Details are in the **Reference library** section below.
 
 Require each role to quote or cite the exact theorem, formula, algorithm, or
 repository used to classify a source. Papers with similar keywords alone do not
@@ -99,17 +97,20 @@ not a scientific Failed report.
 
 ## Reference library
 
-The project maintains a structured reference library at `references/papers/`,
-with one `.md` file per cited paper, and a consolidated summary at
-`references/literature-summary.md`. This library persists across runs and is
-read by downstream phases (especially Phase 02 Method Development).
+The canonical library lives at `references/papers/`, with one `.md` file per
+cited source, plus `references/reference-index.json` and
+`references/literature-summary.md`. It persists across runs and is read by
+downstream phases. During this run, write only to the prepared
+`reference-delta/` folder. Research Hub applies the delta to the canonical
+library after validation.
 
-### Per-reference files (`references/papers/{source}-{id}.md`)
-Every role that classifies a new paper writes a file using this format:
+### Delta cards (`reference-delta/papers/{source}-{id}.md`)
+After comparing all role reports, the lead writes each reconciled new card using
+this format:
 
 ```markdown
 ---
-arxiv_id: "2509.09162"          # or github_repo, pmlr_vol, etc.
+arxiv_id: "2509.09162"          # or doi, pmid, pmcid, github_repo, etc.
 title: "Full paper title"
 authors: ["Author1", "Author2"]
 year: 2025
@@ -117,10 +118,9 @@ venue: "arXiv preprint"          # or conference/journal name
 relation: "direct prior work"    # direct prior work | theoretical foundation | related method | existing implementation
 found_in_run: "06"               # this run number
 found_by_role: "research_lead"   # this role
-also_found_in: []                # later runs that re-confirm (append only)
 ---
 
-# arXiv:2509.09162 — Short Title
+# arXiv:2509.09162: Short Title
 
 ## One-line summary
 One sentence.
@@ -138,34 +138,34 @@ One sentence.
 ```
 
 Rules:
-- Filename: `{source}-{id}.md` with dots → hyphens (e.g. `arxiv-2509.09162.md`).
-- If a file already exists from a prior run, **do not overwrite it** — append
-  this run's number to `also_found_in` and amend the notes if you have new
-  information. The `found_in_run` and `found_by_role` fields are immutable.
-- Only create files for papers you have actually read and classified — not
+- Filename: a stable `{source}-{id}.md` name using letters, digits, dots,
+  underscores, or hyphens, for example `arxiv-2509.09162.md`.
+- If the canonical filename or identity already exists, do not write a delta
+  card. Mention the source as already represented when it matters to the
+  synthesis.
+- Never create a second card for the same DOI, arXiv ID, PMID, PMCID, repository,
+  or package under another filename.
+- Only create files for sources actually read and classified, not
   every search hit.
 
-### Consolidated summary (`references/literature-summary.md`)
-The lead updates this file in Step 4. It is a 3–5 page synthesis of the entire
-reference library, organized by relation type, with one-line entries linking to
-the per-reference files. It is **cumulative** — a rerun adds to it, it does not
-replace it.
+### Consolidated summary (`reference-delta/literature-summary.md`)
+The prepared file begins from the current synthesis. The lead rewrites it as a
+compact complete view of the cumulative library after adding this run's new
+unique sources. It is not a chronological transcript.
 
 ## Step 4: Final synthesis
 Write the final HTML summary to the exact path provided for this run.
 Do not overwrite an earlier run summary.
 
-**Also update `references/literature-summary.md`** — the consolidated reference
-library summary. This is a required deliverable alongside the HTML summary. The
-file is cumulative: read the existing version (if any), integrate new references
-from this run, and rewrite it to reflect the complete current library. Organize
-by relation type (direct prior work, theoretical foundations, related methods,
-existing implementations), with one-line entries linking to the per-reference
-files in `references/papers/`. Target 3–5 pages. Include a "Key findings"
-section summarizing the latest run's conclusions and a "Coverage gaps" section
-for what remains unexplored.
+**Also update `reference-delta/literature-summary.md`.** This is a required
+deliverable alongside the HTML summary. Integrate new evidence with the prepared
+current synthesis and rewrite it to reflect the complete current library.
+Organize by relation type, with one-line entries linking to the canonical paths
+in `references/papers/`. Keep the synthesis compact. Include a "Key findings"
+section for the current evidence and a "Coverage gaps" section for what remains
+unexplored. Do not edit `_baseline.json`.
 
-Begin with the User Decision Brief and Comparison with the approved run defined
+Begin with the User Decision Brief and comparison with the current record defined
 in the team norms.
 Immediately afterward, state the phase outcome as Complete, Partial, or Failed.
 Complete means the prescribed literature checks were performed, not that the
@@ -186,9 +186,8 @@ Include:
 3. closest overlapping work and evidence quality;
 4. the assessment status of each contribution and originality statement, using the
    shared vocabulary;
-5. one consolidated **Scientific record changes** section and the **Proposed
-   scientific baseline**, with the source record or explicit initialization
-   recorded; the proposed baseline becomes accepted only after user approval;
+5. one consolidated **Scientific record changes** section and the updated
+   current literature synthesis, with initialization recorded when applicable;
 6. coverage gaps and precise questions for a focused literature update;
 7. searched scope, stopping rule, and any "not found within scope" conclusions;
 8. **Readiness assessment and recommendation.** Evaluate explicitly:
@@ -212,15 +211,15 @@ Include:
    from the survey.
 
 Do not select an option for the user. After submitting the summary, stop. The
-user alone decides whether to approve it, request changes, rerun the phase, or
-start Method Development.
+user alone decides whether to rerun this phase, start Method Development, or
+defer further work.
 
 ## Requirements
-- Follow the shared team norms and use the accepted scientific record for this
+- Follow the shared team norms and use the current scientific record for this
   run.
 - Require role reports to include only proposed **Scientific record changes**,
-  not a reconstructed record. Reconcile those proposed changes in the final
-  summary without altering an earlier accepted record.
+  not a reconstructed record. Reconcile those changes in the final summary and
+  staged literature synthesis.
 - Address the user direction already supplied in each run task.
 - Calibrate originality to primary-source evidence.
 - Treat unresolved overlap as unresolved, not as proof of originality.

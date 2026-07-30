@@ -124,7 +124,7 @@
 
     {% if pd.approval_context_report and pd.approval_context_report.changed_sources %}
     <div class="override-warning" role="status">
-      <strong>Accepted context changed after this run launched.</strong>
+      <strong>Scientific context changed after this run launched.</strong>
       <p>The run is still using its frozen inputs. Review the changed sources, then decide whether to let it finish or cancel and rerun.</p>
       <ul class="compact-list">
         {% for item in pd.approval_context_report.changed_sources %}

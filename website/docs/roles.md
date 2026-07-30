@@ -76,13 +76,20 @@ Phase 3 and Phase 4 use ordered, cumulative discussion:
 - **Phase 3:** Theorist, then Data Analyst, then Research Lead. The theorist performs the main mathematical work. The analyst reads and stress-tests it. The lead reads both reports and prepares the summary.
 - **Phase 4:** Data Analyst, then Theorist, then Research Lead. The analyst performs the main implementation and empirical work. The theorist reads and audits it. The lead reads both reports and prepares the summary.
 
-For both sibling phases, every role receives the frozen method and available prior results and discussion from Phase 3 and Phase 4 on the same method branch. Each later stage also receives the reports already produced in the current run. The lead records unresolved disagreements so a later rerun can return to them explicitly.
+For both sibling phases, every role receives the frozen method and the verified
+current same-branch records. Phase 3 uses the current theory manuscript and
+current empirical package by default; you may add archived Phase 3 summaries.
+Phase 4 uses the current theory manuscript and cumulative empirical package.
+Each later stage also receives the reports already produced in the current run.
+The lead records unresolved disagreements and publishes the complete current
+record for that phase.
 
 Phase 5 depends on the selected run mode. Assembly uses the Research Lead only.
-Review & Revision uses the Paper Reviewer and then the Research Lead. A Review
-target uses the Paper Reviewer only. Further review is appropriate when
-important concerns remain. The current release has a legacy gate on Review &
-Revision, described in [Known Limitations](./known-limitations).
+Review & Revision uses the Paper Reviewer and then the Research Lead. Further
+review is appropriate when important concerns remain. Assembly publishes one
+current manuscript. Review &
+Revision starts from that verified current manuscript and replaces it after a
+valid Complete run. No separate approval state is required.
 
 ## Standing role guidance
 

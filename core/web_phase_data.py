@@ -8,8 +8,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from . import method_menu, project_state
-from . import current_results
+from . import (
+    current_results,
+    method_menu,
+    project_state,
+    web_branch_status,
+    web_prerequisites,
+)
 from .launch_manifest import (
     phase_requires_method_binding,
     phase_uses_catalog_method_selection,
@@ -42,7 +47,13 @@ def _run_definition_sha256_from_manifest(
         snapshots.get("selected_method") if isinstance(snapshots, Mapping) else None
     )
     if isinstance(selected_method, Mapping):
-        return str(selected_method.get("sha256", "")).strip().lower()
+        schema_version = manifest.get("schema_version", 1)
+        field = (
+            "definition_sha256"
+            if type(schema_version) is int and schema_version >= 14
+            else "sha256"
+        )
+        return str(selected_method.get(field, "")).strip().lower()
     return ""
 
 
@@ -51,11 +62,20 @@ log = logging.getLogger(__name__)
 
 MAX_REVIEW_TARGET_BYTES = 2 * 1024 * 1024
 SOURCE_BASELINE_STATUS_BY_RUN_STATUS = {
+    "completed": "current",
     "approved": "accepted",
     "awaiting_review": "proposed",
     "revision_requested": "proposed",
     "superseded": "historical",
 }
+
+
+def _current_run_id(phase_state: Mapping[str, Any]) -> str:
+    """Return the authoritative current run, with legacy approval fallback."""
+
+    return str(
+        phase_state.get("current_run") or phase_state.get("approved_run") or ""
+    ).strip()
 
 
 def decision_report_version(kind: str, report: Mapping[str, Any]) -> str:
@@ -334,9 +354,9 @@ def _cross_phase_context(
         if slug == phase_slug:
             continue
         phase_state = phases_state.get(slug, {})
-        approved_id = str(phase_state.get("approved_run") or "").strip()
+        current_id = _current_run_id(phase_state)
         latest_id = str(phase_state.get("latest_run") or "").strip()
-        history_id = approved_id or latest_id
+        history_id = current_id or latest_id
         runs = phase_state.get("runs", [])
         history_run = next(
             (
@@ -361,9 +381,9 @@ def _cross_phase_context(
         if slug == project_state.METHOD_DEVELOPMENT_PHASE:
             # Include the full method menu so downstream phases can pick which to include
             entry["method_menu"] = method_menu.load_method_menu(project_dir)
-            if approved_id:
+            if current_id:
                 for r in runs:
-                    if str(r.get("run_id", "")) == approved_id:
+                    if str(r.get("run_id", "")) == current_id:
                         decision = r.get("decision_record")
                         if isinstance(decision, Mapping):
                             data = decision.get("data", {})
@@ -380,8 +400,10 @@ def _method_details(project_dir: Path) -> list[dict[str, Any]]:
     """Render canonical method-menu entries for the expandable detail view."""
 
     root = project_dir.resolve()
+    entries = method_menu.load_method_menu(root)["entries"]
+    statuses = web_branch_status.method_record_statuses(root, entries)
     details: list[dict[str, Any]] = []
-    for entry in method_menu.load_method_menu(root)["entries"]:
+    for entry, status in zip(entries, statuses, strict=True):
         relative_path = str(entry.get("path", ""))
         path = root / relative_path
         created_ts = ""
@@ -397,6 +419,7 @@ def _method_details(project_dir: Path) -> list[dict[str, Any]]:
             ),
             "created_ts": created_ts,
             "created_display": _format_method_ts(created_ts),
+            **status,
         })
     return details
 
@@ -457,11 +480,19 @@ def _method_comparison_data(project_dir: Path) -> str:
 
 
 
-def _method_ranking_rows(project_dir: Path) -> list[dict[str, Any]]:
+def _method_ranking_rows(
+    project_dir: Path,
+    methods: Sequence[Mapping[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     """Build the Phase 02 table from the persistent method menu."""
 
     rows: list[dict[str, Any]] = []
-    for entry in method_menu.load_method_menu(project_dir)["entries"]:
+    entries = (
+        list(methods)
+        if methods is not None
+        else method_menu.load_method_menu(project_dir)["entries"]
+    )
+    for entry in entries:
         label = str(
             entry.get("label")
             or entry.get("stable_id")
@@ -478,6 +509,11 @@ def _method_ranking_rows(project_dir: Path) -> list[dict[str, Any]]:
             "sha256": str(entry.get("sha256", "")),
             "errors": errors,
             "is_method": bool(stable_id and not errors),
+            "literature_status": (
+                entry.get("record_status", {}).get("method", {})
+                if isinstance(entry.get("record_status"), Mapping)
+                else {}
+            ),
         })
     return rows
 
@@ -817,6 +853,13 @@ def _run_view(
         else {"ok": True, "reason": ""}
     )
     decision_record = run.get("decision_record")
+    phase_record = run.get("phase_record")
+    current_updated = (
+        phase_record.get("current_updated")
+        if isinstance(phase_record, Mapping)
+        and isinstance(phase_record.get("current_updated"), bool)
+        else None
+    )
     baseline_acknowledgement = run.get("approval_baseline_acknowledgement")
     approval_kind = str(run.get("approval_kind", "")).strip()
     if not approval_kind and isinstance(baseline_acknowledgement, Mapping):
@@ -903,15 +946,9 @@ def _run_view(
     else:
         plan_variant = None
 
-    # Display status: when a run is "failed" but real artifacts exist on disk
-    # (summary HTML written by the lead), show "partial" instead of "failed".
-    # The lead did the work but didn't formally submit it (round-tracking gap,
-    # crash after writing files, etc.). Underlying status stays "failed" so
-    # state logic is unaffected; only the user-facing label softens.
-    if status == "failed" and summary_available:
-        display_status = "partial"
-    else:
-        display_status = status
+    # Technical completion and scientific outcome are separate. A summary from a
+    # failed run remains inspectable, but it does not make that run complete.
+    display_status = status
 
     return {
         "id": run_id,
@@ -919,10 +956,7 @@ def _run_view(
         "number": number,
         "status": status,
         "display_status": display_status,
-        "status_label": (
-            "Completed (partial)" if display_status == "partial"
-            else status.replace("_", " ").title()
-        ),
+        "status_label": status.replace("_", " ").title(),
         "mode": run.get("mode", ""),
         "rounds_requested": requested,
         "requested_count": requested,
@@ -1006,6 +1040,7 @@ def _run_view(
         "publication_kind": run.get("publication_kind"),
         "publication_outcome": run.get("publication_outcome"),
         "publication_readiness": run.get("publication_readiness"),
+        "current_updated": current_updated,
         "migration_warning": run.get("migration_warning"),
         "protocol_checkpoint": (
             dict(run["protocol_checkpoint"])
@@ -1096,10 +1131,14 @@ def _prerequisite_view(
     missing = [entry for entry in requirements if not entry.get("satisfied")]
     missing_names = [entry["name"] for entry in missing]
     satisfied = bool(report.get("satisfied", not blockers))
-    completion_policy = report.get("policy") == "completed_results"
+    completion_policy = report.get("policy") in {
+        "current_records",
+        "completed_results",
+        "required_completed_runs",
+    }
     if satisfied and requirements:
         message = (
-            "All required prior phase results are complete and intact."
+            "All expected prior phase results are current and intact."
             if completion_policy
             else "All recommended prerequisite results are current."
         )
@@ -1111,7 +1150,7 @@ def _prerequisite_view(
             for entry in missing
         ]
         message = (
-            "Required completed results are missing: "
+            "Some expected prior phase results are unavailable, outdated, or not intact: "
             if completion_policy
             else "Recommended context needs review: "
         ) + "; ".join(details)
@@ -1145,12 +1184,20 @@ def _phase_five_method_prerequisite_report(
             method["launch_blockers"] = []
             continue
         active_count += 1
+        context_error = str(method.get("launch_context_error", "")).strip()
         readiness = method.get("branch_readiness")
         if not isinstance(readiness, Mapping):
             readiness = phase_five_branch_readiness(project_dir, method)
             method["branch_readiness"] = readiness
-        launchable = bool(readiness.get("ready"))
-        blockers = [str(item) for item in readiness.get("blockers", [])]
+        blockers = []
+        if context_error:
+            blockers.append(context_error)
+        blockers.extend(
+            str(item)
+            for item in readiness.get("blockers", [])
+            if str(item) not in blockers
+        )
+        launchable = bool(readiness.get("ready")) and not context_error
         method["launchable"] = launchable
         method["launch_blockers"] = blockers
         if launchable:
@@ -1172,8 +1219,8 @@ def _phase_five_method_prerequisite_report(
         )
     elif active_count:
         message = (
-            "No active method has intact completed results from Phases 1 through 4 "
-            "with matching Phase 3 and Phase 4 branch identity."
+            "No active method has usable current results from Phases 1 through 4 "
+            "with aligned Phase 3 and Phase 4 branch information."
         )
     else:
         message = "No active Phase 2 method is available for Phase 5."
@@ -1204,22 +1251,28 @@ def _decision_label(phase_state: Mapping[str, Any], latest: Mapping[str, Any] | 
             return "Cleanup needs your attention"
         return "Agents are working"
     if latest is not None and latest.get("status") == "awaiting_review":
-        return "Your decision is needed"
+        return "Completed legacy result"
     if phase_state.get("stale"):
-        return "Approved result needs review after an upstream change"
+        return "Current result needs an update after an upstream change"
     if latest is None:
         return "Not run yet"
+    if (
+        latest.get("status") in {"completed", "approved"}
+        and latest.get("current_updated") is False
+    ):
+        return "Run complete; current result unchanged"
     labels = {
         "starting": "Starting",
         "running": "Agents are working",
-        "submitting": "Preparing the result for review",
+        "submitting": "Validating the result",
         "stopping": "Cleanup needs your attention",
-        "awaiting_review": "Your decision is needed",
-        "approved": "Approved and current",
+        "completed": "Current result ready",
+        "awaiting_review": "Completed legacy result",
+        "approved": "Current result ready",
         "revision_requested": "Revision requested; ready to rerun",
-        "failed": "Run failed; approved fallback preserved",
+        "failed": "Run failed; current result preserved",
         "cancelled": "Run cancelled; ready to rerun",
-        "superseded": "Superseded by an approved run",
+        "superseded": "Historical result",
     }
     return labels.get(str(latest.get("status")), str(latest.get("status", "Pending")))
 
@@ -1233,15 +1286,54 @@ def _decision_state(
         latest_status = str(latest.get("status", "pending"))
         if latest_status in project_state.ACTIVE_RUN_STATUSES:
             return latest_status
-        if str(latest.get("run_id", "")) != str(phase_state.get("approved_run", "")):
-            # When the latest run failed but artifacts exist, surface "partial"
-            # so the phase row doesn't alarm with "failed" when work is usable.
-            if latest.get("display_status") == "partial":
-                return "partial"
+        if str(latest.get("run_id", "")) != _current_run_id(phase_state):
             return latest_status
     if phase_state.get("stale"):
         return "stale"
     return str(phase_state.get("status", "pending"))
+
+
+def _branch_summary_is_decision_subject(
+    phase_state: Mapping[str, Any],
+    latest: Mapping[str, Any] | None,
+    *,
+    active: bool,
+) -> bool:
+    """Return whether compact branch records should drive the phase badge."""
+
+    if active:
+        return False
+    if latest is None:
+        return True
+    current_run_id = _current_run_id(phase_state)
+    if current_run_id:
+        return str(latest.get("run_id", "")) == current_run_id
+    return bool(
+        latest.get("status") in {"completed", "approved", "awaiting_review"}
+        and latest.get("current_updated") is not False
+    )
+
+
+def _latest_result_for_display(
+    runs: Sequence[Mapping[str, Any]],
+    latest: Mapping[str, Any] | None,
+    current: Mapping[str, Any] | None,
+) -> Mapping[str, Any] | None:
+    """Preserve a usable legacy result when its replacement failed."""
+
+    if (
+        current is None
+        and latest is not None
+        and latest.get("status") in {"failed", "cancelled"}
+    ):
+        return next(
+            (
+                run for run in reversed(runs)
+                if run.get("status") == "awaiting_review"
+            ),
+            latest,
+        )
+    return latest
 
 
 def _downstream_context_options(
@@ -1249,7 +1341,7 @@ def _downstream_context_options(
     phase_slug: str,
     phases_cfg: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
-    """Identify downstream (future) phases that have approved results.
+    """Identify downstream phases that have a current result.
 
     Returns a dict with ``available`` (bool), ``phases`` (list of display
     dicts with slug/name/run_id), so the launch form can show the downstream
@@ -1281,13 +1373,13 @@ def _downstream_context_options(
     options: list[dict[str, str]] = []
     for slug in sorted(descendants):
         phase_state = phases_state.get(slug, {})
-        approved_id = str(phase_state.get("approved_run") or "").strip()
-        if not approved_id:
+        current_id = _current_run_id(phase_state)
+        if not current_id:
             continue
         options.append({
             "slug": slug,
             "name": name_by_slug.get(slug, slug),
-            "run_id": approved_id,
+            "run_id": current_id,
         })
     return {"available": bool(options), "phases": options}
 
@@ -1323,7 +1415,7 @@ def prepare_phase_data(
     method_phase = state.get("phases", {}).get(
         project_state.METHOD_DEVELOPMENT_PHASE, {}
     )
-    method_run_id = str(method_phase.get("approved_run") or "").strip()
+    method_run_id = _current_run_id(method_phase)
     method_run = next(
         (
             candidate
@@ -1356,7 +1448,7 @@ def prepare_phase_data(
         except (KeyError, OSError, project_state.ProjectStateError):
             integrity_ok = False
         if (
-            method_run.get("status") == "approved"
+            method_run.get("status") in {"completed", "approved"}
             and integrity_ok
             and isinstance(selected, Mapping)
             and selected.get("kind") == "method"
@@ -1396,7 +1488,9 @@ def prepare_phase_data(
     latest = by_id.get(str(phase_state.get("latest_run")))
     if latest is None and run_views:
         latest = run_views[-1]
-    approved = by_id.get(str(phase_state.get("approved_run")))
+    current = by_id.get(_current_run_id(phase_state))
+    # Retain the legacy response key for templates and older clients.
+    approved = current
     active_marker = state.get("active_run")
     active_anywhere = bool(active_marker)
     active_conflict = bool(active_marker and active_marker.get("conflict"))
@@ -1421,15 +1515,11 @@ def prepare_phase_data(
         by_id.get(str(active_reference.get("run_id"))) if active_reference else None
     )
     active_here = bool(active_run)
-    awaiting_decision = next(
-        (
-            item
-            for item in reversed(run_views)
-            if item.get("status") == "awaiting_review"
-        ),
-        None,
+    displayed_latest = (
+        active_run
+        if active_here
+        else _latest_result_for_display(run_views, latest, current)
     )
-    displayed_latest = active_run if active_here else (awaiting_decision or latest)
     if (
         displayed_latest
         and not active_here
@@ -1462,18 +1552,30 @@ def prepare_phase_data(
     method_details = (
         _method_details(project_dir) if phase_slug in catalog_detail_phases else []
     )
+    requires_launch_context = phase_uses_catalog_method_selection(phase_cfg)
     for method in method_details:
         base_launchable = bool(
             method.get("status") != "retired" and not method.get("errors")
         )
-        method["launchable"] = base_launchable
-        method["launch_blockers"] = []
+        context_error = str(method.get("launch_context_error", "")).strip()
+        method["launchable"] = bool(
+            base_launchable
+            and (not requires_launch_context or not context_error)
+        )
+        method["launch_blockers"] = (
+            [context_error]
+            if base_launchable and requires_launch_context and context_error
+            else []
+        )
+    branch_status_summary = web_branch_status.aggregate_phase_record_status(
+        phase_slug, method_details
+    )
     if phase_slug == "05-review-revision":
         raw_report, report = _phase_five_method_prerequisite_report(
             project_dir, method_details
         )
     else:
-        raw_report = project_state.prerequisite_report(
+        raw_report = web_prerequisites.phase_prerequisite_report(
             project_dir,
             phase_slug,
             _dependencies(phases_cfg),
@@ -1510,20 +1612,40 @@ def prepare_phase_data(
             stage["status"] = "pending"
         stages.append(stage)
 
-    baseline_integrity_error = bool(approved and approved.get("integrity_error"))
+    baseline_integrity_error = bool(current and current.get("integrity_error"))
     decision_state = _decision_state(phase_state, displayed_latest)
     decision_label = _decision_label(phase_state, displayed_latest)
-    if baseline_integrity_error and (
+    branch_status_is_current_subject = bool(
+        branch_status_summary
+        and _branch_summary_is_decision_subject(
+            phase_state, displayed_latest, active=active_here
+        )
+    )
+    if branch_status_is_current_subject:
+        decision_state = str(branch_status_summary["state"])
+        decision_label = str(branch_status_summary["label"])
+    elif baseline_integrity_error and branch_status_summary is None and (
         displayed_latest is None
-        or displayed_latest.get("run_id") == approved.get("run_id")
+        or displayed_latest.get("run_id") == current.get("run_id")
     ):
         decision_state = "stale"
-        decision_label = "Approved evidence is missing or changed"
-    stale_reason = phase_state.get("stale_reason")
-    if baseline_integrity_error and not stale_reason:
+        decision_label = "Current evidence is missing or changed"
+    if branch_status_summary is not None:
+        stale_reason = str(branch_status_summary.get("reason", "")).strip() or None
+        phase_is_stale = branch_status_summary.get("state") == "stale"
+    else:
+        stale_reason = phase_state.get("stale_reason")
+        phase_is_stale = (
+            bool(phase_state.get("stale")) or baseline_integrity_error
+        )
+    if (
+        branch_status_summary is None
+        and baseline_integrity_error
+        and not stale_reason
+    ):
         stale_reason = (
-            "Approved evidence is missing or changed, so it cannot be treated as "
-            "a current baseline. Restore the recorded file or approve a replacement run."
+            "Current evidence is missing or changed. Restore the recorded file or "
+            "run this phase again to produce a valid replacement."
         )
 
     configured_members = [
@@ -1598,9 +1720,12 @@ def prepare_phase_data(
         ),
         "decision_state": decision_state,
         "decision_label": decision_label,
-        "stale": bool(phase_state.get("stale")) or baseline_integrity_error,
+        "branch_status_summary": branch_status_summary,
+        "stale": phase_is_stale,
         "stale_reason": stale_reason,
+        "latest_attempt": latest,
         "latest_run": displayed_latest,
+        "current_run": current,
         "approved_run": approved,
         "baseline_integrity_error": baseline_integrity_error,
         "active_run": active_run,
@@ -1650,12 +1775,9 @@ def prepare_phase_data(
             else ""
         ),
         "method_ranking_table": (
-            _method_ranking_rows(project_dir)
+            _method_ranking_rows(project_dir, method_details)
             if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE
             else []
-        ),
-        "review_target_options": _available_review_targets(
-            project_dir, phase_slug
         ),
         "run_freshness": run_freshness,
     }
@@ -1678,6 +1800,14 @@ def prepare_overview_data(
         if isinstance(item, Mapping)
     ]
     dependencies = _dependencies(phases_cfg)
+    overview_methods = (
+        _method_details(project_dir)
+        if any(
+            str(phase.get("slug", "")) in web_branch_status.PHASE_RECORD_KEYS
+            for phase in phases_cfg
+        )
+        else []
+    )
     cards: list[dict[str, Any]] = []
     # Pre-compute global ordinal rank for each run (by start time across ALL phases)
     # This gives every run its own horizontal slot, with no clustering regardless of time gaps.
@@ -1713,14 +1843,16 @@ def prepare_overview_data(
         latest = by_id.get(str(phase_state.get("latest_run")))
         if latest is None and views:
             latest = views[-1]
-        approved = by_id.get(str(phase_state.get("approved_run")))
+        current = by_id.get(_current_run_id(phase_state))
+        # Retain the legacy response key for older overview templates.
+        approved = current
         if phase_slug == "05-review-revision":
             _, report = _phase_five_method_prerequisite_report(
-                project_dir, _method_details(project_dir)
+                project_dir, overview_methods
             )
         else:
             report = _prerequisite_view(
-                project_state.prerequisite_report(
+                web_prerequisites.phase_prerequisite_report(
                     project_dir,
                     phase_slug,
                     dependencies,
@@ -1745,27 +1877,49 @@ def prepare_overview_data(
             else None
         )
         is_active = bool(active_view)
-        awaiting_decision = next(
-            (
-                item
-                for item in reversed(views)
-                if item.get("status") == "awaiting_review"
-            ),
-            None,
+        displayed_latest = (
+            active_view
+            if is_active
+            else _latest_result_for_display(views, latest, current)
         )
-        displayed_latest = active_view if is_active else (awaiting_decision or latest)
-        baseline_integrity_error = bool(approved and approved.get("integrity_error"))
+        branch_status_summary = web_branch_status.aggregate_phase_record_status(
+            phase_slug, overview_methods
+        )
+        baseline_integrity_error = bool(current and current.get("integrity_error"))
         decision_state = _decision_state(phase_state, displayed_latest)
         decision_label = _decision_label(phase_state, displayed_latest)
-        if baseline_integrity_error and (
+        branch_status_is_current_subject = bool(
+            branch_status_summary
+            and _branch_summary_is_decision_subject(
+                phase_state, displayed_latest, active=is_active
+            )
+        )
+        if branch_status_is_current_subject:
+            decision_state = str(branch_status_summary["state"])
+            decision_label = str(branch_status_summary["label"])
+        elif baseline_integrity_error and branch_status_summary is None and (
             displayed_latest is None
-            or displayed_latest.get("run_id") == approved.get("run_id")
+            or displayed_latest.get("run_id") == current.get("run_id")
         ):
             decision_state = "stale"
-            decision_label = "Approved evidence is missing or changed"
-        stale_reason = phase_state.get("stale_reason")
-        if baseline_integrity_error and not stale_reason:
-            stale_reason = "Approved evidence is missing or changed."
+            decision_label = "Current evidence is missing or changed"
+        if branch_status_summary is not None:
+            stale_reason = (
+                str(branch_status_summary.get("reason", "")).strip()
+                or None
+            )
+            phase_is_stale = branch_status_summary.get("state") == "stale"
+        else:
+            stale_reason = phase_state.get("stale_reason")
+            phase_is_stale = (
+                bool(phase_state.get("stale")) or baseline_integrity_error
+            )
+        if (
+            branch_status_summary is None
+            and baseline_integrity_error
+            and not stale_reason
+        ):
+            stale_reason = "Current evidence is missing or changed."
         cards.append({
             "number": number,
             "slug": phase_slug,
@@ -1784,15 +1938,19 @@ def prepare_overview_data(
             ),
             "decision_state": decision_state,
             "decision_label": decision_label,
+            "branch_status_summary": branch_status_summary,
             "run_count": len(views),
+            "latest_attempt": latest,
             "latest_run": displayed_latest,
+            "current_run": current,
             "approved_run": approved,
             "baseline_integrity_error": baseline_integrity_error,
             "is_active": is_active,
-            "can_start": not bool(active) and not bool(phase_cfg.get("recovery_only")),
+            "can_start": not bool(active)
+            and not bool(phase_cfg.get("recovery_only")),
             "can_run": report["satisfied"],
             "prerequisite_report": report,
-            "stale": bool(phase_state.get("stale")) or baseline_integrity_error,
+            "stale": phase_is_stale,
             "stale_reason": stale_reason,
             "rounds_policy": _rounds_policy(phase_cfg),
             "last_run_started": (

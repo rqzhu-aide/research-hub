@@ -13,7 +13,13 @@ from typing import Any, Mapping
 
 
 
+from core import knowledge_graph
+from core import knowledge_heads
+from core import knowledge_schema
 from core import launch_common
+from core import method_menu
+from core import phase_options
+from core import phase_records
 from core import project_state
 from core import profile_skills
 from core import launch_plans
@@ -21,7 +27,7 @@ from core import launch_plans
 import logging
 log = logging.getLogger(__name__)
 
-MANIFEST_SCHEMA_VERSION = 11
+MANIFEST_SCHEMA_VERSION = 14
 
 
 def _method_identity(stable_id: str, version: str) -> dict[str, str]:
@@ -341,7 +347,8 @@ def _validate_manifest_snapshot_schema(manifest: Mapping[str, Any]) -> None:
 
     _manifest_hermes_root(manifest)
     _validate_recommended_skills_snapshot(manifest)
-    if _manifest_schema_version(manifest) == 1:
+    schema_version = _manifest_schema_version(manifest)
+    if schema_version == 1:
         return
     phase = manifest.get("phase")
     if not isinstance(phase, Mapping):
@@ -351,6 +358,18 @@ def _validate_manifest_snapshot_schema(manifest: Mapping[str, Any]) -> None:
         not isinstance(role, str) or not role for role in members
     ):
         raise launch_common.LaunchError("Run manifest phase members must be a list of role names")
+    if schema_version >= 12:
+        try:
+            phase_options.validate_manifest_phase_options(
+                str(manifest.get("phase_slug", "")),
+                manifest.get("run_scope"),
+                manifest.get("context_policy"),
+                audit_only=phase.get("audit_only") is True,
+            )
+        except phase_options.PhaseOptionError as exc:
+            raise launch_common.LaunchError(
+                f"Run manifest phase options are invalid: {exc}"
+            ) from exc
     # F16: validate run_plan if present; it must be a recognized theory plan
     # or run mode. An empty string is acceptable (no plan specified).
     raw_plan = phase.get("run_plan", "")
@@ -365,6 +384,8 @@ def _validate_manifest_snapshot_schema(manifest: Mapping[str, Any]) -> None:
     if not isinstance(snapshots, Mapping):
         raise launch_common.LaunchError("Run manifest snapshots must be a mapping")
     required_snapshot_keys = {"setting", "team", "souls", "playbooks", "summaries"}
+    if schema_version >= 12:
+        required_snapshot_keys.add("current_records")
     requires_method_snapshot = bool(
         _manifest_schema_version(manifest) >= 10
         and phase_requires_method_binding(phase)
@@ -402,10 +423,121 @@ def _validate_manifest_snapshot_schema(manifest: Mapping[str, Any]) -> None:
     for name in sorted(required_playbooks):
         _snapshot_leaf(playbooks.get(name), f"playbooks.{name}")
 
+    current_records = snapshots.get("current_records", [])
+    if schema_version >= 12:
+        if not isinstance(current_records, list) or len(current_records) > 16:
+            raise launch_common.LaunchError(
+                "Frozen current_records must be a list of at most 16 records"
+            )
+        seen_record_keys: set[str] = set()
+        for record_index, record in enumerate(current_records):
+            expected_record_fields = {
+                "key",
+                "kind",
+                "source_run_id",
+                "generation",
+                "files",
+            }
+            if schema_version >= 13:
+                expected_record_fields.add("method_identity")
+            if (
+                not isinstance(record, Mapping)
+                or set(record) != expected_record_fields
+            ):
+                raise launch_common.LaunchError(
+                    "Frozen current record has invalid fields"
+                )
+            key = record.get("key")
+            kind = record.get("kind")
+            if schema_version >= 13:
+                raw_identity = record.get("method_identity")
+                if key in {knowledge_heads.P3_KEY, knowledge_heads.P4_KEY}:
+                    try:
+                        normalized_identity = (
+                            knowledge_schema.normalize_method_identity(raw_identity)
+                        )
+                    except knowledge_schema.KnowledgeSchemaError as exc:
+                        raise launch_common.LaunchError(
+                            "Schema 13 frozen P3 and P4 records require an exact "
+                            "method identity"
+                        ) from exc
+                    if dict(raw_identity) != normalized_identity:
+                        raise launch_common.LaunchError(
+                            "Frozen current-record method identity is not normalized"
+                        )
+                    expected_kind = (
+                        knowledge_heads.P3_KIND
+                        if key == knowledge_heads.P3_KEY
+                        else knowledge_heads.P4_KIND
+                    )
+                    if kind != expected_kind:
+                        raise launch_common.LaunchError(
+                            "Frozen P3 or P4 current record has an invalid kind"
+                        )
+                elif raw_identity is not None:
+                    raise launch_common.LaunchError(
+                        "Schema 13 nonmethod current records require null method_identity"
+                    )
+            source_run_id = record.get("source_run_id")
+            generation = record.get("generation")
+            files = record.get("files")
+            if (
+                not isinstance(key, str)
+                or not key
+                or key in seen_record_keys
+                or not isinstance(kind, str)
+                or not kind
+                or (
+                    source_run_id is not None
+                    and (not isinstance(source_run_id, str) or not source_run_id)
+                )
+                or (
+                    generation is not None
+                    and (
+                        isinstance(generation, bool)
+                        or not isinstance(generation, int)
+                        or generation < 1
+                    )
+                )
+                or not isinstance(files, list)
+                or not files
+                or len(files) > 4
+            ):
+                raise launch_common.LaunchError(
+                    "Frozen current record has invalid identity metadata"
+                )
+            seen_record_keys.add(key)
+            for file_index, file_record in enumerate(files):
+                if not isinstance(file_record, Mapping) or set(file_record) != {
+                    "path", "sha256", "source_path", "size"
+                }:
+                    raise launch_common.LaunchError(
+                        "Frozen current-record file has invalid fields"
+                    )
+                _snapshot_leaf(
+                    file_record,
+                    f"current_records[{record_index}].files[{file_index}]",
+                    allow_extra=True,
+                )
+                source_path = file_record.get("source_path")
+                size = file_record.get("size")
+                relative = Path(str(source_path))
+                if (
+                    not isinstance(source_path, str)
+                    or not source_path
+                    or relative.is_absolute()
+                    or ".." in relative.parts
+                    or isinstance(size, bool)
+                    or not isinstance(size, int)
+                    or size < 1
+                ):
+                    raise launch_common.LaunchError(
+                        "Frozen current-record file metadata is invalid"
+                    )
+
     summaries = snapshots.get("summaries")
     if not isinstance(summaries, list):
         raise launch_common.LaunchError("Frozen snapshot summaries must be a list")
-    schema_version = _manifest_schema_version(manifest)
     valid_context_outcomes = {"Complete", "Partial", "Failed", "Missing"}
     for index, entry in enumerate(summaries):
         _snapshot_leaf(entry, f"summaries[{index}]", allow_extra=True)
@@ -639,6 +771,8 @@ def _validate_manifest_snapshot_schema(manifest: Mapping[str, Any]) -> None:
             "label",
             "catalog_path",
         }
+        if schema_version >= 14:
+            expected_method_fields.add("definition_sha256")
         if set(selected_method) != expected_method_fields:
             raise launch_common.LaunchError(
                 "Frozen snapshot selected_method has an invalid structure"
@@ -663,6 +797,12 @@ def _validate_manifest_snapshot_schema(manifest: Mapping[str, Any]) -> None:
             raise launch_common.LaunchError(
                 "The selected method snapshot has no published catalog path"
             )
+        if schema_version >= 14 and not launch_common._is_sha256_digest(
+            str(selected_method.get("definition_sha256", ""))
+        ):
+            raise launch_common.LaunchError(
+                "The selected method snapshot has no valid mathematical-definition digest"
+            )
     if _manifest_schema_version(manifest) >= 3:
         outputs = manifest.get("submission_outputs")
         if not isinstance(outputs, Mapping):
@@ -679,20 +819,29 @@ def _validate_manifest_snapshot_schema(manifest: Mapping[str, Any]) -> None:
             and isinstance(paper_review, Mapping)
             and paper_review.get("kind") == "assembly"
         )
-        # R5: assembly runs expect {assembly_manuscript}; full runs expect
-        # {post_review_manuscript, review_diff}; other runs expect {}.
-        if assembly_paper_run:
-            expected_names = {"assembly_manuscript"}
-        elif full_paper_run:
-            expected_names = {"post_review_manuscript", "review_diff"}
+        if schema_version >= 12 and (assembly_paper_run or full_paper_run):
+            expected_names = {"working_manuscript"}
+            if full_paper_run:
+                expected_names.add("review_diff")
         else:
-            expected_names = set()
+            if assembly_paper_run:
+                expected_names = {"assembly_manuscript"}
+            elif full_paper_run:
+                expected_names = {"post_review_manuscript", "review_diff"}
+            else:
+                expected_names = set()
         if set(outputs) != expected_names:
             raise launch_common.LaunchError(
                 "Run manifest submission_outputs do not match the selected run variant"
             )
         expected_paths = launch_plans._paper_manuscript_paths(str(manifest.get("output_root", "")))
-        if assembly_paper_run:
+        if schema_version >= 12 and (assembly_paper_run or full_paper_run):
+            expected = {
+                "working_manuscript": (expected_paths["assembly"], False),
+            }
+            if full_paper_run:
+                expected["review_diff"] = (expected_paths["diff"], True)
+        elif assembly_paper_run:
             expected = {
                 "assembly_manuscript": (expected_paths["assembly"], False),
             }
@@ -739,6 +888,9 @@ def _validate_manifest_snapshot_schema(manifest: Mapping[str, Any]) -> None:
             ):
                 raise launch_common.LaunchError(f"Run manifest {field} must be a SHA-256 digest")
         _validated_manifest_method_selection(manifest)
+    _validate_manifest_method_catalog_basis(manifest)
+    _validate_manifest_phase_two_literature_basis(manifest)
+    _validate_manifest_knowledge_heads(manifest)
     if _manifest_schema_version(manifest) >= 5:
         phase_slug = str(manifest.get("phase_slug", ""))
         declared = manifest.get("protocol_checkpoint")
@@ -821,6 +973,111 @@ def _validate_manifest_snapshot_schema(manifest: Mapping[str, Any]) -> None:
                 raise launch_common.LaunchError(
                     "Phase 04 protocol directory does not match the run plan"
                 )
+
+
+def _validate_manifest_method_catalog_basis(
+    manifest: Mapping[str, Any],
+) -> None:
+    """Require an exact reviewed catalog basis for schema 13 and later Phase 2."""
+
+    try:
+        phase_records.manifest_method_catalog_basis(manifest)
+    except phase_records.PhaseRecordError as exc:
+        raise launch_common.LaunchError(
+            f"Run manifest method_catalog_basis is invalid: {exc}"
+        ) from exc
+
+
+def _validate_manifest_phase_two_literature_basis(
+    manifest: Mapping[str, Any],
+) -> None:
+    """Bind new Phase 2 provenance to its exact frozen Phase 1 files."""
+
+    try:
+        supplied = phase_records.manifest_phase_two_literature_basis(manifest)
+    except phase_records.PhaseRecordError as exc:
+        raise launch_common.LaunchError(
+            f"Run manifest Phase 2 literature basis is invalid: {exc}"
+        ) from exc
+    if supplied is None:
+        return
+    raw_project = manifest.get("project_dir")
+    if not isinstance(raw_project, str) or not raw_project.strip():
+        raise launch_common.LaunchError(
+            "Phase 2 literature basis has no project directory"
+        )
+    try:
+        frozen = knowledge_heads.derive_frozen_launch_state(
+            Path(raw_project),
+            manifest,
+            None,
+        )
+        expected = phase_records.phase_two_literature_basis(
+            frozen[knowledge_heads.P1_KEY]
+        )
+    except (
+        knowledge_heads.KnowledgeHeadsError,
+        phase_records.PhaseRecordError,
+    ) as exc:
+        raise launch_common.LaunchError(
+            f"Frozen Phase 1 basis could not be verified: {exc}"
+        ) from exc
+    if supplied != expected:
+        raise launch_common.LaunchError(
+            "Phase 2 literature basis does not match the frozen Phase 1 record"
+        )
+
+
+def _validate_manifest_knowledge_heads(
+    manifest: Mapping[str, Any],
+) -> None:
+    """Bind current-schema semantic heads to exact frozen current records."""
+
+    if _manifest_schema_version(manifest) < 13:
+        return
+    if "knowledge_heads" not in manifest:
+        raise launch_common.LaunchError(
+            "Schema 13 run manifest is missing knowledge_heads"
+        )
+    phase = manifest.get("phase")
+    ordinary_method_run = bool(
+        isinstance(phase, Mapping)
+        and phase_requires_method_binding(phase)
+        and phase.get("audit_only") is not True
+    )
+    raw_heads = manifest.get("knowledge_heads")
+    if not ordinary_method_run:
+        if raw_heads is not None:
+            raise launch_common.LaunchError(
+                "Nonmethod and audit-only runs require null knowledge_heads"
+            )
+        return
+
+    selection = _validated_manifest_method_selection(manifest)
+    if not isinstance(selection, Mapping):
+        raise launch_common.LaunchError(
+            "Current-schema method-bound run has no exact method selection"
+        )
+    raw_project = manifest.get("project_dir")
+    if not isinstance(raw_project, str) or not raw_project.strip():
+        raise launch_common.LaunchError(
+            "Schema 13 run manifest has no project directory"
+        )
+    try:
+        normalized = knowledge_heads.validate_heads(raw_heads)
+        derived = knowledge_heads.derive_frozen_heads(
+            Path(raw_project),
+            manifest,
+            str(selection["stable_id"]),
+        )
+    except knowledge_heads.KnowledgeHeadsError as exc:
+        raise launch_common.LaunchError(
+            f"Schema 13 knowledge_heads are invalid: {exc}"
+        ) from exc
+    if raw_heads != normalized or normalized != derived:
+        raise launch_common.LaunchError(
+            "Schema 13 knowledge_heads do not match the frozen current records"
+        )
 
 
 def _validated_manifest_method_selection(
@@ -978,8 +1235,43 @@ def _read_manifest(project_dir: Path, phase_slug: str, run_id: str) -> dict[str,
     return manifest
 
 
-COMPLETED_METHOD_RESULT_STATUSES = frozenset({"approved", "awaiting_review"})
+COMPLETED_METHOD_RESULT_STATUSES = frozenset(
+    {"completed", "approved", "awaiting_review"}
+)
 COMPLETED_SCIENTIFIC_OUTCOMES = frozenset({"Complete", "Partial"})
+PHASE_FIVE_ACCEPTED_SCIENTIFIC_OUTCOMES = {
+    "01-literature-review": ("Complete", "Partial"),
+    project_state.METHOD_DEVELOPMENT_PHASE: ("Complete", "Partial"),
+    launch_common.IDEA_EVALUATION_PHASE: ("Complete",),
+    launch_common.DRAFT_ASSEMBLY_PHASE: ("Complete", "Partial"),
+}
+
+
+def _phase_five_outcome_blocker(
+    label: str, outcome: str, accepted: tuple[str, ...]
+) -> str:
+    required = " or ".join(accepted)
+    return (
+        f"{label}: current scientific outcome is {outcome}; "
+        f"Phase 5 requires {required}"
+    )
+
+
+def _phase_five_alignment_blocker(label: str, status: str) -> str:
+    """Translate a graph state into a researcher-facing Phase 5 blocker."""
+
+    if status == "review_required":
+        detail = (
+            "requires re-evaluation against the current method and sibling "
+            "result"
+        )
+    elif status == "not_available":
+        detail = "is missing a required current input"
+    elif status == "blocked":
+        detail = "cannot be verified"
+    else:
+        detail = "has an unrecognized alignment state"
+    return f"{label}: {detail}"
 
 
 def _completed_scientific_outcome(run: Mapping[str, Any]) -> str:
@@ -989,17 +1281,35 @@ def _completed_scientific_outcome(run: Mapping[str, Any]) -> str:
     return str(outcome) if outcome in COMPLETED_SCIENTIFIC_OUTCOMES else ""
 
 
+def _selected_method_definition_sha256(
+    manifest: Mapping[str, Any],
+    selected_method: Mapping[str, Any],
+) -> str:
+    field = (
+        "definition_sha256"
+        if _manifest_schema_version(manifest) >= 14
+        else "sha256"
+    )
+    digest = str(selected_method.get(field, "")).strip().lower()
+    return digest if launch_common._is_sha256_digest(digest) else ""
+
+
 def completed_method_branch_result(
     project_dir: str | Path,
     phase_slug: str,
     method: Mapping[str, Any],
+    *,
+    source_run_id: str | None = None,
 ) -> dict[str, str] | None:
-    """Return the newest intact completed result for one exact method branch."""
+    """Return an intact completed result for one exact method branch."""
 
     root = Path(project_dir).resolve()
     stable_id = str(method.get("stable_id", "")).strip()
     version = str(method.get("version", "")).strip()
-    definition_sha256 = str(method.get("sha256", "")).strip().lower()
+    try:
+        definition_sha256 = method_menu.method_definition_sha256(method)
+    except method_menu.MethodMenuValidationError:
+        return None
     if (
         not stable_id
         or not version
@@ -1021,8 +1331,17 @@ def completed_method_branch_result(
         run_id = str(run.get("run_id", "")).strip()
         if not run_id:
             continue
+        if source_run_id is not None and run_id != str(source_run_id).strip():
+            continue
         try:
             manifest = _read_manifest(root, phase_slug, run_id)
+            if source_run_id is not None:
+                phase_record = run.get("phase_record")
+                if _manifest_schema_version(manifest) >= 12 and (
+                    not isinstance(phase_record, Mapping)
+                    or phase_record.get("current_updated") is not True
+                ):
+                    continue
             if (
                 project_state._resolve_slug(phase_slug)
                 in {
@@ -1042,7 +1361,7 @@ def completed_method_branch_result(
                 or str(selected_method.get("stable_id", "")) != stable_id
                 or str(selected_method.get("version", "")) != version
                 or not hmac.compare_digest(
-                    str(selected_method.get("sha256", "")).lower(),
+                    _selected_method_definition_sha256(manifest, selected_method),
                     definition_sha256,
                 )
                 or not project_state.run_integrity_report(root, phase_slug, run_id).get("ok")
@@ -1065,8 +1384,10 @@ def completed_method_branch_result(
 def completed_phase_result(
     project_dir: str | Path,
     phase_slug: str,
+    *,
+    source_run_id: str | None = None,
 ) -> dict[str, str] | None:
-    """Return the newest intact completed result for a non-branch phase."""
+    """Return an intact completed result for a non-branch phase."""
 
     root = Path(project_dir).resolve()
     for run in reversed(project_state.get_runs(root, phase_slug)):
@@ -1083,10 +1404,20 @@ def completed_phase_result(
         run_id = str(run.get("run_id", "")).strip()
         if not run_id:
             continue
+        if source_run_id is not None and run_id != str(source_run_id).strip():
+            continue
         try:
+            if source_run_id is not None:
+                manifest = _read_manifest(root, phase_slug, run_id)
+                phase_record = run.get("phase_record")
+                if _manifest_schema_version(manifest) >= 12 and (
+                    not isinstance(phase_record, Mapping)
+                    or phase_record.get("current_updated") is not True
+                ):
+                    continue
             if not project_state.run_integrity_report(root, phase_slug, run_id).get("ok"):
                 continue
-        except (KeyError, OSError, ValueError, project_state.ProjectStateError):
+        except (KeyError, OSError, ValueError, launch_common.LaunchError, project_state.ProjectStateError):
             continue
         return {
             "phase": phase_slug,
@@ -1097,12 +1428,230 @@ def completed_phase_result(
     return None
 
 
+def completed_phase_two_method_result(
+    project_dir: str | Path,
+    method: Mapping[str, Any],
+    *,
+    source_run_id: str,
+) -> dict[str, str] | None:
+    """Return the exact Phase 2 run that last reviewed this method."""
+
+    root = Path(project_dir).resolve()
+    stable_id = str(method.get("stable_id", "")).strip()
+    version = str(method.get("version", "")).strip()
+    try:
+        definition_sha256 = method_menu.method_definition_sha256(method)
+    except method_menu.MethodMenuValidationError:
+        return None
+    method_file_sha256 = str(method.get("sha256", "")).strip().lower()
+    requested_run = str(source_run_id).strip()
+    provenance = method.get("provenance")
+    if (
+        not stable_id
+        or not version
+        or not launch_common._is_sha256_digest(method_file_sha256)
+        or not requested_run
+        or not isinstance(provenance, Mapping)
+        or str(provenance.get("review_source_run_id", "")).strip()
+        != requested_run
+        or str(provenance.get("method_sha256", "")).strip().lower()
+        != method_file_sha256
+    ):
+        return None
+    for run in reversed(
+        project_state.get_runs(root, project_state.METHOD_DEVELOPMENT_PHASE)
+    ):
+        run_id = str(run.get("run_id", "")).strip()
+        status = str(run.get("status", ""))
+        if run_id != requested_run:
+            continue
+        if (
+            status
+            not in COMPLETED_METHOD_RESULT_STATUSES | {"superseded"}
+            or not run.get("submitted_at")
+            or not run.get("final_summary")
+        ):
+            return None
+        scientific_outcome = _completed_scientific_outcome(run)
+        if (
+            not scientific_outcome
+            or scientific_outcome
+            != str(provenance.get("review_scientific_outcome", ""))
+        ):
+            return None
+        phase_record = run.get("phase_record")
+        seal = run.get("method_menu_seal")
+        entries = seal.get("entries") if isinstance(seal, Mapping) else None
+        match = next(
+            (
+                entry
+                for entry in entries
+                if isinstance(entry, Mapping)
+                and str(entry.get("stable_id", "")) == stable_id
+            ),
+            None,
+        ) if isinstance(entries, list) else None
+        sealed_definition_sha256 = (
+            str(match.get("definition_sha256", "")).lower()
+            if isinstance(match, Mapping)
+            else ""
+        )
+        sealed_method_file_sha256 = (
+            str(match.get("sha256", "")).lower()
+            if isinstance(match, Mapping)
+            else ""
+        )
+        sealed_identity_matches = bool(
+            sealed_definition_sha256 == definition_sha256
+            if sealed_definition_sha256
+            else sealed_method_file_sha256 == method_file_sha256
+        )
+        revision = provenance.get("revision")
+        if (
+            not isinstance(phase_record, Mapping)
+            or phase_record.get("current_updated") is not True
+            or not isinstance(match, Mapping)
+            or str(match.get("version", "")) != version
+            or not sealed_identity_matches
+            or (
+                isinstance(revision, Mapping)
+                and (
+                    str(revision.get("current_version", "")) != version
+                    or str(revision.get("definition_sha256", "")).lower()
+                    != definition_sha256
+                )
+            )
+        ):
+            return None
+        try:
+            manifest = _read_manifest(
+                root,
+                project_state.METHOD_DEVELOPMENT_PHASE,
+                run_id,
+            )
+            phase_options.validate_manifest_phase_options(
+                project_state.METHOD_DEVELOPMENT_PHASE,
+                manifest.get("run_scope"),
+                manifest.get("context_policy"),
+            )
+            manifest_basis = (
+                phase_records.manifest_phase_two_literature_basis(manifest)
+            )
+            run_scope = manifest.get("run_scope")
+            provenance_scope = str(provenance.get("review_scope", ""))
+            focused_id = (
+                str(run_scope.get("focused_method_id") or "").strip()
+                if isinstance(run_scope, Mapping)
+                else ""
+            )
+            if (
+                _manifest_schema_version(manifest) < 13
+                or not isinstance(run_scope, Mapping)
+                or str(run_scope.get("scope", "")) != provenance_scope
+                or (
+                    provenance_scope == phase_options.METHOD_SCOPE_FOCUSED
+                    and focused_id != stable_id
+                )
+                or manifest_basis != provenance.get("literature_basis")
+            ):
+                return None
+            integrity_ok = bool(
+                project_state.run_integrity_report(
+                    root,
+                    project_state.METHOD_DEVELOPMENT_PHASE,
+                    run_id,
+                ).get("ok")
+            )
+        except (
+            KeyError,
+            OSError,
+            launch_common.LaunchError,
+            phase_options.PhaseOptionError,
+            phase_records.PhaseRecordError,
+            project_state.ProjectStateError,
+        ):
+            integrity_ok = False
+        if not integrity_ok:
+            return None
+        return {
+            "phase": project_state.METHOD_DEVELOPMENT_PHASE,
+            "run_id": run_id,
+            "status": status,
+            "scientific_outcome": scientific_outcome,
+        }
+    return None
+
+
 def phase_five_branch_readiness(
     project_dir: str | Path,
     method: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Check the Phase 1 to Phase 4 results required by Phase 5."""
+    """Check the authoritative current Phase 1 to Phase 4 records for Phase 5."""
 
+    from core import empirical_records, literature_records, theory_records
+
+    stable_id = str(method.get("stable_id", "")).strip()
+    version = str(method.get("version", "")).strip()
+    try:
+        definition_sha256 = method_menu.method_definition_sha256(method)
+    except method_menu.MethodMenuValidationError:
+        definition_sha256 = ""
+    provenance = method.get("provenance")
+    method_review_source = (
+        str(provenance.get("review_source_run_id", "")).strip()
+        if isinstance(provenance, Mapping)
+        else ""
+    )
+    identity = {
+        "stable_id": stable_id,
+        "version": version,
+        "definition_sha256": definition_sha256,
+    }
+    source_runs: dict[str, str | None] = {
+        "01-literature-review": None,
+        project_state.METHOD_DEVELOPMENT_PHASE: None,
+        launch_common.IDEA_EVALUATION_PHASE: None,
+        launch_common.DRAFT_ASSEMBLY_PHASE: None,
+    }
+    source_runs[project_state.METHOD_DEVELOPMENT_PHASE] = method_review_source or None
+    try:
+        literature = literature_records.load_current_literature_record(project_dir)
+        if isinstance(literature, Mapping):
+            source_runs["01-literature-review"] = str(
+                literature.get("source_run_id", "")
+            ).strip() or None
+    except (OSError, ValueError):
+        pass
+    if not isinstance(provenance, Mapping):
+        try:
+            state = project_state.load(project_dir)
+            phase = state.get("phases", {}).get(
+                project_state.METHOD_DEVELOPMENT_PHASE, {}
+            )
+            if isinstance(phase, Mapping):
+                source_runs[project_state.METHOD_DEVELOPMENT_PHASE] = str(
+                    phase.get("current_run") or phase.get("approved_run") or ""
+                ).strip() or None
+        except (OSError, ValueError, project_state.ProjectStateError):
+            pass
+    try:
+        theory = theory_records.load_current_theory(project_dir, stable_id)
+        if isinstance(theory, Mapping) and theory.get("method_identity") == identity:
+            source_runs[launch_common.IDEA_EVALUATION_PHASE] = str(
+                theory.get("source_run_id", "")
+            ).strip() or None
+    except (OSError, ValueError):
+        pass
+    try:
+        empirical = empirical_records.load_current_package(project_dir, stable_id)
+        if isinstance(empirical, Mapping) and empirical.get("method") == identity:
+            source_runs[launch_common.DRAFT_ASSEMBLY_PHASE] = str(
+                empirical.get("source_run_id", "")
+            ).strip() or None
+    except (OSError, ValueError):
+        pass
+
+    authoritative_mode = any(source_runs.values())
     requirements: list[dict[str, Any]] = []
     blockers: list[str] = []
     for phase_slug, label, branch_specific in (
@@ -1111,24 +1660,130 @@ def phase_five_branch_readiness(
         (launch_common.IDEA_EVALUATION_PHASE, "Phase 3 theoretical development", True),
         (launch_common.DRAFT_ASSEMBLY_PHASE, "Phase 4 implementation and experiments", True),
     ):
-        result = (
-            completed_method_branch_result(project_dir, phase_slug, method)
-            if branch_specific
-            else completed_phase_result(project_dir, phase_slug)
+        source_run_id = source_runs.get(phase_slug)
+        if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE and method_review_source:
+            result = completed_phase_two_method_result(
+                project_dir,
+                method,
+                source_run_id=method_review_source,
+            )
+        elif phase_slug == project_state.METHOD_DEVELOPMENT_PHASE and isinstance(
+            provenance, Mapping
+        ):
+            result = None
+        elif branch_specific:
+            result = completed_method_branch_result(
+                project_dir,
+                phase_slug,
+                method,
+                source_run_id=source_run_id,
+            )
+        else:
+            result = completed_phase_result(
+                project_dir,
+                phase_slug,
+                source_run_id=source_run_id,
+            )
+        if authoritative_mode and source_run_id is None:
+            result = None
+        accepted_outcomes = PHASE_FIVE_ACCEPTED_SCIENTIFIC_OUTCOMES[phase_slug]
+        satisfied = bool(
+            result is not None
+            and result.get("scientific_outcome") in accepted_outcomes
         )
         requirements.append({
             "phase": phase_slug,
             "label": label,
-            "satisfied": result is not None,
+            "satisfied": satisfied,
             "result": result,
         })
         if result is None:
-            blockers.append(label)
+            blockers.append(f"{label}: no usable current result")
+        elif not satisfied:
+            blockers.append(
+                _phase_five_outcome_blocker(
+                    label,
+                    str(result.get("scientific_outcome", "unrecognized")),
+                    accepted_outcomes,
+                )
+            )
+    branch_requirements = {
+        item["phase"]: item
+        for item in requirements
+        if item["phase"] in {
+            project_state.METHOD_DEVELOPMENT_PHASE,
+            launch_common.IDEA_EVALUATION_PHASE,
+            launch_common.DRAFT_ASSEMBLY_PHASE,
+        }
+    }
+    try:
+        graph = knowledge_graph.build_branch_basis_graph(
+            project_dir,
+            stable_id,
+        )
+        if graph.get("branch") != identity:
+            raise knowledge_graph.KnowledgeGraphBuildError(
+                "branch graph method identity differs from the selected method"
+            )
+        graph_nodes = {
+            node.get("id"): node
+            for node in graph.get("nodes", [])
+            if isinstance(node, Mapping)
+        }
+        for phase_slug, node_id in (
+            (project_state.METHOD_DEVELOPMENT_PHASE, "p2-method"),
+            (launch_common.IDEA_EVALUATION_PHASE, "p3-theory"),
+            (launch_common.DRAFT_ASSEMBLY_PHASE, "p4-empirical"),
+        ):
+            requirement = branch_requirements[phase_slug]
+            node = graph_nodes.get(node_id)
+            status = (
+                node.get("status", {}).get("alignment_status")
+                if isinstance(node, Mapping)
+                and isinstance(node.get("status"), Mapping)
+                else None
+            )
+            if status == "exact_match":
+                continue
+            requirement["satisfied"] = False
+            if requirement["result"] is None:
+                continue
+            if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE:
+                if status == "review_required":
+                    blockers.append(
+                        "Phase 2 method development: new Phase 1 evidence "
+                        "requires review"
+                    )
+                else:
+                    blockers.append(
+                        "Phase 2 method development: the reviewed Phase 1 "
+                        "literature basis cannot be verified"
+                    )
+            else:
+                blockers.append(
+                    _phase_five_alignment_blocker(
+                        str(requirement["label"]),
+                        str(status or "unavailable"),
+                    )
+                )
+    except (
+        OSError,
+        ValueError,
+        knowledge_graph.KnowledgeGraphBuildError,
+    ):
+        for requirement in branch_requirements.values():
+            requirement["satisfied"] = False
+            if requirement["result"] is not None:
+                blockers.append(
+                    str(requirement["label"])
+                    + ": current branch alignment cannot be verified"
+                )
+
     return {
         "ready": not blockers,
-        "method_id": str(method.get("stable_id", "")).strip(),
-        "method_version": str(method.get("version", "")).strip(),
-        "method_sha256": str(method.get("sha256", "")).strip().lower(),
+        "method_id": stable_id,
+        "method_version": version,
+        "method_sha256": definition_sha256,
         "requirements": requirements,
         "blockers": blockers,
     }
@@ -1244,15 +1899,20 @@ def phase_five_required_completed_runs(
                 "method_version",
                 "method_sha256",
             }
+        allowed_statuses = COMPLETED_METHOD_RESULT_STATUSES
+        if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE:
+            allowed_statuses = (
+                COMPLETED_METHOD_RESULT_STATUSES | {"superseded"}
+            )
         if (
             not isinstance(requirement, Mapping)
             or requirement.get("satisfied") is not True
             or not isinstance(result, Mapping)
             or set(result) != expected_result_fields
             or result.get("phase") != phase_slug
-            or result.get("status") not in COMPLETED_METHOD_RESULT_STATUSES
+            or result.get("status") not in allowed_statuses
             or result.get("scientific_outcome")
-            not in COMPLETED_SCIENTIFIC_OUTCOMES
+            not in PHASE_FIVE_ACCEPTED_SCIENTIFIC_OUTCOMES[phase_slug]
             or (
                 branch_specific
                 and (
@@ -1273,6 +1933,48 @@ def phase_five_required_completed_runs(
         completed[phase_slug] = run_id.strip()
     return completed
 
+
+def _verify_schema_13_referenced_scientific_context(
+    project_dir: Path,
+    manifest: Mapping[str, Any],
+) -> None:
+    """Recheck project-referenced Phase 4 evidence at use boundaries."""
+
+    if _manifest_schema_version(manifest) < 13:
+        return
+    phase = manifest.get("phase")
+    ordinary_method_run = bool(
+        isinstance(phase, Mapping)
+        and phase_requires_method_binding(phase)
+        and phase.get("audit_only") is not True
+    )
+    if not ordinary_method_run:
+        return
+    selection = _validated_manifest_method_selection(manifest)
+    if not isinstance(selection, Mapping):
+        raise launch_common.LaunchError(
+            "Current-schema method-bound run has no exact method selection"
+        )
+    try:
+        state = knowledge_heads.derive_frozen_launch_state(
+            project_dir,
+            manifest,
+            str(selection["stable_id"]),
+        )
+        verified_heads = knowledge_heads.validate_heads(
+            state["knowledge_heads"]
+        )
+    except knowledge_heads.KnowledgeHeadsError as exc:
+        raise launch_common.LaunchError(
+            "The frozen Phase 3/4 context or referenced Phase 4 evidence "
+            f"is no longer intact: {exc}"
+        ) from exc
+    if verified_heads != manifest.get("knowledge_heads"):
+        raise launch_common.LaunchError(
+            "The frozen Phase 3/4 context no longer matches this run"
+        )
+
+
 def _verify_frozen_inputs(
     project_dir: Path,
     phase_slug: str,
@@ -1282,6 +1984,7 @@ def _verify_frozen_inputs(
     """Verify every frozen prompt input and every derived output boundary."""
 
     _validate_manifest_snapshot_schema(manifest)
+    _verify_schema_13_referenced_scientific_context(project_dir, manifest)
     context_root = launch_common.run_context_dir(project_dir, phase_slug, run_id).resolve()
 
     def verify_node(value: Any) -> None:

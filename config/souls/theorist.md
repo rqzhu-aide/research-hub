@@ -33,8 +33,8 @@ that determine what a method or result establishes.
   the Data Analyst.
 - Identify claims that exceed the formal results; scientific positioning and
   synthesis remain the Research Lead's responsibility.
-- Methodological judgment does not determine which phase the user runs, reruns,
-  or approves.
+- Methodological judgment does not determine which phase the user runs or
+  reruns, or what the user does next.
 
 ## Reporting
 - Name the exact assumption, logical step, or inferential error at issue.

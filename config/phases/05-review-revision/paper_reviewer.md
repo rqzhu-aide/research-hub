@@ -1,26 +1,23 @@
 # Review & Revision: Paper Reviewer
 
 ## Your task
-Read the manuscript produced in the Phase 05 assembly run and produce a
+Read the immutable snapshot of the branch's current manuscript and produce a
 **structured, rigorous review** suitable for a top venue. Your review guides the
-lead's revision.
+lead's revision but does not modify the manuscript.
 
 **Use the `stat-paper-reviewer` skill** (provisioned to your profile). Load it
 at the start of your work and follow its review framework, scoring criteria,
 and output format.
 
 ## What to review
-Read the complete combined draft from the method-specific folder. Also read:
-
-- the Phase 01 literature review to assess positioning and related work;
-- the Phase 02 canonical method definition to identify what was proposed;
-- the completed Phase 03 theory and discussion reports for that method;
-- the completed Phase 04 empirical results and discussion reports for the exact
-  same stable ID, version, and definition digest.
+Read only the frozen manuscript supplied for this review. Assess whether the
+paper itself provides enough definitions, proof support, empirical detail,
+positioning, and references for an independent reader. Do not use internal team
+summaries to repair an omission in the paper.
 
 If the manuscript combines mismatched method identities or omits either the
 Phase 3 or Phase 4 basis for a central claim, treat that as a major soundness
-problem and identify the affected sections.
+problem when it is visible from the paper, and identify the affected sections.
 
 ## Review dimensions
 Evaluate the draft across four dimensions:

@@ -204,9 +204,10 @@ Before making a decision, ask:
 
 ## Inspect the result and choose the next action
 
-A completed Phase 1 run becomes available for inspection and possible use as
-context. Completion does not certify the literature conclusions or require
-later work to rely on them.
+A valid Phase 1 run adds its new unique sources to the cumulative reference
+library and replaces the current literature synthesis. The source cards are not
+regenerated or removed on later runs. Completion does not certify the literature
+conclusions or require later work to rely on them.
 
 | Action | Use it when | Direction to provide |
 |---|---|---|
@@ -219,26 +220,59 @@ control model.
 
 ## Consequences for later phases
 
-A Phase 2 run can use relevant Phase 1 material to avoid reproducing known
-work, distinguish new mechanisms from established ingredients, and define
-comparisons that will matter in theory and experiments.
+A Phase 2 run uses Phase 1 to avoid reproducing known work, separate a new
+mechanism from established ingredients, and define comparisons for theory and
+experiments. At launch, Research Hub fixes the exact reference collection and
+literature synthesis that the Phase 2 team will assess.
 
-No literature search establishes originality permanently. Revisit its
-conclusions when the method changes or new evidence appears. If a new Phase 1
-result changes evidence used by later work, inspect the affected claims and
-decide whether a focused or full rerun is needed. Earlier runs remain available
-with the context they originally used.
+For each method covered by a valid Complete or Partial Phase 2 publication,
+Research Hub records that Phase 1 basis and distinguishes:
+
+- the **definition source**, which is the run that last changed the exact method
+  definition; and
+- the **review source**, which is the most recent Phase 2 run that assessed the
+  method against its recorded Phase 1 basis.
+
+A full-catalog Phase 2 run updates the review source and literature basis for
+every catalog entry, including a method retained without change. A focused run
+updates only the selected method. Nonselected methods retain their earlier
+review sources and literature bases.
+
+When a new Phase 1 result changes the reference collection or synthesis, the
+Phase 2 literature status becomes yellow for each method whose recorded basis
+no longer matches. Yellow means that the literature comparison has not yet been
+reviewed against the new evidence. It does not imply that the method definition
+is wrong, and it does not by itself make matching Phase 3 or Phase 4 work
+yellow.
+
+You decide whether to run Phase 2 for the full catalog, focus on one method, or
+defer. No status starts a run. If the team retains a method without changing its
+definition, the review source and literature basis advance while the definition
+source remains unchanged. This clears the Phase 2 literature signal for the
+covered method without invalidating matching Phase 3 or Phase 4 results. If the
+method definition changes, those downstream results require review against the
+new definition.
+
+Phase 5 requires the selected method's Phase 2 literature basis to match the
+current Phase 1 record. Phase 5 also records the exact reference collection and
+literature synthesis as separate manuscript inputs. Adding one unique reference
+therefore makes an existing manuscript yellow even if the synthesis text is
+unchanged. Earlier Phase 1 runs remain provenance records; the current library
+and synthesis are the normal basis for new work.
 
 ## Rerun guidance
 
-Rerun Phase 1 with a named purpose. Ask the team to compare against the relevant
-earlier result, retain supported findings, correct contradicted claims, and
-search the identified gap. A useful rerun should make clear:
+Rerun Phase 1 with a named purpose. The team searches against the current
+cumulative library and produces a delta containing only new unique references.
+Research Hub rejects repeated reference identities before promotion. The lead
+rewrites the compact current synthesis to reflect the complete expanded library.
+A useful rerun should make clear:
 
 - which part of the contribution or scope changed;
 - which sources or search paths are new;
-- which earlier conclusions remain supported;
-- which conclusions changed and why;
+- which current conclusions remain supported;
+- which conclusions changed because of the new evidence;
 - whether the new evidence changes the recommendation for Phase 2.
 
-Prior runs remain part of the research record.
+Prior runs remain part of the provenance record, but new runs do not need to
+repeat their references.

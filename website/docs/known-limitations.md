@@ -9,43 +9,31 @@ slug: /known-limitations
 Research Hub is under active development. This page records limitations that
 affect how you use the current `main` branch.
 
-## Review & Revision has a legacy launch gate
+## Legacy review-only records are read-only
 
-Phase 5 Review & Revision still requires a same-branch Assembly run whose record
-has the legacy `approved` status. The current phase panel does not provide an
-approval action, so a newly completed Assembly run cannot normally satisfy this
-gate. Existing projects may contain an eligible record created by an earlier
-interface.
+Projects created by an earlier version may contain review-only Phase 5 records.
+They remain available in run history for provenance, but the current interface
+does not launch or relaunch that legacy path. Use **Review & Revision** to review
+the branch's current `manuscript.md` and replace it with a revised current
+manuscript in one user-started run.
 
-This is a current implementation restriction, not a scientific judgment and
-not the intended long-term run policy. Assembly can still create or rebuild a
-manuscript, but the current Web UI has no supported path from a newly completed
-Assembly directly into the combined reviewer-and-revision run.
+## Context selection is phase-specific
 
-A later Phase 5 result can also cause an older eligible Assembly record to stop
-satisfying the gate, which restricts repeated Review & Revision cycles.
+Research Hub does not provide a file-by-file context picker. Each phase instead
+uses a storage rule that keeps its normal input compact:
 
-## Review target is review-only
+- Phase 1 searches against the cumulative reference library and adds a validated
+  delta of new sources.
+- Phase 2 lets you update the full catalog or focus on one active method.
+- Phase 3 uses the current theory and empirical records by default. You may also
+  include archived Phase 3 summaries when they exist.
+- Phase 4 uses the cumulative evidence index and current empirical synthesis.
+- Phase 5 uses the verified current records from Phases 1 through 4 and one
+  current branch manuscript.
 
-The Phase 5 **Review target** option gives the Paper Reviewer a manuscript-only
-first reading, followed by an assessment informed by the internal scientific
-record. It does not include a Research Lead revision stage.
-
-Standard **Review & Revision** reviews and revises the Assembly recognized by
-its legacy launch gate. It does not continue from the exact post-review
-manuscript chosen as a Review target. The current interface has no one-click
-action to revise that selected manuscript.
-
-## Prior context selection is automatic
-
-Launch forms show the prior context assembled for a run, but they do not yet
-let the user include or exclude individual completed results. Research Hub
-selects eligible prerequisite and same-branch material according to the current
-phase rules.
-
-If the assembled context is not suitable, do not launch the run. Rerun the
-relevant phase, choose another method where applicable, or state a narrower
-question that makes the intended use of the available evidence explicit.
+Individual archived artifacts cannot currently be selected one by one. Use the
+available phase scope or context option, and state any narrower scientific focus
+in the run instructions.
 
 ## Platform support
 

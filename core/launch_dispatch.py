@@ -55,6 +55,27 @@ def _planned_task_output(
     return _planned_output(manifest, round_n, role)
 
 
+def _production_task_workspaces(
+    manifest: Mapping[str, Any],
+    round_n: int,
+    role: str,
+) -> tuple[Path, Path, str]:
+    """Return the task root, round artifact root, and safety label."""
+
+    output_root = Path(str(manifest["output_root"]))
+    round_workspace = _planned_output(manifest, round_n, role).parent
+    if role == "research_lead":
+        return (
+            output_root,
+            round_workspace,
+            "Phase 3 or Phase 4 research-lead package workspace",
+        )
+    return (
+        round_workspace,
+        round_workspace,
+        "Phase 3 or Phase 4 write-limited round workspace",
+    )
+
 def _verify_completed_round_artifacts(
     project_dir: Path,
     run: Mapping[str, Any],
@@ -477,6 +498,19 @@ def _dispatch_task(
         manifest.get("method_selection"),
         manifest.get("snapshots", {}).get("selected_method"),
     )
+    current_records_block = launch_prompts._current_records_prompt_block(
+        manifest.get("snapshots", {}),
+        phase_slug=phase_slug,
+    )
+    phase_package_block = (
+        ""
+        if phase_four_split and task_kind == "protocol"
+        else launch_prompts._phase_package_prompt_block(
+            phase_slug,
+            manifest.get("output_root"),
+            role=role,
+        )
+    )
 
     if proof_audit_stage:
         proof_material = launch_prompts._proof_audit_material_block(
@@ -627,6 +661,11 @@ Frozen prior results and discussion:
 Prior-round artifacts that must be read for critique or handoff:
 {prior_text if prior_text else '- This is the first round or stage'}
 
+Canonical current phase records at launch:
+{current_records_block}
+
+{phase_package_block}
+
 {method_selection_block}
 
 {protocol_checkpoint_block}
@@ -646,6 +685,7 @@ When the report exists, complete this kanban task with a concise handoff summary
 """
     review_bundle_record: dict[str, str] | None = None
     task_workspace = project_dir
+    round_workspace = _planned_output(manifest, round_n, role).parent
     manifest_schema = launch_manifest._manifest_schema_version(manifest)
     production_workspace = bool(
         phase_slug in {
@@ -666,8 +706,11 @@ When the report exists, complete this kanban task with a concise handoff summary
             )
             workspace_label = "Phase 04 isolated protocol workspace"
         else:
-            workspace_directory = _planned_output(manifest, round_n, role).parent
-            workspace_label = "Phase 3 or Phase 4 write-limited round workspace"
+            (
+                workspace_directory,
+                round_workspace,
+                workspace_label,
+            ) = _production_task_workspaces(manifest, round_n, role)
         task_workspace = launch_common._ensure_contained_directory(
             workspace_directory,
             project_dir,
@@ -676,7 +719,21 @@ When the report exists, complete this kanban task with a concise handoff summary
         if production_workspace and not (
             phase_four_split and task_kind == "protocol"
         ):
-            task_brief += f"""
+            if role == "research_lead":
+                task_brief += f"""
+
+## Required file locations
+
+Finalize only the staged current-record files named above at the run root.
+Write every other code file, data file, table, figure, proof supplement, or
+supporting artifact created by this task inside the assigned round directory:
+`{round_workspace}`
+
+Do not alter an earlier round directory. Research Hub inventories and seals the
+assigned round directory when the stage completes.
+"""
+            else:
+                task_brief += f"""
 
 ## Required supporting-file location
 

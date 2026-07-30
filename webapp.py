@@ -36,10 +36,17 @@ from flask import (
 from werkzeug.sansio.utils import host_is_trusted
 
 import hub
-from core import method_menu, profile_skills, project_state
+from core import (
+    method_menu,
+    phase_options,
+    profile_skills,
+    project_state,
+    web_prerequisites,
+)
 from core.safe_markdown import render_safe_markdown
 from core import launch_plans
 from core.launch_run import (
+    LaunchError,
     PAPER_WRITING_PHASE,
     IDEA_EVALUATION_PHASE,
     DRAFT_ASSEMBLY_PHASE,
@@ -56,7 +63,6 @@ from core.launch_run import (
     exact_rerun_options,
     launch_plan_version,
     launch_run,
-    paper_review_only_phase,
     phase_requires_method_binding,
     phase_uses_catalog_method_selection,
     phase_five_branch_readiness,
@@ -1047,12 +1053,6 @@ def project_view(project_id: int) -> Response | str:
         )
     if phase_data is not None and not phase_data.get("recovery_only"):
         phase_data["phase_plan_version"] = launch_plan_version(config, tab)
-        if tab == PAPER_WRITING_PHASE and phase_config is not None:
-            phase_data["review_phase_plan_version"] = launch_plan_version(
-                config,
-                tab,
-                effective_phase=paper_review_only_phase(phase_config),
-            )
     context = {
         "project": project,
         "projects": [dict(item) for item in hub.list_projects()],
@@ -1106,10 +1106,18 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
         review_target = request.form.get("review_target", "").strip()
         review_target_sha256 = request.form.get("review_target_sha256", "").strip()
         theory_plan = request.form.get("theory_plan", "").strip()
+        if review_target or review_target_sha256:
+            raise ValueError(
+                "Historical Phase 5 review targets are read-only. Choose Assembly "
+                "or Review and revision for the current manuscript"
+            )
         proof_audit_source_run_id = request.form.get(
             "proof_audit_source_run_id", ""
         ).strip()
         run_mode = request.form.get("run_mode", "").strip()
+        method_catalog_scope = _bounded_form_value("method_catalog_scope", 64)
+        focused_method_id = _bounded_form_value("focused_method_id", 200)
+        theory_context_policy = _bounded_form_value("theory_context_policy", 64)
         if preserve_frozen_plan:
             if not rerun_from:
                 raise ValueError("Select the prior run whose configuration should be repeated")
@@ -1120,6 +1128,9 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
                     theory_plan,
                     proof_audit_source_run_id,
                     run_mode,
+                    method_catalog_scope,
+                    focused_method_id,
+                    theory_context_policy,
                 )
             ):
                 raise ValueError(
@@ -1128,14 +1139,65 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
             exact_options = exact_rerun_options(
                 project_dir, phase_slug, rerun_from
             )
+            recorded_scope = exact_options.get("run_scope")
+            if isinstance(recorded_scope, Mapping):
+                method_catalog_scope = str(recorded_scope.get("scope", ""))
+                focused_method_id = str(
+                    recorded_scope.get("focused_method_id") or ""
+                )
+            else:
+                method_catalog_scope = str(
+                    exact_options.get("method_catalog_scope", "")
+                )
+                focused_method_id = str(
+                    exact_options.get("focused_method_id", "")
+                )
+            recorded_context = exact_options.get("context_policy")
+            if isinstance(recorded_context, Mapping):
+                theory_context_policy = str(
+                    recorded_context.get("policy", "")
+                )
+            else:
+                theory_context_policy = str(
+                    exact_options.get("theory_context_policy", "")
+                )
+            if not method_catalog_scope or not theory_context_policy:
+                try:
+                    recorded_manifest = launch_plans.launch_manifest._read_manifest(
+                        project_dir, phase_slug, rerun_from
+                    )
+                except (
+                    OSError,
+                    ValueError,
+                    LaunchError,
+                    project_state.ProjectStateError,
+                ):
+                    recorded_manifest = {}
+                if not method_catalog_scope:
+                    manifest_scope = recorded_manifest.get("run_scope")
+                    if isinstance(manifest_scope, Mapping):
+                        method_catalog_scope = str(
+                            manifest_scope.get("scope", "")
+                        )
+                        focused_method_id = str(
+                            manifest_scope.get("focused_method_id") or ""
+                        )
+                if not theory_context_policy:
+                    manifest_context = recorded_manifest.get("context_policy")
+                    if isinstance(manifest_context, Mapping):
+                        theory_context_policy = str(
+                            manifest_context.get("policy", "")
+                        )
             if exact_options["kind"] == "theory":
                 theory_plan = exact_options["theory_plan"]
                 proof_audit_source_run_id = exact_options.get(
                     "proof_audit_source_run_id", ""
                 )
             elif exact_options["kind"] == "paper_review_only":
-                review_target = exact_options["review_target"]
-                review_target_sha256 = exact_options["review_target_sha256"]
+                raise ValueError(
+                    "Historical review-only runs can be inspected but cannot be "
+                    "relaunched. Choose Assembly or Review and revision"
+                )
             elif exact_options["kind"] == "run_mode":
                 run_mode = exact_options["run_mode"]
             elif exact_options["kind"] == "paper_full":
@@ -1188,6 +1250,7 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
         run_specific_method_version = ""
         run_specific_method_sha256 = ""
         submitted_menu_version = ""
+        phase_two_catalog_run = phase_slug == project_state.METHOD_DEVELOPMENT_PHASE
         method_bound_phase = phase_requires_method_binding(phase)
         method_branch = _bounded_form_value("method_branch", 200)
         branch_entry = None
@@ -1198,13 +1261,64 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
                 or theory_plan != THEORY_PLAN_AUDIT_ONLY
             )
         )
+        submitted_knowledge_heads_version = ""
+        submitted_phase_two_review_version = ""
+        submitted_branch_graph_version = ""
         if catalog_method_run:
+            submitted_knowledge_heads_version = _bounded_form_value(
+                "knowledge_heads_version", 64
+            ).lower()
+            if len(submitted_knowledge_heads_version) != 64 or any(
+                character not in "0123456789abcdef"
+                for character in submitted_knowledge_heads_version
+            ):
+                raise ValueError(
+                    "The selected method context cannot be verified. Reload "
+                    "this phase and review the method again"
+                )
+            if phase_slug in {
+                IDEA_EVALUATION_PHASE,
+                DRAFT_ASSEMBLY_PHASE,
+            }:
+                submitted_phase_two_review_version = _bounded_form_value(
+                    "phase_two_review_version", 64
+                ).lower()
+                if len(submitted_phase_two_review_version) != 64 or any(
+                    character not in "0123456789abcdef"
+                    for character in submitted_phase_two_review_version
+                ):
+                    raise ValueError(
+                        "The selected method's Phase 2 literature-review "
+                        "status cannot be verified. Reload this phase and "
+                        "review the method again"
+                    )
+            if phase_slug == PAPER_WRITING_PHASE:
+                submitted_branch_graph_version = _bounded_form_value(
+                    "branch_graph_version", 64
+                ).lower()
+                if len(submitted_branch_graph_version) != 64 or any(
+                    character not in "0123456789abcdef"
+                    for character in submitted_branch_graph_version
+                ):
+                    raise ValueError(
+                        "The selected Phase 5 context cannot be verified. "
+                        "Reload the phase and review the method again"
+                    )
+        if catalog_method_run or phase_two_catalog_run:
             submitted_menu_version = _bounded_form_value(
                 "method_menu_version", 64
             ).lower()
-            if len(submitted_menu_version) != 64 or any(
-                character not in "0123456789abcdef"
-                for character in submitted_menu_version
+            menu_version_required = (
+                catalog_method_run
+                or bool(submitted_menu_version)
+                or method_catalog_scope == phase_options.METHOD_SCOPE_FOCUSED
+                or bool(focused_method_id)
+            )
+            if menu_version_required and (
+                len(submitted_menu_version) != 64 or any(
+                    character not in "0123456789abcdef"
+                    for character in submitted_menu_version
+                )
             ):
                 raise ValueError(
                     "The reviewed Phase 2 method catalog version is missing or invalid"
@@ -1215,13 +1329,56 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
                 raise ValueError(
                     "The Phase 2 method catalog could not be verified"
                 ) from exc
-            if not hmac.compare_digest(
+            if submitted_menu_version and not hmac.compare_digest(
                 submitted_menu_version, current_menu_version
             ):
                 raise ValueError(
                     "The Phase 2 method catalog changed since this page was shown. "
                     "Reload this phase and review the methods again"
                 )
+        if phase_two_catalog_run:
+            menu = method_menu.load_method_menu(project_dir)
+            active_method_ids = {
+                str(entry.get("stable_id", "")).strip()
+                for entry in menu.get("entries", [])
+                if isinstance(entry, Mapping)
+                and not entry.get("errors")
+                and entry.get("status") != "retired"
+            }
+            try:
+                scope_record = phase_options.phase_two_scope(
+                    method_catalog_scope,
+                    focused_method_id=focused_method_id,
+                    active_method_ids=active_method_ids,
+                )
+            except phase_options.PhaseOptionError as exc:
+                raise ValueError(str(exc)) from exc
+            if (
+                scope_record["scope"] == phase_options.METHOD_SCOPE_FOCUSED
+                and menu.get("warnings")
+            ):
+                raise ValueError(
+                    "A focused Phase 2 run requires a valid current method catalog"
+                )
+            method_catalog_scope = str(scope_record["scope"])
+            focused_method_id = str(scope_record.get("focused_method_id") or "")
+        elif method_catalog_scope or focused_method_id:
+            raise ValueError("A method-catalog scope is valid only for Phase 2")
+
+        standard_theory_run = (
+            phase_slug == IDEA_EVALUATION_PHASE
+            and (not theory_plans_available or theory_plan != THEORY_PLAN_AUDIT_ONLY)
+        )
+        if standard_theory_run:
+            theory_context_policy = (
+                theory_context_policy or phase_options.THEORY_CONTEXT_CURRENT
+            )
+            if theory_context_policy not in phase_options.THEORY_CONTEXT_POLICIES:
+                raise ValueError("Select one of the available Phase 3 context choices")
+        elif theory_context_policy:
+            raise ValueError(
+                "A theory context choice is valid only for a standard Phase 3 run"
+            )
         if method_branch:
             if not method_bound_phase:
                 raise ValueError(
@@ -1265,15 +1422,7 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
             raise ValueError(
                 "An audit-only Phase 03 run uses the method embodied in its sealed source artifact"
             )
-        if review_target:
-            if phase_slug != PAPER_WRITING_PHASE:
-                raise ValueError("An exact manuscript review target is only valid in Phase 05")
-            if len(review_target) > 4_096:
-                raise ValueError("The selected manuscript path is too long")
-            rounds = 2
-        elif review_target_sha256:
-            raise ValueError("A manuscript hash was supplied without a review target")
-        elif theory_plans_available:
+        if theory_plans_available:
             standard_stage_count = len(phase["stages"])
             rounds = {
                 THEORY_PLAN_STANDARD: standard_stage_count,
@@ -1298,11 +1447,16 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
                     f"Choose between {policy['min']} and {policy['max']} rounds"
                 )
 
-        report = project_state.prerequisite_report(
+        report = web_prerequisites.phase_prerequisite_report(
             project_dir,
             phase_slug,
             _gating(config),
             required_completed_runs=phase_five_required_runs,
+            required_method_id=(
+                run_specific_method_id
+                if phase_five_required_runs is not None
+                else None
+            ),
         )
         if phase_five_required_runs is not None:
             prerequisite_report_version = decision_report_version(
@@ -1328,11 +1482,13 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
                 )
             if request.form.get("override_prerequisites") != "1":
                 raise ValueError(
-                    "Confirm the prerequisite override after reviewing the missing context"
+                    "Confirm that you want to continue without every expected current "
+                    "result"
                 )
             override_reason = (
                 "The user reviewed the web UI warning and explicitly chose to run despite "
-                "missing or stale prerequisites: " + ", ".join(report["blockers"])
+                "missing, outdated, or non-intact prerequisite results: "
+                + ", ".join(report["blockers"])
             )
 
         replace_note = None
@@ -1374,16 +1530,28 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
             launch_options["expected_method_menu_version"] = (
                 submitted_menu_version
             )
+        if submitted_knowledge_heads_version:
+            launch_options["expected_knowledge_heads_version"] = (
+                submitted_knowledge_heads_version
+            )
+        if submitted_phase_two_review_version:
+            launch_options["expected_phase_two_review_version"] = (
+                submitted_phase_two_review_version
+            )
+        if submitted_branch_graph_version:
+            launch_options["expected_branch_graph_version"] = (
+                submitted_branch_graph_version
+            )
+        if phase_two_catalog_run:
+            launch_options["method_catalog_scope"] = method_catalog_scope
+            launch_options["focused_method_id"] = focused_method_id
+        if standard_theory_run:
+            launch_options["theory_context_policy"] = theory_context_policy
         if phase_five_required_runs is not None:
             launch_options["required_completed_runs"] = phase_five_required_runs
         if replace_note is not None:
             launch_options["replace_awaiting_review_run_id"] = rerun_from
-        if review_target:
-            launch_options.update(
-                review_target=review_target,
-                review_target_sha256=review_target_sha256,
-            )
-        elif theory_plans_available:
+        if theory_plans_available:
             launch_options["theory_plan"] = theory_plan
             if theory_plan == THEORY_PLAN_AUDIT_ONLY:
                 launch_options["proof_audit_source_run_id"] = (
@@ -1411,10 +1579,14 @@ def start_phase(project_id: int, phase_slug: str) -> Response:
     if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE:
         completion_message = (
             "The current method catalog stays visible while the run is active and "
-            "updates only after a valid Complete or Partial submission."
+            "updates only after a valid Complete or Partial result. You choose when "
+            "to run Phase 2 again."
         )
     else:
-        completion_message = "It will stop for your review when the agents finish."
+        completion_message = (
+            "The result will appear here when the agents finish. You choose whether "
+            "and when to rerun this phase or start another phase."
+        )
     flash(
         f"Run #{result['run_number']} started with {result['rounds_requested']} {unit}. "
         + completion_message,

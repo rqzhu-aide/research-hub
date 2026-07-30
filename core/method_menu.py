@@ -30,21 +30,39 @@ STAGED_METHOD_MENU_DIRNAME = "method-menu"
 
 METHOD_MENU_SEAL_SCHEMA_VERSION = 1
 METHOD_MENU_PROMOTION_SCHEMA_VERSION = 1
+METHOD_PROVENANCE_SCHEMA_VERSION = 1
+METHOD_REVISION_SCHEMA_VERSION = 1
+LITERATURE_BASIS_SCHEMA_VERSION = 1
 
 VALID_STATUSES = ("recommended", "viable", "frontier", "retired")
 
 _STATUS_RANK = {status: rank for rank, status in enumerate(VALID_STATUSES)}
 _FRONTMATTER_DELIMITER = "---"
+_DEFINITION_HEADING_RE = re.compile(
+    r"^ {0,3}##[ \t]+Mathematical[ \t]+definition[ \t]*#*[ \t]*$",
+    re.IGNORECASE,
+)
+_SECTION_BOUNDARY_RE = re.compile(r"^ {0,3}#{1,2}[ \t]+")
 _MAX_METHOD_FILE_BYTES = 1 * 1024 * 1024
 _MAX_REGISTRY_BYTES = 1 * 1024 * 1024
 _MAX_CATALOG_BYTES = 20 * 1024 * 1024
 _MAX_CATALOG_FILES = 1000
+_MAX_VERSION_HISTORY_ENTRIES = 1000
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _STABLE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$")
 _IDENTITY_RE = re.compile(r"^[A-Za-z0-9._/-]{1,200}$")
 _BACKUP_PREFIX = ".method-menu-backup-"
 _PREPARED_PREFIX = ".method-menu-prepared-"
 _DISPLACED_PREFIX = ".method-menu-displaced-"
+_REVIEW_SCOPES = frozenset({"full_catalog", "focused_method"})
+_REVIEW_OUTCOMES = frozenset({"Complete", "Partial"})
+_PROVENANCE_DISPOSITIONS = frozenset({
+    "added", "changed", "reviewed_no_change", "user_retired",
+})
+_VERSION_HISTORY_CHANGES = frozenset({
+    "added", "definition_revised", "legacy_import", "version_advanced",
+})
+_MAX_RUN_ID_LENGTH = 300
 
 
 class MethodMenuError(ValueError):
@@ -230,6 +248,292 @@ def _canonical_digest(value: Any) -> str:
     return _digest_bytes(encoded)
 
 
+def _sha256(value: Any, *, label: str) -> str:
+    digest = value.strip().lower() if isinstance(value, str) else ""
+    if not _SHA256_RE.fullmatch(digest):
+        raise MethodMenuValidationError(f"{label} must be a SHA-256 digest")
+    return digest
+
+
+def method_definition_sha256(entry: Mapping[str, Any]) -> str:
+    """Return the scientific definition digest, with legacy fallback."""
+
+    if not isinstance(entry, Mapping):
+        raise MethodMenuValidationError("method entry must be a mapping")
+    value = (
+        entry.get("definition_sha256")
+        if "definition_sha256" in entry
+        else entry.get("sha256")
+    )
+    return _sha256(value, label="method definition")
+
+
+def _run_id(value: Any, *, label: str, nullable: bool = False) -> str | None:
+    if value is None and nullable:
+        return None
+    run_id = value.strip() if isinstance(value, str) else ""
+    if (
+        not run_id
+        or len(run_id) > _MAX_RUN_ID_LENGTH
+        or "\x00" in run_id
+        or any(ord(character) < 32 for character in run_id)
+    ):
+        raise MethodMenuValidationError(f"{label} must be a valid run ID")
+    return run_id
+
+
+def normalize_literature_basis(value: Any) -> dict[str, Any]:
+    """Validate the exact Phase 1 basis reviewed by one Phase 2 run."""
+
+    fields = {
+        "schema_version",
+        "availability",
+        "source_run_id",
+        "generation",
+        "synthesis_sha256",
+        "collection_sha256",
+    }
+    if not isinstance(value, Mapping) or set(value) != fields:
+        raise MethodMenuValidationError(
+            "Phase 2 literature basis has unsupported fields"
+        )
+    if value.get("schema_version") != LITERATURE_BASIS_SCHEMA_VERSION:
+        raise MethodMenuValidationError(
+            "Phase 2 literature basis has an unsupported schema version"
+        )
+    availability = value.get("availability")
+    if availability not in {"available", "absent"}:
+        raise MethodMenuValidationError(
+            "Phase 2 literature basis availability must be available or absent"
+        )
+    if availability == "absent":
+        if any(
+            value.get(field) is not None
+            for field in (
+                "source_run_id",
+                "generation",
+                "synthesis_sha256",
+                "collection_sha256",
+            )
+        ):
+            raise MethodMenuValidationError(
+                "An absent Phase 2 literature basis cannot name Phase 1 content"
+            )
+        return {
+            "schema_version": LITERATURE_BASIS_SCHEMA_VERSION,
+            "availability": "absent",
+            "source_run_id": None,
+            "generation": None,
+            "synthesis_sha256": None,
+            "collection_sha256": None,
+        }
+
+    generation = value.get("generation")
+    if (
+        isinstance(generation, bool)
+        or not isinstance(generation, int)
+        or generation < 1
+    ):
+        raise MethodMenuValidationError(
+            "Available Phase 2 literature basis generation must be positive"
+        )
+    return {
+        "schema_version": LITERATURE_BASIS_SCHEMA_VERSION,
+        "availability": "available",
+        "source_run_id": _run_id(
+            value.get("source_run_id"),
+            label="Phase 2 literature basis source_run_id",
+        ),
+        "generation": generation,
+        "synthesis_sha256": _sha256(
+            value.get("synthesis_sha256"),
+            label="Phase 2 literature synthesis",
+        ),
+        "collection_sha256": _sha256(
+            value.get("collection_sha256"),
+            label="Phase 2 reference collection",
+        ),
+    }
+
+
+def _normalize_version_history(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or not value:
+        raise MethodMenuValidationError(
+            "method revision history must be a nonempty list"
+        )
+    if len(value) > _MAX_VERSION_HISTORY_ENTRIES:
+        raise MethodMenuValidationError("method revision history is too long")
+
+    normalized: list[dict[str, Any]] = []
+    seen_versions: set[str] = set()
+    for index, item in enumerate(value):
+        if not isinstance(item, Mapping) or set(item) != {
+            "version", "definition_sha256", "source_run_id", "change",
+        }:
+            raise MethodMenuValidationError(
+                "method revision history entry has unsupported fields"
+            )
+        version = _validate_version(item.get("version"))
+        if version in seen_versions:
+            raise MethodMenuValidationError(
+                "method revision history cannot repeat a version"
+            )
+        seen_versions.add(version)
+        change = str(item.get("change", "")).strip()
+        if change not in _VERSION_HISTORY_CHANGES:
+            raise MethodMenuValidationError(
+                "method revision history change is invalid"
+            )
+        source_run_id = _run_id(
+            item.get("source_run_id"),
+            label="method revision history source_run_id",
+            nullable=change == "legacy_import",
+        )
+        current = {
+            "version": version,
+            "definition_sha256": _sha256(
+                item.get("definition_sha256"),
+                label="method revision history definition_sha256",
+            ),
+            "source_run_id": source_run_id,
+            "change": change,
+        }
+        if index == 0 and change not in {"added", "legacy_import"}:
+            raise MethodMenuValidationError(
+                "method revision history must begin with added or legacy_import"
+            )
+        if index > 0:
+            previous = normalized[-1]
+            if change == "definition_revised" and hmac.compare_digest(
+                current["definition_sha256"], previous["definition_sha256"]
+            ):
+                raise MethodMenuValidationError(
+                    "definition_revised must change the definition digest"
+                )
+            if change == "version_advanced" and not hmac.compare_digest(
+                current["definition_sha256"], previous["definition_sha256"]
+            ):
+                raise MethodMenuValidationError(
+                    "version_advanced cannot change the definition digest"
+                )
+            if change in {"added", "legacy_import"}:
+                raise MethodMenuValidationError(
+                    "added and legacy_import can occur only at the start of history"
+                )
+        normalized.append(current)
+    return normalized
+
+
+def _normalize_method_revision(value: Any) -> dict[str, Any]:
+    fields = {
+        "schema_version", "current_version", "definition_sha256", "history",
+    }
+    if not isinstance(value, Mapping) or set(value) != fields:
+        raise MethodMenuValidationError(
+            "method revision record has unsupported fields"
+        )
+    if value.get("schema_version") != METHOD_REVISION_SCHEMA_VERSION:
+        raise MethodMenuValidationError(
+            "method revision record has an unsupported schema version"
+        )
+    history = _normalize_version_history(value.get("history"))
+    current_version = _validate_version(value.get("current_version"))
+    definition_sha256 = _sha256(
+        value.get("definition_sha256"),
+        label="method revision definition_sha256",
+    )
+    latest = history[-1]
+    if latest["version"] != current_version or not hmac.compare_digest(
+        latest["definition_sha256"], definition_sha256
+    ):
+        raise MethodMenuValidationError(
+            "method revision record does not match its latest history entry"
+        )
+    return {
+        "schema_version": METHOD_REVISION_SCHEMA_VERSION,
+        "current_version": current_version,
+        "definition_sha256": definition_sha256,
+        "history": history,
+    }
+
+
+def normalize_method_provenance(value: Any) -> dict[str, Any]:
+    """Validate system-managed provenance for one current method."""
+
+    base_fields = {
+        "schema_version",
+        "method_sha256",
+        "definition_source_run_id",
+        "review_source_run_id",
+        "review_scientific_outcome",
+        "review_scope",
+        "disposition",
+        "literature_basis",
+    }
+    supplied_fields = frozenset(value) if isinstance(value, Mapping) else frozenset()
+    if not isinstance(value, Mapping) or supplied_fields not in {
+        frozenset(base_fields), frozenset(base_fields | {"revision"}),
+    }:
+        raise MethodMenuValidationError(
+            "method provenance has unsupported fields"
+        )
+    if value.get("schema_version") != METHOD_PROVENANCE_SCHEMA_VERSION:
+        raise MethodMenuValidationError(
+            "method provenance has an unsupported schema version"
+        )
+    outcome = value.get("review_scientific_outcome")
+    if outcome not in _REVIEW_OUTCOMES:
+        raise MethodMenuValidationError(
+            "method provenance review outcome must be Complete or Partial"
+        )
+    scope = value.get("review_scope")
+    if scope not in _REVIEW_SCOPES:
+        raise MethodMenuValidationError(
+            "method provenance review scope is invalid"
+        )
+    disposition = value.get("disposition")
+    if disposition not in _PROVENANCE_DISPOSITIONS:
+        raise MethodMenuValidationError(
+            "method provenance disposition is invalid"
+        )
+    normalized = {
+        "schema_version": METHOD_PROVENANCE_SCHEMA_VERSION,
+        "method_sha256": _sha256(
+            value.get("method_sha256"),
+            label="method provenance method_sha256",
+        ),
+        "definition_source_run_id": _run_id(
+            value.get("definition_source_run_id"),
+            label="method provenance definition_source_run_id",
+            nullable=True,
+        ),
+        "review_source_run_id": _run_id(
+            value.get("review_source_run_id"),
+            label="method provenance review_source_run_id",
+        ),
+        "review_scientific_outcome": str(outcome),
+        "review_scope": str(scope),
+        "disposition": str(disposition),
+        "literature_basis": normalize_literature_basis(
+            value.get("literature_basis")
+        ),
+    }
+    if "revision" in value:
+        revision = _normalize_method_revision(value.get("revision"))
+        defining_event = next(
+            item
+            for item in reversed(revision["history"])
+            if item["change"]
+            in {"added", "legacy_import", "definition_revised"}
+        )
+        if defining_event["source_run_id"] != normalized["definition_source_run_id"]:
+            raise MethodMenuValidationError(
+                "method provenance definition source does not match revision history"
+            )
+        normalized["revision"] = revision
+    return normalized
+
+
 def _validate_stable_id(value: Any) -> str:
     if isinstance(value, (dict, list, tuple, set, bool)) or value is None:
         raise MethodMenuValidationError("frontmatter 'stable_id' must be text")
@@ -295,6 +599,39 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     return data, "\n".join(lines[end + 1 :]).strip()
 
 
+def _definition_identity(body: str) -> tuple[str, str]:
+    """Hash the exact mathematical definition section of a method file."""
+
+    lines = body.splitlines()
+    headings = [
+        index
+        for index, line in enumerate(lines)
+        if _DEFINITION_HEADING_RE.fullmatch(line)
+    ]
+    if len(headings) > 1:
+        raise MethodMenuValidationError(
+            "method body must contain at most one '## Mathematical definition' section"
+        )
+    if not headings:
+        content = body.strip()
+        basis = "legacy_body"
+    else:
+        start = headings[0]
+        end = next(
+            (
+                index
+                for index in range(start + 1, len(lines))
+                if _SECTION_BOUNDARY_RE.match(lines[index])
+            ),
+            len(lines),
+        )
+        content = "\n".join(lines[start + 1 : end]).strip()
+        basis = "explicit_section"
+    if not content:
+        raise MethodMenuValidationError("method mathematical definition is empty")
+    return _digest_bytes(content.encode("utf-8")), basis
+
+
 def _empty_entry(path: Path, root: Path) -> dict[str, Any]:
     try:
         relative = path.relative_to(root).as_posix()
@@ -309,6 +646,8 @@ def _empty_entry(path: Path, root: Path) -> dict[str, Any]:
         "body": "",
         "path": relative,
         "sha256": "",
+        "definition_sha256": "",
+        "definition_digest_basis": "",
         "errors": [],
     }
 
@@ -326,6 +665,14 @@ def _parse_method_path(path: Path, root: Path) -> dict[str, Any]:
         entry["body"] = body
         if not body:
             entry["errors"].append("method body must be nonempty")
+        else:
+            try:
+                (
+                    entry["definition_sha256"],
+                    entry["definition_digest_basis"],
+                ) = _definition_identity(body)
+            except MethodMenuValidationError as exc:
+                entry["errors"].append(str(exc))
 
         try:
             entry["stable_id"] = _validate_stable_id(data.get("stable_id"))
@@ -475,6 +822,13 @@ def _load_registry(path: Path) -> dict[str, Any]:
         seen_ids.add(stable_id)
         seen_numbers.add(number)
         normalized = dict(row)
+        if "provenance" in row:
+            try:
+                normalized["provenance"] = normalize_method_provenance(
+                    row.get("provenance")
+                )
+            except MethodMenuValidationError as exc:
+                raise MethodMenuValidationError(f"{label} {exc}") from exc
         normalized.update(
             {
                 "stable_id": stable_id,
@@ -512,6 +866,8 @@ def _reconcile_registry(
     }
     for stable_id, entry in method_by_id.items():
         row = registry_by_id.get(stable_id)
+        entry["provenance"] = None
+        entry["provenance_error"] = ""
         if row is None:
             message = f"method registry has no entry for stable_id {stable_id!r}"
             entry["errors"].append(message)
@@ -530,6 +886,30 @@ def _reconcile_registry(
                 )
                 entry["errors"].append(message)
                 warnings.append(message)
+        provenance = row.get("provenance")
+        if isinstance(provenance, Mapping):
+            entry["provenance"] = dict(provenance)
+            if not hmac.compare_digest(
+                str(provenance.get("method_sha256", "")),
+                str(entry.get("sha256", "")),
+            ):
+                entry["provenance_error"] = (
+                    "The recorded Phase 2 provenance does not match the "
+                    "current method file."
+                )
+            revision = provenance.get("revision")
+            if isinstance(revision, Mapping) and (
+                str(revision.get("current_version", ""))
+                != str(entry.get("version", ""))
+                or not hmac.compare_digest(
+                    str(revision.get("definition_sha256", "")),
+                    str(entry.get("definition_sha256", "")),
+                )
+            ):
+                entry["provenance_error"] = (
+                    "The recorded Phase 2 method revision does not match the "
+                    "current method version and mathematical definition."
+                )
     for stable_id in sorted(set(registry_by_id).difference(method_by_id)):
         warnings.append(
             f"method registry entry {stable_id!r} has no corresponding method file"
@@ -565,6 +945,9 @@ def _load_menu_directory(
         if child.suffix.lower() != ".md":
             continue
         entries.append(_parse_method_path(child, root))
+    for entry in entries:
+        entry["provenance"] = None
+        entry["provenance_error"] = ""
     warnings.extend(_add_cross_entry_errors(entries))
 
     registry_path = menu_dir / METHOD_REGISTRY_FILENAME
@@ -621,6 +1004,46 @@ def load_method_menu(project_dir: str | Path) -> dict[str, Any]:
         "entries": result["entries"],
         "warnings": result["warnings"],
     }
+
+
+def catalog_references_review_run(
+    project_dir: str | Path,
+    run_id: str,
+    *,
+    stable_id: str = "",
+) -> bool:
+    """Return whether an active, intact catalog row cites a Phase 2 review run."""
+
+    requested_run = str(run_id).strip()
+    requested_method = str(stable_id).strip()
+    if not requested_run:
+        return False
+    menu = load_method_menu(project_dir)
+    if menu["warnings"]:
+        return False
+    for entry in menu["entries"]:
+        if (
+            entry.get("status") == "retired"
+            or entry.get("errors")
+            or entry.get("provenance_error")
+            or (
+                requested_method
+                and str(entry.get("stable_id", "")) != requested_method
+            )
+        ):
+            continue
+        provenance = entry.get("provenance")
+        if (
+            isinstance(provenance, Mapping)
+            and str(provenance.get("review_source_run_id", "")).strip()
+            == requested_run
+            and hmac.compare_digest(
+                str(provenance.get("method_sha256", "")).lower(),
+                str(entry.get("sha256", "")).lower(),
+            )
+        ):
+            return True
+    return False
 
 
 def find_selectable_entry(
@@ -701,6 +1124,16 @@ def _catalog_digest(files: list[dict[str, Any]]) -> str:
     return _canonical_digest(files)
 
 
+def _expected_catalog_digest(value: Any, *, label: str) -> str | None:
+    if value is None:
+        return None
+    if type(value) is not str or _SHA256_RE.fullmatch(value) is None:
+        raise MethodMenuValidationError(
+            f"{label} must be a lowercase SHA-256 digest"
+        )
+    return value
+
+
 def _raise_invalid_menu(menu: Mapping[str, Any]) -> None:
     warnings = menu.get("warnings")
     if isinstance(warnings, list) and warnings:
@@ -724,20 +1157,139 @@ def _entry_snapshot(entry: Mapping[str, Any]) -> dict[str, Any]:
         "label": str(entry.get("label", "")),
         "status": str(entry.get("status", "")),
         "sha256": str(entry.get("sha256", "")),
+        "definition_sha256": str(entry.get("definition_sha256", "")),
+        "definition_digest_basis": str(
+            entry.get("definition_digest_basis", "")
+        ),
     }
 
 
-def _valid_published_numbers(
+def _require_method_revision_identity(
+    published_methods: Mapping[str, Mapping[str, Any]],
+    staged_entries: list[Mapping[str, Any]],
+) -> None:
+    """Require a new version whenever the mathematical definition changes."""
+
+    for current in staged_entries:
+        stable_id = str(current.get("stable_id", ""))
+        before = published_methods.get(stable_id)
+        if before is None:
+            if current.get("definition_digest_basis") != "explicit_section":
+                raise MethodMenuValidationError(
+                    f"new method {stable_id!r} must contain an explicit "
+                    "'## Mathematical definition' section"
+                )
+            continue
+
+        version_changed = str(before.get("version", "")) != str(
+            current.get("version", "")
+        )
+        definition_changed = not hmac.compare_digest(
+            str(before.get("definition_sha256", "")),
+            str(current.get("definition_sha256", "")),
+        )
+        if definition_changed and not version_changed:
+            raise MethodMenuValidationError(
+                f"method {stable_id!r} changes its mathematical calculation "
+                "without advancing the version"
+            )
+        if version_changed and current.get("definition_digest_basis") != "explicit_section":
+            raise MethodMenuValidationError(
+                f"revised method {stable_id!r} must contain an explicit "
+                "'## Mathematical definition' section"
+            )
+
+
+def _system_method_revision(
+    before: Mapping[str, Any] | None,
+    current: Mapping[str, Any],
+    prior_provenance: Mapping[str, Any] | None,
+    run_id: str,
+) -> dict[str, Any]:
+    prior_revision = (
+        prior_provenance.get("revision")
+        if isinstance(prior_provenance, Mapping)
+        else None
+    )
+    if isinstance(prior_revision, Mapping):
+        if before is None or (
+            str(prior_revision.get("current_version", ""))
+            != str(before.get("version", ""))
+            or not hmac.compare_digest(
+                str(prior_revision.get("definition_sha256", "")),
+                str(before.get("definition_sha256", "")),
+            )
+        ):
+            raise MethodMenuValidationError(
+                "published method revision provenance is stale"
+            )
+        history = [dict(item) for item in prior_revision.get("history", [])]
+    elif before is not None:
+        prior_definition_run = (
+            prior_provenance.get("definition_source_run_id")
+            if isinstance(prior_provenance, Mapping)
+            else None
+        )
+        history = [{
+            "version": str(before["version"]),
+            "definition_sha256": str(before["definition_sha256"]),
+            "source_run_id": prior_definition_run,
+            "change": "legacy_import",
+        }]
+    else:
+        history = []
+
+    current_version = str(current["version"])
+    current_digest = str(current["definition_sha256"])
+    if not history:
+        history.append({
+            "version": current_version,
+            "definition_sha256": current_digest,
+            "source_run_id": run_id,
+            "change": "added",
+        })
+    else:
+        latest = history[-1]
+        version_changed = str(latest["version"]) != current_version
+        definition_changed = not hmac.compare_digest(
+            str(latest["definition_sha256"]), current_digest
+        )
+        if definition_changed and not version_changed:
+            raise MethodMenuValidationError(
+                f"method {current.get('stable_id')!r} changes its mathematical "
+                "calculation without advancing the version"
+            )
+        if version_changed:
+            history.append({
+                "version": current_version,
+                "definition_sha256": current_digest,
+                "source_run_id": run_id,
+                "change": (
+                    "definition_revised"
+                    if definition_changed
+                    else "version_advanced"
+                ),
+            })
+
+    return _normalize_method_revision({
+        "schema_version": METHOD_REVISION_SCHEMA_VERSION,
+        "current_version": current_version,
+        "definition_sha256": current_digest,
+        "history": history,
+    })
+
+
+def _valid_published_methods(
     root: Path,
     menu_dir: Path,
-) -> dict[str, int]:
-    """Return stable numbers only for individually valid published entries."""
+) -> dict[str, dict[str, Any]]:
+    """Return identity fields for individually valid published entries."""
 
     if not menu_dir.exists():
         return {}
     menu = _load_menu_directory(root, menu_dir, require_registry=False)
     return {
-        str(entry["stable_id"]): int(entry["number"])
+        str(entry["stable_id"]): _entry_snapshot(entry)
         for entry in menu["entries"]
         if not entry.get("errors")
         and str(entry.get("stable_id", "")).strip()
@@ -746,17 +1298,18 @@ def _valid_published_numbers(
 
 
 def _require_preserved_published_methods(
-    published_numbers: Mapping[str, int],
+    published_methods: Mapping[str, Mapping[str, Any]],
     staged_entries: list[Mapping[str, Any]],
 ) -> None:
-    """Require retirement rather than deletion and preserve stable numbers."""
+    """Preserve published identities and explicit user retirements."""
 
     staged_by_id = {
         str(entry.get("stable_id", "")): entry
         for entry in staged_entries
         if str(entry.get("stable_id", ""))
     }
-    for stable_id, number in sorted(published_numbers.items()):
+    for stable_id, published in sorted(published_methods.items()):
+        number = published.get("number")
         staged = staged_by_id.get(stable_id)
         if staged is None:
             raise MethodMenuValidationError(
@@ -767,6 +1320,14 @@ def _require_preserved_published_methods(
             raise MethodMenuValidationError(
                 f"staged method menu changes the permanent number for "
                 f"{stable_id!r}; keep method number {number}"
+            )
+        if (
+            published.get("status") == "retired"
+            and staged.get("status") != "retired"
+        ):
+            raise MethodMenuValidationError(
+                f"staged method menu reactivates retired method {stable_id!r}; "
+                "keep it retired unless the user explicitly reactivates it"
             )
 
 
@@ -922,6 +1483,8 @@ def _replace_directory(prepared: Path, destination: Path) -> None:
 def stage_method_menu(
     project_dir: str | Path,
     output_root: str | Path,
+    *,
+    expected_catalog_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Seed ``<output_root>/method-menu`` from the current published menu."""
 
@@ -931,12 +1494,32 @@ def stage_method_menu(
         METHOD_MENU_DIR,
         label="published method-menu directory",
     )
+    expected_digest = _expected_catalog_digest(
+        expected_catalog_sha256,
+        label="expected method catalog digest",
+    )
+    source_files = _catalog_file_records(source)
+    source_digest = _catalog_digest(source_files)
+    if expected_digest is not None and not hmac.compare_digest(
+        expected_digest, source_digest
+    ):
+        raise StaleMethodMenu(
+            "published method catalog changed after it was reviewed"
+        )
     output, staged = _staging_directory(root, output_root)
     prepared: Path | None = Path(
         tempfile.mkdtemp(prefix=_PREPARED_PREFIX, dir=str(output))
     )
     try:
         _copy_catalog(source, prepared)
+        copied_source_files = _catalog_file_records(prepared)
+        current_source_files = _catalog_file_records(source)
+        if not _same_json(copied_source_files, source_files) or not _same_json(
+            current_source_files, source_files
+        ):
+            raise StaleMethodMenu(
+                "published method catalog changed while it was staged"
+            )
         registry_path = prepared / METHOD_REGISTRY_FILENAME
         if not registry_path.exists():
             seeded = _load_menu_directory(
@@ -959,7 +1542,7 @@ def stage_method_menu(
         if prepared is not None and prepared.exists():
             _remove_regular_tree(prepared)
 
-    files = _catalog_file_records(staged)
+    staged_files = _catalog_file_records(staged)
     staged_menu = _load_menu_directory(root, staged, require_registry=True)
     warnings = list(staged_menu["warnings"])
     for entry in staged_menu["entries"]:
@@ -975,21 +1558,221 @@ def stage_method_menu(
             staged,
             label="staged method-menu directory",
         ),
-        "source_files": files,
-        "source_catalog_sha256": _catalog_digest(files),
+        "source_files": source_files,
+        "source_catalog_sha256": source_digest,
+        "staged_files": staged_files,
+        "staged_catalog_sha256": _catalog_digest(staged_files),
         "warnings": warnings,
     }
+
+
+def _registry_rows_by_id(
+    registry: Mapping[str, Any] | None,
+) -> dict[str, dict[str, Any]]:
+    if not isinstance(registry, Mapping):
+        return {}
+    return {
+        str(row["stable_id"]): dict(row)
+        for row in registry.get("entries", [])
+        if isinstance(row, Mapping) and str(row.get("stable_id", "")).strip()
+    }
+
+
+def _write_registry_atomic(path: Path, registry: Mapping[str, Any]) -> None:
+    payload = yaml.safe_dump(
+        dict(registry),
+        sort_keys=False,
+        allow_unicode=True,
+    ).encode("utf-8")
+    if len(payload) > _MAX_REGISTRY_BYTES:
+        raise MethodMenuValidationError(
+            f"method registry exceeds the {_MAX_REGISTRY_BYTES}-byte limit"
+        )
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".registry-",
+        suffix=".tmp",
+        dir=str(path.parent),
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def apply_run_provenance(
+    project_dir: str | Path,
+    output_root: str | Path,
+    *,
+    run_id: str,
+    scientific_outcome: str,
+    review_scope: str,
+    literature_basis: Mapping[str, Any],
+    focused_method_id: str | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Write per-method review provenance into the staged catalog.
+
+    The updater is deterministic and runs immediately before sealing. It
+    overwrites agent-authored provenance for methods covered by this run and
+    restores the published value for every method outside the selected scope.
+    """
+
+    root = _project_root(project_dir)
+    normalized_run_id = _run_id(run_id, label="Phase 2 provenance run_id")
+    outcome = str(scientific_outcome).strip()
+    if outcome not in _REVIEW_OUTCOMES:
+        raise MethodMenuValidationError(
+            "Phase 2 provenance requires a Complete or Partial outcome"
+        )
+    scope = str(review_scope).strip()
+    if scope not in _REVIEW_SCOPES:
+        raise MethodMenuValidationError("Phase 2 provenance scope is invalid")
+    normalized_basis = normalize_literature_basis(literature_basis)
+    focused_id = (
+        _validate_stable_id(focused_method_id)
+        if focused_method_id is not None
+        else None
+    )
+    if (scope == "focused_method") != (focused_id is not None):
+        raise MethodMenuValidationError(
+            "Focused Phase 2 provenance requires exactly one selected method"
+        )
+
+    _, staged = _staging_directory(root, output_root)
+    staged_menu = _load_menu_directory(root, staged, require_registry=True)
+    _raise_invalid_menu(staged_menu)
+    staged_registry = staged_menu.get("registry")
+    if not isinstance(staged_registry, Mapping):
+        raise MethodMenuValidationError(
+            "staged method menu has no valid registry"
+        )
+    staged_entries = {
+        str(entry["stable_id"]): entry
+        for entry in staged_menu["entries"]
+        if str(entry.get("stable_id", "")).strip()
+    }
+    staged_rows = _registry_rows_by_id(staged_registry)
+    if set(staged_entries) != set(staged_rows):
+        raise MethodMenuValidationError(
+            "staged method files and registry rows do not match"
+        )
+    if focused_id is not None and focused_id not in staged_entries:
+        raise MethodMenuValidationError(
+            "Focused Phase 2 provenance names an unknown method"
+        )
+
+    published = _safe_project_path(
+        root,
+        METHOD_MENU_DIR,
+        label="published method-menu directory",
+    )
+    published_menu = _load_menu_directory(
+        root, published, require_registry=False
+    )
+    published_entries = {
+        str(entry["stable_id"]): entry
+        for entry in published_menu["entries"]
+        if str(entry.get("stable_id", "")).strip() and not entry.get("errors")
+    }
+    published_rows = _registry_rows_by_id(published_menu.get("registry"))
+    _require_method_revision_identity(
+        published_entries,
+        list(staged_entries.values()),
+    )
+
+    reviewed_ids = (
+        {focused_id}
+        if focused_id is not None
+        else set(staged_entries)
+    )
+    provenance_by_id: dict[str, dict[str, Any]] = {}
+    for row in staged_registry["entries"]:
+        stable_id = str(row["stable_id"])
+        if stable_id not in reviewed_ids:
+            prior = published_rows.get(stable_id, {}).get("provenance")
+            if isinstance(prior, Mapping):
+                row["provenance"] = dict(prior)
+            else:
+                row.pop("provenance", None)
+            continue
+
+        current = staged_entries[stable_id]
+        before = published_entries.get(stable_id)
+        changed = before is None or not _same_json(
+            _entry_snapshot(before),
+            _entry_snapshot(current),
+        )
+        prior = published_rows.get(stable_id, {}).get("provenance")
+        revision = _system_method_revision(
+            before,
+            current,
+            prior if isinstance(prior, Mapping) else None,
+            normalized_run_id,
+        )
+        definition_changed = before is None or not hmac.compare_digest(
+            str(before.get("definition_sha256", "")),
+            str(current.get("definition_sha256", "")),
+        )
+        prior_definition_run = (
+            prior.get("definition_source_run_id")
+            if isinstance(prior, Mapping)
+            else None
+        )
+        disposition = (
+            "added"
+            if before is None
+            else "changed"
+            if changed
+            else "reviewed_no_change"
+        )
+        provenance = normalize_method_provenance({
+            "schema_version": METHOD_PROVENANCE_SCHEMA_VERSION,
+            "method_sha256": str(current["sha256"]),
+            "definition_source_run_id": (
+                normalized_run_id
+                if definition_changed
+                else prior_definition_run
+            ),
+            "review_source_run_id": normalized_run_id,
+            "review_scientific_outcome": outcome,
+            "review_scope": scope,
+            "disposition": disposition,
+            "literature_basis": normalized_basis,
+            "revision": revision,
+        })
+        row["provenance"] = provenance
+        provenance_by_id[stable_id] = provenance
+
+    registry_path = staged / METHOD_REGISTRY_FILENAME
+    _write_registry_atomic(registry_path, staged_registry)
+    verified = _load_menu_directory(root, staged, require_registry=True)
+    _raise_invalid_menu(verified)
+    for entry in verified["entries"]:
+        if entry.get("provenance_error"):
+            raise MethodMenuValidationError(str(entry["provenance_error"]))
+    return provenance_by_id
 
 
 def seal_staged_menu(
     project_dir: str | Path,
     output_root: str | Path,
+    *,
+    expected_published_catalog_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Validate and seal the exact run-local method-menu bytes."""
 
     root = _project_root(project_dir)
     _, staged = _staging_directory(root, output_root)
     staged_seal = _seal_directory(root, staged, require_registry=True)
+    expected_digest = _expected_catalog_digest(
+        expected_published_catalog_sha256,
+        label="expected published method catalog digest",
+    )
     published = _safe_project_path(
         root,
         METHOD_MENU_DIR,
@@ -997,11 +1780,22 @@ def seal_staged_menu(
     )
     published_exists = published.exists()
     published_files = _catalog_file_records(published)
+    live_published_digest = _catalog_digest(published_files)
+    if expected_digest is not None and not hmac.compare_digest(
+        expected_digest, live_published_digest
+    ):
+        raise StaleMethodMenu(
+            "published method catalog changed after this run was frozen"
+        )
     published_digest = (
-        _catalog_digest(published_files) if published_exists else None
+        live_published_digest if published_exists else None
     )
     _require_preserved_published_methods(
-        _valid_published_numbers(root, published),
+        _valid_published_methods(root, published),
+        staged_seal["entries"],
+    )
+    _require_method_revision_identity(
+        _valid_published_methods(root, published),
         staged_seal["entries"],
     )
     staged_seal.update(
@@ -1062,6 +1856,105 @@ def _menu_snapshots(
     return snapshots
 
 
+def _focused_method_path(
+    root: Path,
+    menu_dir: Path,
+    stable_id: str,
+) -> tuple[str, Mapping[str, Any]]:
+    menu = _load_menu_directory(root, menu_dir, require_registry=True)
+    _raise_invalid_menu(menu)
+    matches = [
+        entry
+        for entry in menu["entries"]
+        if str(entry.get("stable_id", "")).strip() == stable_id
+    ]
+    if len(matches) != 1:
+        raise MethodMenuValidationError(
+            "The focused method must appear exactly once in both catalog versions"
+        )
+    entry = matches[0]
+    return Path(str(entry.get("path", ""))).name, entry
+
+
+def _validate_focused_catalog_update(
+    root: Path,
+    published: Path,
+    staged: Path,
+    focused_method_id: str,
+) -> None:
+    """Require every non-selected method file to remain byte-identical."""
+
+    stable_id = str(focused_method_id).strip()
+    if not stable_id:
+        raise MethodMenuValidationError("Focused catalog update has no method ID")
+    if not published.exists():
+        raise MethodMenuValidationError(
+            "A focused catalog update requires an existing published catalog"
+        )
+
+    before_name, before_entry = _focused_method_path(root, published, stable_id)
+    after_name, after_entry = _focused_method_path(root, staged, stable_id)
+    if before_name != after_name:
+        raise MethodMenuValidationError(
+            "A focused catalog update cannot rename the selected method file"
+        )
+    if str(before_entry.get("status", "")) == "retired":
+        raise MethodMenuValidationError(
+            "A focused catalog update cannot target a retired method"
+        )
+    if str(after_entry.get("status", "")) == "retired":
+        raise MethodMenuValidationError(
+            "Retire a method through the user control, not a focused team run"
+        )
+
+    before_registry = _load_registry(published / METHOD_REGISTRY_FILENAME)
+    after_registry = _load_registry(staged / METHOD_REGISTRY_FILENAME)
+    if before_registry["next_number"] != after_registry["next_number"]:
+        raise MethodMenuValidationError(
+            "A focused catalog update cannot change the registry next_number"
+        )
+    before_rows = {
+        str(row["stable_id"]): row for row in before_registry["entries"]
+    }
+    after_rows = {
+        str(row["stable_id"]): row for row in after_registry["entries"]
+    }
+    for other_id in sorted(set(before_rows) - {stable_id}):
+        if not _same_json(before_rows[other_id], after_rows.get(other_id)):
+            raise MethodMenuValidationError(
+                "A focused catalog update changed the non-selected registry "
+                f"row for {other_id!r}"
+            )
+
+    excluded = {METHOD_REGISTRY_FILENAME, before_name}
+    before_files = {
+        str(record["path"]): record
+        for record in _catalog_file_records(published)
+        if str(record["path"]) not in excluded
+    }
+    after_files = {
+        str(record["path"]): record
+        for record in _catalog_file_records(staged)
+        if str(record["path"]) not in excluded
+    }
+    if not _same_json(before_files, after_files):
+        raise MethodMenuValidationError(
+            "A focused catalog update changed a non-selected method"
+        )
+
+    before = _menu_snapshots(root, published)
+    after = _menu_snapshots(root, staged)
+    if set(before) != set(after):
+        raise MethodMenuValidationError(
+            "A focused catalog update cannot add or remove methods"
+        )
+    for other_id in sorted(set(before) - {stable_id}):
+        if not _same_json(before[other_id], after[other_id]):
+            raise MethodMenuValidationError(
+                f"A focused catalog update changed non-selected method {other_id!r}"
+            )
+
+
 def _menu_changes(
     before: Mapping[str, Mapping[str, Any]],
     after: Mapping[str, Mapping[str, Any]],
@@ -1088,6 +1981,40 @@ def _menu_changes(
             }
         )
     return [change["stable_id"] for change in changes], changes
+
+
+def _downstream_invalidated_stable_ids(
+    changes: list[Mapping[str, Any]],
+) -> list[str]:
+    """Return branches whose exact scientific method identity is no longer current."""
+
+    invalidated: list[str] = []
+    for change in changes:
+        stable_id = str(change.get("stable_id", "")).strip()
+        before = change.get("before")
+        after = change.get("after")
+        if not stable_id or before is None:
+            continue
+        if not isinstance(before, Mapping) or after is None:
+            invalidated.append(stable_id)
+            continue
+        if not isinstance(after, Mapping):
+            invalidated.append(stable_id)
+            continue
+        identity_changed = (
+            str(before.get("version", "")) != str(after.get("version", ""))
+            or not hmac.compare_digest(
+                str(before.get("definition_sha256", "")),
+                str(after.get("definition_sha256", "")),
+            )
+        )
+        newly_retired = (
+            str(before.get("status", "")) != "retired"
+            and str(after.get("status", "")) == "retired"
+        )
+        if identity_changed or newly_retired:
+            invalidated.append(stable_id)
+    return invalidated
 
 
 def _copy_sealed_catalog(
@@ -1149,6 +2076,8 @@ def promote_staged_menu(
     project_dir: str | Path,
     output_root: str | Path,
     seal: Mapping[str, Any],
+    *,
+    focused_method_id: str | None = None,
 ) -> dict[str, Any]:
     """Atomically publish a sealed staged menu and retain a rollback backup."""
 
@@ -1179,9 +2108,20 @@ def promote_staged_menu(
             "published method menu changed after the staged menu was sealed"
         )
     _require_preserved_published_methods(
-        _valid_published_numbers(root, published),
+        _valid_published_methods(root, published),
         verified["entries"],
     )
+    _require_method_revision_identity(
+        _valid_published_methods(root, published),
+        verified["entries"],
+    )
+    if focused_method_id is not None:
+        _validate_focused_catalog_update(
+            root,
+            published,
+            staged,
+            focused_method_id,
+        )
     before = _menu_snapshots(root, published)
     after = {
         str(entry["stable_id"]): dict(entry)
@@ -1254,6 +2194,7 @@ def promote_staged_menu(
             _remove_regular_tree(prepared)
         raise
 
+    downstream_invalidated_ids = _downstream_invalidated_stable_ids(changes)
     return {
         "schema_version": METHOD_MENU_PROMOTION_SCHEMA_VERSION,
         "kind": "method_menu_promotion",
@@ -1269,6 +2210,7 @@ def promote_staged_menu(
         "published_files": verified["files"],
         "published_catalog_sha256": verified["catalog_sha256"],
         "changed_stable_ids": changed_ids,
+        "downstream_invalidated_stable_ids": downstream_invalidated_ids,
         "changes": changes,
     }
 
@@ -1334,10 +2276,8 @@ def commit_method_menu_promotion(
         promotion.get("published_catalog_sha256"),
         label="published method menu",
     )
-    if backup is None:
+    if backup is None or not backup.exists():
         return
-    if not backup.exists():
-        raise StaleMethodMenu("method-menu rollback backup is missing")
     _verify_catalog_record(
         backup,
         promotion.get("previous_files"),
@@ -1354,6 +2294,18 @@ def rollback_method_menu_promotion(
     """Restore the exact catalog that preceded a promotion."""
 
     root, published, backup = _promotion_paths(project_dir, promotion)
+    try:
+        _verify_catalog_record(
+            published,
+            promotion.get("previous_files"),
+            promotion.get("previous_catalog_sha256"),
+            label="restored method menu",
+        )
+    except StaleMethodMenu:
+        pass
+    else:
+        if backup is None or not backup.exists():
+            return
     current_files = _catalog_file_records(published)
     if _catalog_digest(current_files) != promotion.get("published_catalog_sha256"):
         raise StaleMethodMenu("published method menu changed after promotion")
@@ -1490,6 +2442,15 @@ def retire_branch(
                 raise MethodMenuValidationError(
                     f"method registry has no entry for stable_id {normalized_id!r}"
                 )
+            provenance = row.get("provenance")
+            if isinstance(provenance, Mapping):
+                rewritten = _parse_method_path(
+                    prepared / f"{normalized_id}.md", root
+                )
+                provenance = dict(provenance)
+                provenance["method_sha256"] = str(rewritten["sha256"])
+                provenance["disposition"] = "user_retired"
+                row["provenance"] = normalize_method_provenance(provenance)
             row["status"] = "retired"
             row["retired_by"] = "user"
             row["retired_at"] = datetime.now(timezone.utc).isoformat(

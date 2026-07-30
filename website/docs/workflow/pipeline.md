@@ -7,10 +7,10 @@ slug: /workflow/pipeline
 # Research workflow
 
 Research Hub separates a research project into five phases so that you can
-evaluate the evidence before deciding what happens next. A completed run makes
-its summary and supporting material available for inspection. You decide
-whether to use that material as context, rerun with new direction, start an
-eligible phase, or stop.
+evaluate the evidence before deciding what happens next. A valid run updates the
+phase's current scientific record according to its storage rule and preserves a
+sealed provenance record. You decide whether to use the current material,
+rerun with new direction, start an eligible phase, or stop.
 
 ## The five scientific questions
 
@@ -31,10 +31,13 @@ flowchart LR
     P4 --> P5
 ```
 Phase 3 and Phase 4 are sibling studies. After Phase 2, you may start either
-one for any active method, then return to the other when useful. Phase 5 becomes
-available only after Phases 1 through 4 have intact completed results and the
-sibling results match the same selected method snapshot. Finishing one phase
-never starts another.
+one for any active method, then return to the other when useful. Phase 5 requires
+usable current Phase 1 through Phase 4 records and exact Phase 3 and Phase 4
+alignment. The interface reports exact-method applicability, sibling-basis
+alignment, Phase 4 research attention, and scientific outcome separately.
+Green means a displayed alignment condition is current. Yellow means inspect a
+changed basis or evidence requiring attention. Red means integrity cannot be
+verified. These states never start work automatically.
 
 ## Your decision cycle
 
@@ -82,15 +85,18 @@ Before each run, decide:
 - **The scope.** Is this an initial assessment, a focused correction, or an
   extension of earlier work?
 - **The available run settings.** Choose a round count only when the phase offers
-  it. In Phase 4, choose preliminary or comprehensive according to the empirical
-  scope you need; neither scope requires the other.
+  it. In Phase 2, choose the full catalog or one active method. In Phase 3,
+  decide whether current records are sufficient or archived Phase 3 summaries
+  should also be included. In Phase 4, choose preliminary or comprehensive;
+  neither scope requires the other.
 - **Your direction to the team.** State the population, estimand, assumptions,
   method family, benchmark, biological setting, or claim that deserves special
   attention.
 - **Whether the available inputs are adequate.** If earlier material is
   incomplete or no longer aligned with the question, decide whether to rerun
   the relevant phase, narrow the new instructions, or proceed when the launch
-  conditions permit. The current form assembles eligible context automatically.
+  conditions permit. Research Hub assembles verified current records and applies
+  the Phase 2 scope or Phase 3 context choice shown in the launch form.
 
 Good direction is specific enough to guide inquiry without deciding the answer
 in advance. For example:
@@ -115,12 +121,12 @@ The roles contribute different forms of scientific scrutiny:
 - In Phase 4, the data analyst performs the main implementation and empirical
   analysis, the theorist audits correspondence with the method and theory, and
   the research lead synthesizes both reports.
-- In both Phase 3 and Phase 4, later stages read the earlier stages, and every
-  role receives available prior results and discussion from both phases on the
-  same method branch.
-- In Phase 5, work depends on the selected mode. The research lead performs
-  Assembly, a Review target uses the Paper Reviewer, and Review & Revision uses
-  the Paper Reviewer followed by the research lead.
+- In both Phase 3 and Phase 4, later stages read earlier stages from the current
+  run. Phase 3 receives current same-branch records and optional archived Phase
+  3 summaries. Phase 4 receives the current theory manuscript and cumulative
+  empirical package.
+- In Phase 5, the research lead performs Assembly. Review & Revision uses the
+  Paper Reviewer followed by the research lead.
 
 The research lead synthesizes the reports, but does not make the user's
 decision. A recommendation should state its evidence, uncertainty, and credible
@@ -148,8 +154,8 @@ whether, later work should use it.
 
 | Your action | When it is useful | Effect |
 |---|---|---|
-| **Let the result inform later work** | The material is relevant and sufficiently reliable for the next question. | Eligible material is assembled automatically. Inspect it before launch; the context received by the run is frozen. |
-| **Rerun the phase** | A new pass could resolve a gap, test a changed assumption, or use new evidence. | A new run is created. Earlier runs remain available for comparison. |
+| **Let the result inform later work** | The current material is relevant and sufficiently reliable for the next question. | Verified current records are assembled according to the target phase's rules. Inspect the launch context before starting. |
+| **Rerun the phase** | A new pass could resolve a gap, test a changed assumption, or use new evidence. | A new sealed run is created. A valid result updates the phase's current record according to its storage rule. |
 | **Start another eligible phase** | Its required conditions are satisfied and the available evidence is sufficient for its purpose. | Only the phase you explicitly start will run. |
 | **Stop or defer** | The direction is not useful or no further work is currently warranted. | Nothing else starts. The completed material remains available. |
 
@@ -160,21 +166,30 @@ evidence and publishes the method catalog without selecting one method.
 
 Phase 3 and Phase 4 both show that catalog as a read-only list. When launching
 either phase, you explicitly choose an active method. The method identity,
-version, and definition are frozen for that run, and work for the same method is
-routed to one durable branch. Either sibling phase can run first. Each run can
-use available prior results and discussion from both phases on the same branch.
+version, and `definition_sha256` are frozen for that run, and work for the same
+method is routed to one durable branch. Either sibling phase can run first. Phase 3 uses
+the current theory and empirical records, with archived Phase 3 summaries only
+when selected. Phase 4 uses the current theory manuscript and cumulative
+empirical package.
 
-Phase 5 requires an intact completed result from each of Phases 1 through 4.
-The Phase 3 and Phase 4 results must both match the selected method's stable ID,
-version, and definition digest. It does not combine theory and experiments from
-different methods or silently substitute an older method version or
-definition.
+Phase 5 requires a usable current result from each of Phases 1 through 4.
+Phase 1, Phase 2, and Phase 4 may be Complete or Partial; Phase 3 must be
+Complete, and Failed never qualifies. Phase 3 and Phase 4 must match the
+selected method and the current sibling basis recorded by each phase. Phase 5
+freezes the Phase 1 reference collection and literature synthesis as separate
+inputs. Phase 4 can have no outdated or unresolved evidence.
 
-When a newer upstream result changes an assumption, method definition, dataset,
-implementation, or conclusion used downstream, the earlier downstream result
-remains preserved with its original context. Inspect the affected claims and
-decide whether the change is immaterial or whether a focused or full rerun is
-needed.
+Every Phase 2 method has one authoritative `## Mathematical definition`
+section. A change that can alter a calculation advances the method version. A
+status, literature, or explanatory edit that leaves this section
+mathematically unchanged keeps the version. When the version advances, the
+current Phase 3 package no longer matches it and Phase 4 code and scientific
+outputs become outdated. Raw data and generic infrastructure remain reusable
+only when their mathematical independence is recorded explicitly. Other
+upstream changes can make the current manuscript basis stale. A new
+reference or revised literature synthesis makes the manuscript yellow without
+starting a run. The sealed earlier runs remain interpretable. Inspect the
+changed input and decide whether to rerun the affected phase.
 
 Some missing recommended prerequisites can be acknowledged through an explicit
 override when the launch form offers one. Phase 3 and Phase 4 still require a
@@ -189,16 +204,21 @@ rerun independently. Phase 5 remains subject to the full Phase 1 through Phase 4
 integrity and method-snapshot requirements above. A useful rerun should state
 what has changed and what evidence would alter your decision.
 
-On a rerun, the team should:
+The phases update current records differently:
 
-1. compare the new question with the available earlier results and discussion;
-2. identify correct, uncertain, incomplete, or contradicted material;
-3. preserve valid earlier evidence;
-4. investigate the named gap or changed assumption;
-5. report what changed and why.
+1. Phase 1 adds only new unique references and rewrites the current synthesis.
+2. Phase 2 updates either the full catalog or one selected active method. A
+   calculation-defining change advances that method's version.
+3. Phase 3 replaces the complete current theory manuscript. It uses current
+   records by default and archived Phase 3 summaries only when selected.
+4. Phase 4 appends new evidence, retains existing evidence identities, updates
+   their dispositions, and rewrites the current empirical synthesis. A
+   recomputation or revalidation creates a new evidence ID and never reactivates
+   an old non-current ID.
+5. Phase 5 replaces the branch's one current manuscript.
 
-The new result does not erase the earlier run. Both remain in the research
-record so you can compare what changed and decide which material to use.
+No rerun erases its sealed provenance record. The resulting current record,
+however, follows the replacement or cumulative rule above.
 
 For the location and interpretation of run summaries, scientific artifacts,
 and decision records, see

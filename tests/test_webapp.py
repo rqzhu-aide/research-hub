@@ -256,10 +256,25 @@ def _launch_tokens(
         for phase in web_env["config"]["phases"]
         if phase["slug"] == phase_slug
     )
-    if webapp.phase_uses_catalog_method_selection(configured_phase):
+    uses_catalog_method = webapp.phase_uses_catalog_method_selection(
+        configured_phase
+    )
+    if (
+        phase_slug == webapp.project_state.METHOD_DEVELOPMENT_PHASE
+        or uses_catalog_method
+    ):
         tokens["method_menu_version"] = webapp.method_menu.catalog_version(
             web_env["project_dir"]
         )
+    if uses_catalog_method:
+        tokens["knowledge_heads_version"] = "a" * 64
+        if phase_slug in {
+            webapp.IDEA_EVALUATION_PHASE,
+            webapp.DRAFT_ASSEMBLY_PHASE,
+        }:
+            tokens["phase_two_review_version"] = "c" * 64
+        if phase_slug == webapp.PAPER_WRITING_PHASE:
+            tokens["branch_graph_version"] = "b" * 64
     return tokens
 
 
@@ -707,6 +722,7 @@ def test_ready_launch_form_contains_both_current_decision_tokens(
         project_dir,
         DISCOVERY,
         {DISCOVERY: [], VALIDATION: [DISCOVERY]},
+        current_records=True,
     )
     assert report["satisfied"] is True
     phase_plan_version = webapp.launch_plan_version(config, DISCOVERY)
@@ -736,7 +752,7 @@ def test_ready_launch_form_contains_both_current_decision_tokens(
     assert body.count('name="prerequisite_report_version"') == launch_form_count
 
 
-def test_paper_page_prepares_distinct_full_and_review_only_plan_tokens(
+def test_paper_page_prepares_only_the_active_phase_plan_token(
     web_env: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     paper_slug = "05-review-revision"
@@ -772,15 +788,9 @@ def test_paper_page_prepares_distinct_full_and_review_only_plan_tokens(
     )
 
     expected_full = webapp.launch_plan_version(web_env["config"], paper_slug)
-    expected_review = webapp.launch_plan_version(
-        web_env["config"],
-        paper_slug,
-        effective_phase=webapp.paper_review_only_phase(paper_phase),
-    )
     assert response.status_code == 200
-    assert expected_full != expected_review
     assert captured["phase_data"]["phase_plan_version"] == expected_full
-    assert captured["phase_data"]["review_phase_plan_version"] == expected_review
+    assert "review_phase_plan_version" not in captured["phase_data"]
 
 
 def test_csrf_rejects_missing_token_and_accepts_valid_start(
@@ -969,7 +979,7 @@ def test_project_mutations_reject_an_identity_from_the_previous_workspace(
     assert new_setting.read_text(encoding="utf-8") == "# Current project"
 
 
-def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_variants(
+def test_phase_three_proof_audit_and_legacy_review_target_is_rejected(
     web_env: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client = web_env["client"]
@@ -1104,6 +1114,8 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
         1,
     )
     assert audit_only_call.kwargs["theory_plan"] == "audit_only"
+    assert "expected_knowledge_heads_version" not in audit_only_call.kwargs
+    assert "expected_branch_graph_version" not in audit_only_call.kwargs
     assert (
         audit_only_call.kwargs["proof_audit_source_run_id"]
         == "opaque-source-run-id"
@@ -1135,8 +1147,7 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
     assert source_on_standard.status_code == 302
     assert launched.call_count == 0
 
-    launched.reset_mock(return_value=True)
-    launched.return_value = {"run_number": 3, "rounds_requested": 2}
+    launched.reset_mock()
     review_response = client.post(
         f"/project/{PROJECT_ID}/phase/05-review-revision/start",
         data={
@@ -1149,18 +1160,7 @@ def test_phase_three_proof_audit_and_phase_six_review_target_are_explicit_varian
         },
     )
     assert review_response.status_code == 302
-    review_call = launched.call_args
-    assert review_call.args[:5] == (
-        project_dir,
-        PROJECT_ID,
-        "05-review-revision",
-        "",
-        2,
-    )
-    assert review_call.kwargs["review_target"] == (
-        "draft/run/01/manuscript-post-review.md"
-    )
-    assert review_call.kwargs["review_target_sha256"] == "a" * 64
+    launched.assert_not_called()
 
 
 def test_legacy_phase_two_selection_remains_visible_for_schema_seven_projects(
@@ -1513,6 +1513,79 @@ def test_phase_two_published_catalog_and_rerun_form_launch_without_approval(
     assert call.kwargs["run_specific_method_id"] == ""
     assert call.kwargs["run_specific_method_version"] == ""
 
+
+def test_phase_two_focused_scope_is_explicit_and_passed_to_launcher(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    phase_slug = webapp.project_state.METHOD_DEVELOPMENT_PHASE
+    web_env["config"]["phases"].append(_method_phase_config())
+    web_env["config"]["hub"]["allow_unattended_tools"] = True
+    _write_menu_file(
+        web_env["project_dir"],
+        "focused-method",
+        "recommended",
+        number=1,
+    )
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+
+    client = web_env["client"]
+    response = client.get(f"/project/{PROJECT_ID}?tab={phase_slug}")
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert 'name="method_catalog_scope" value="full_catalog" checked' in body
+    assert 'name="method_catalog_scope" value="focused_method"' in body
+    assert 'name="focused_method_id"' in body
+    assert 'name="method_menu_version"' in body
+    assert "Focus on one method" in body
+
+    launched = Mock(return_value={"run_number": 1, "rounds_requested": 2})
+    monkeypatch.setattr(webapp, "launch_run", launched)
+    accepted = client.post(
+        f"/project/{PROJECT_ID}/phase/{phase_slug}/start",
+        data={
+            "csrf_token": _csrf(client),
+            "project_identity": _project_identity(web_env),
+            **_launch_tokens(web_env, phase_slug),
+            "method_catalog_scope": "focused_method",
+            "focused_method_id": "focused-method",
+            "rounds": "2",
+            "feedback": "Tighten only this method.",
+        },
+    )
+
+    assert accepted.status_code == 302
+    launched.assert_called_once()
+    call = launched.call_args
+    assert call.kwargs["method_catalog_scope"] == "focused_method"
+    assert call.kwargs["focused_method_id"] == "focused-method"
+    assert call.kwargs["expected_method_menu_version"] == (
+        webapp.method_menu.catalog_version(web_env["project_dir"])
+    )
+
+
+def test_phase_two_focus_is_disabled_before_any_method_exists(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    phase_slug = webapp.project_state.METHOD_DEVELOPMENT_PHASE
+    web_env["config"]["phases"].append(_method_phase_config())
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+
+    body = web_env["client"].get(
+        f"/project/{PROJECT_ID}?tab={phase_slug}"
+    ).get_data(as_text=True)
+    assert re.search(
+        r'name="method_catalog_scope" value="focused_method"[\s\S]*?disabled',
+        body,
+    )
+    assert "Focused runs become available after Phase 2 has produced an active method" in body
+
+
 def test_phase_two_table_and_launch_controls_remain_visible_during_a_run(
     web_env: dict,
     monkeypatch: pytest.MonkeyPatch,
@@ -1611,6 +1684,151 @@ def test_phase_two_retirement_is_disabled_while_another_phase_runs(
     )
 
 
+def test_method_panel_uses_authoritative_current_record_status(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    theory_slug = "03-idea-evaluation"
+    web_env["config"]["phases"].append(_theory_phase_config())
+    _write_menu_file(
+        web_env["project_dir"],
+        "recorded-method",
+        "recommended",
+        number=1,
+    )
+    status_module = web_phase_data.web_branch_status
+    monkeypatch.setattr(
+        status_module,
+        "method_record_statuses",
+        lambda *_args: [{
+            "has_theory_history": True,
+            "knowledge_heads_version": "h" * 64,
+            "phase_two_review_version": "d" * 64,
+            "branch_graph_version": "g" * 64,
+            "launch_context_error": "",
+            "record_status": {
+                "theory": {
+                    "state": "update_needed",
+                    "label": "Theory requires re-evaluation",
+                    "reason": (
+                        "The Phase 3 theory record was produced for an "
+                        "earlier Phase 2 method definition."
+                    ),
+                    "generation": 3,
+                    "source_run_id": "theory-current",
+                },
+                "empirical": {
+                    "state": "update_needed",
+                    "label": "Empirical evidence requires re-evaluation",
+                    "reason": (
+                        "The evidence index contains 1 outdated and 0 "
+                        "unresolved entries."
+                    ),
+                    "generation": 4,
+                    "source_run_id": "empirical-current",
+                    "current_evidence_count": None,
+                    "outdated_evidence_count": 1,
+                    "unresolved_evidence_count": 0,
+                },
+                "manuscript": {
+                    "state": "current",
+                    "label": "Manuscript is aligned",
+                    "reason": "The manuscript inputs are aligned.",
+                    "generation": 2,
+                    "source_run_id": "manuscript-current",
+                },
+            },
+        }],
+    )
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+    monkeypatch.setattr(webapp, "theory_audit_source_options", lambda _project: [])
+
+    response = web_env["client"].get(
+        f"/project/{PROJECT_ID}?tab={theory_slug}"
+    )
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "P3: Theory requires re-evaluation" in body
+    assert "P4: Empirical evidence requires re-evaluation" in body
+    assert "Phase 3: Theory requires re-evaluation" in body
+    theory_reason = (
+        "The Phase 3 theory record was produced for an earlier Phase 2 "
+        "method definition."
+    )
+    empirical_reason = (
+        "The evidence index contains 1 outdated and 0 unresolved entries."
+    )
+    assert body.count(theory_reason) == 2
+    assert body.count(empirical_reason) == 2
+    assert body.count('class="record-status-reason"') >= 4
+    assert f'data-knowledge-heads-version="{"h" * 64}"' in body
+    assert f'data-phase-two-review-version="{"d" * 64}"' in body
+    assert 'name="phase_two_review_version" value=""' in body
+    assert 'name="knowledge_heads_version" value=""' in body
+    assert "branch_graph_version" not in body
+    assert "generation 3" not in body
+    assert "Aligned" in body
+    assert "Review needed" in body
+    assert "Cannot verify" in body
+    assert "It does not assess scientific correctness or evidential strength" in body
+    assert "JavaScript is required to verify current method records" in body
+    assert "Later project changes cannot silently alter an active run" in body
+    assert 'data-has-theory-history="true"' in body
+
+
+def test_method_context_derivation_failure_is_visibly_unavailable(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    theory_slug = "03-idea-evaluation"
+    web_env["config"]["phases"].append(_theory_phase_config())
+    _write_menu_file(
+        web_env["project_dir"],
+        "recorded-method",
+        "recommended",
+        number=1,
+    )
+    monkeypatch.setattr(
+        web_phase_data.web_branch_status,
+        "method_record_statuses",
+        lambda *_args: [{
+            "has_theory_history": False,
+            "knowledge_heads_version": None,
+            "branch_graph_version": "b" * 64,
+            "launch_context_error": (
+                "The current Phase 3 and Phase 4 records cannot be verified for "
+                "a new run."
+            ),
+            "record_status": {
+                "theory": {"state": "not_run", "label": "Theory not run"},
+                "empirical": {
+                    "state": "not_run",
+                    "label": "Empirical work not run",
+                },
+                "manuscript": {
+                    "state": "not_run",
+                    "label": "No manuscript draft",
+                },
+            },
+        }],
+    )
+    monkeypatch.setattr(
+        webapp.project_state, "prerequisite_report", _ready_prerequisites
+    )
+    monkeypatch.setattr(webapp, "theory_audit_source_options", lambda _project: [])
+
+    response = web_env["client"].get(
+        f"/project/{PROJECT_ID}?tab={theory_slug}"
+    )
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "Unavailable for a new run." in body
+    assert "The current Phase 3 and Phase 4 records cannot be verified" in body
+    assert 'name="method_branch" value="recorded-method"' not in body
+
 def test_method_menu_branch_selection_drives_run_specific_identity(
     web_env: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1639,6 +1857,9 @@ def test_method_menu_branch_selection_drives_run_specific_identity(
     assert 'name="method_branch"' in body
     assert 'type="radio"' in body
     assert 'name="method_menu_version"' in body
+    assert 'name="theory_context_policy" value="current_only"' in body
+    assert 'value="include_archived_summaries"' in body
+    assert 'data-has-theory-history="false"' in body
     assert "Phase 2 method catalog" in body
     assert "Spectral Graph Coupling" in body
     assert "Mathematical definition" in body
@@ -1670,12 +1891,59 @@ def test_method_menu_branch_selection_drives_run_specific_identity(
         == "spectral-graph-coupling"
     )
     assert launched.call_args.kwargs["run_specific_method_version"] == "v1"
+    assert (
+        launched.call_args.kwargs["theory_context_policy"] == "current_only"
+    )
     assert len(launched.call_args.kwargs["run_specific_method_sha256"]) == 64
     assert (
         launched.call_args.kwargs["expected_method_menu_version"]
         == webapp.method_menu.catalog_version(web_env["project_dir"])
     )
+    assert (
+        launched.call_args.kwargs["expected_knowledge_heads_version"] == "a" * 64
+    )
 
+    assert (
+        launched.call_args.kwargs["expected_phase_two_review_version"] == "c" * 64
+    )
+    launched.reset_mock()
+    missing_version_tokens = _launch_tokens(web_env, theory_slug)
+    missing_version_tokens.pop("knowledge_heads_version")
+    missing_version = client.post(
+        f"/project/{PROJECT_ID}/phase/{theory_slug}/start",
+        data={
+            "csrf_token": token,
+            "project_identity": identity,
+            **missing_version_tokens,
+            "method_branch": "spectral-graph-coupling",
+        },
+        follow_redirects=True,
+    )
+    assert missing_version.status_code == 200
+    assert "selected method context cannot be verified" in (
+        missing_version.get_data(as_text=True).lower()
+    )
+    launched.assert_not_called()
+
+
+    launched.reset_mock()
+    missing_review_tokens = _launch_tokens(web_env, theory_slug)
+    missing_review_tokens.pop("phase_two_review_version")
+    missing_review_version = client.post(
+        f"/project/{PROJECT_ID}/phase/{theory_slug}/start",
+        data={
+            "csrf_token": token,
+            "project_identity": identity,
+            **missing_review_tokens,
+            "method_branch": "spectral-graph-coupling",
+        },
+        follow_redirects=True,
+    )
+    assert missing_review_version.status_code == 200
+    assert "phase 2 literature-review status cannot be verified" in (
+        missing_review_version.get_data(as_text=True).lower()
+    )
+    launched.assert_not_called()
     launched.reset_mock()
     missing_choice = client.post(
         f"/project/{PROJECT_ID}/phase/{theory_slug}/start",
@@ -1762,7 +2030,7 @@ def test_phase_three_disables_selection_when_catalog_cannot_be_fingerprinted(
     assert 'data-method-launch data-base-blocked="true"' in body
 
 
-def test_quick_rerun_recovers_special_plan_only_from_prior_run(
+def test_quick_rerun_recovers_theory_plan_but_rejects_legacy_paper_review(
     web_env: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client = web_env["client"]
@@ -1874,40 +2142,14 @@ def test_quick_rerun_recovers_special_plan_only_from_prior_run(
         data={
             "csrf_token": token,
             "project_identity": identity,
-            **_launch_tokens(
-                web_env,
-                paper_slug,
-                effective_phase=webapp.paper_review_only_phase(
-                    webapp.hub.get_phase_config(web_env["config"], paper_slug)
-                ),
-            ),
+            **_launch_tokens(web_env, paper_slug),
             "rerun_from": "prior-review",
             "preserve_frozen_plan": "1",
             "method_branch": "paper-method",
         },
     )
     assert paper_response.status_code == 302
-    paper_call = launched.call_args
-    assert paper_call.args[:5] == (
-        project_dir,
-        PROJECT_ID,
-        paper_slug,
-        "",
-        2,
-    )
-    assert paper_call.kwargs["review_target"] == (
-        "draft/run/01/manuscript-post-review.md"
-    )
-    assert paper_call.kwargs["expected_phase_plan_version"] == (
-        webapp.launch_plan_version(
-            web_env["config"],
-            paper_slug,
-            effective_phase=webapp.paper_review_only_phase(
-                webapp.hub.get_phase_config(web_env["config"], paper_slug)
-            ),
-        )
-    )
-    assert paper_call.kwargs["review_target_sha256"] == "a" * 64
+    launched.assert_not_called()
     assert exact.call_args_list[0].args == (project_dir, theory_slug, "prior-audit")
     assert exact.call_args_list[1].args == (project_dir, paper_slug, "prior-review")
 
@@ -2119,6 +2361,195 @@ def test_run_view_exposes_scientific_outcome_separately_from_technical_status(
     assert view["scientific_outcome"] == "Failed"
     assert view["recommended_user_action_label"] == "Rerun"
     assert view["decision_record_version"] == "a" * 64
+
+
+def test_failed_run_with_summary_remains_technically_failed(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    summary = project / "phase-summaries" / DISCOVERY / "failed-summary.html"
+    summary.parent.mkdir(parents=True)
+    summary.write_text("<p>Inspectable lead summary</p>", encoding="utf-8")
+    run = {
+        "run_id": "failed-summary",
+        "status": "failed",
+        "rounds_requested": 1,
+        "rounds": [],
+    }
+
+    view = web_phase_data._run_view(project, DISCOVERY, run, 1)
+
+    assert view is not None
+    assert view["summary_available"] is True
+    assert str(view["summary_path"]).replace("\\", "/") == (
+        "phase-summaries/01-discovery/failed-summary.html"
+    )
+    assert view["display_status"] == "failed"
+    assert view["status_label"] == "Failed"
+    assert web_phase_data._decision_state(
+        {"current_run": None, "stale": False}, view
+    ) == "failed"
+
+def test_completed_unpromoted_run_is_not_labeled_as_current(
+    web_env: dict,
+) -> None:
+    phase = {
+        "slug": "03-idea-evaluation",
+        "name": "Theoretical Analysis",
+        "description": "Develop the current theory package.",
+        "pattern": "sequential",
+        "rounds": {"min": 1, "default": 1, "max": 1},
+        "gated_by": [],
+        "folder": "draft/theory/",
+        "members": [],
+        "stages": [],
+    }
+    run = {
+        "run_id": "partial-run",
+        "status": "completed",
+        "rounds_requested": 1,
+        "rounds": [],
+        "phase_record": {"current_updated": False},
+        "decision_record": {
+            "sha256": "p" * 64,
+            "data": {"scientific_outcome": "Partial"},
+        },
+    }
+
+    view = web_phase_data._run_view(
+        web_env["project_dir"], phase["slug"], run, 1
+    )
+
+    assert view is not None
+    assert view["current_updated"] is False
+    assert web_phase_data._decision_label(
+        {"stale": False}, view
+    ) == "Run complete; current result unchanged"
+
+    phase_data = {
+        "phase_cfg": phase,
+        "state": {"status": "completed"},
+        "run_history": [
+            view,
+            {
+                **view,
+                "id": "older-complete",
+                "run_id": "older-complete",
+                "number": 0,
+                "scientific_outcome": "Complete",
+            },
+        ],
+        "latest_run": view,
+        "approved_run": None,
+        "run_active": False,
+        "active_elsewhere": False,
+        "can_start": False,
+        "prerequisite_report": _ready_prerequisites(),
+        "rounds_policy": phase["rounds"],
+        "stages": phase["stages"],
+        "plan_view": {},
+        "decision_state": "completed",
+        "recovery_only": False,
+        "method_menu": {"entries": [], "warnings": []},
+        "method_details": [],
+        "method_ranking_table": [],
+        "catalog_method_selection": False,
+    }
+    with webapp.app.test_request_context("/"):
+        rendered = webapp.render_template(
+            "_tab_phase.html",
+            phase_data=phase_data,
+            project=web_env["project"],
+            project_identity="sealed-project-identity",
+            run_permissions={"unattended_tools": True},
+        )
+
+    assert "Run complete; current result unchanged" in rendered
+    assert ">Current result</span>" not in rendered
+    assert rendered.count("Scientific outcome: Partial") == 2
+
+
+def test_phase_tab_separates_scientific_outcomes_and_latest_attempt(
+    web_env: dict,
+) -> None:
+    phase = {
+        "slug": DISCOVERY,
+        "name": "Discovery",
+        "description": "Establish the research basis.",
+        "pattern": "parallel",
+        "rounds": {"min": 1, "default": 1, "max": 1},
+        "gated_by": [],
+        "folder": "discovery/",
+        "members": [],
+        "stages": [],
+    }
+    current = {
+        "id": "current-run",
+        "run_id": "current-run",
+        "number": 2,
+        "status": "completed",
+        "status_label": "Completed",
+        "scientific_outcome": "Complete",
+        "summary_available": False,
+        "log_available": False,
+    }
+    latest_attempt = {
+        "id": "failed-rerun",
+        "run_id": "failed-rerun",
+        "number": 3,
+        "status": "failed",
+        "status_label": "Failed",
+        "scientific_outcome": "Failed",
+        "summary_available": False,
+        "log_available": False,
+    }
+    partial = {
+        "id": "partial-run",
+        "run_id": "partial-run",
+        "number": 1,
+        "status": "completed",
+        "scientific_outcome": "Partial",
+        "summary_available": False,
+        "log_available": False,
+    }
+    phase_data = {
+        "phase_cfg": phase,
+        "state": {"status": "completed"},
+        "run_history": [latest_attempt, current, partial],
+        "latest_attempt": latest_attempt,
+        "latest_run": current,
+        "current_run": current,
+        "run_active": False,
+        "active_elsewhere": False,
+        "can_start": False,
+        "prerequisite_report": _ready_prerequisites(),
+        "rounds_policy": phase["rounds"],
+        "stages": phase["stages"],
+        "plan_view": {},
+        "decision_state": "completed",
+        "recovery_only": False,
+        "method_menu": {"entries": [], "warnings": []},
+        "method_details": [],
+        "method_ranking_table": [],
+        "catalog_method_selection": False,
+    }
+
+    with webapp.app.test_request_context("/"):
+        rendered = webapp.render_template(
+            "_tab_phase.html",
+            phase_data=phase_data,
+            project=web_env["project"],
+            project_identity="sealed-project-identity",
+            run_permissions={"unattended_tools": True},
+        )
+
+    assert "Current record:" in rendered
+    assert "Run 2" in rendered
+    assert "Latest attempt:" in rendered
+    assert "Run 3" in rendered
+    assert "run-outcome-complete" in rendered
+    assert "Scientific outcome: Partial" in rendered
+    assert "run-outcome-failed" in rendered
 
 
 def test_phase_four_run_view_distinguishes_pending_and_sealed_protocols(
@@ -2451,19 +2882,21 @@ def test_missing_prerequisites_require_explicit_override(
     client = web_env["client"]
     launched = Mock(return_value={"run_number": 1, "rounds_requested": 2})
     report = {
+        "policy": "current_records",
         "satisfied": False,
         "blockers": [DISCOVERY],
         "requirements": [
             {
                 "phase": DISCOVERY,
                 "satisfied": False,
-                "reason": "No approved result",
+                "reason": "no current result",
             }
         ],
     }
+    prerequisite_report = Mock(return_value=report)
     monkeypatch.setattr(webapp, "launch_run", launched)
     monkeypatch.setattr(
-        webapp.project_state, "prerequisite_report", lambda *_args, **_kwargs: report
+        webapp.project_state, "prerequisite_report", prerequisite_report
     )
     token = _csrf(client)
     identity = _project_identity(web_env)
@@ -2479,7 +2912,13 @@ def test_missing_prerequisites_require_explicit_override(
         follow_redirects=True,
     )
     assert blocked.status_code == 200
-    assert "Confirm the prerequisite override" in blocked.get_data(as_text=True)
+    blocked_body = blocked.get_data(as_text=True)
+    assert "Scientific context is incomplete" in blocked_body
+    assert (
+        "Some expected prior phase results are unavailable, outdated, or not intact"
+        in blocked_body
+    )
+    assert "continue without every expected current result" in blocked_body
     launched.assert_not_called()
 
     allowed = client.post(
@@ -2507,6 +2946,11 @@ def test_missing_prerequisites_require_explicit_override(
     assert DISCOVERY in call.kwargs["prerequisite_override_reason"]
     assert call.kwargs["prerequisite_report_version"] == (
         webapp.decision_report_version("prerequisite", report)
+    )
+    assert prerequisite_report.call_count >= 2
+    assert all(
+        report_call.kwargs == {"current_records": True}
+        for report_call in prerequisite_report.call_args_list
     )
 
 
@@ -2684,6 +3128,8 @@ def test_failed_replacement_keeps_prior_result_as_the_decision_subject(
     )
     assert data["latest_run"]["run_id"] == prior
     assert data["latest_run"]["status"] == "awaiting_review"
+    assert data["latest_attempt"]["run_id"] == replacement
+    assert data["latest_attempt"]["status"] == "failed"
 
 
 def test_client_controls_preserve_dirty_forms_and_mobile_focus_contract() -> None:
@@ -2872,16 +3318,18 @@ def test_prerequisite_override_rejects_a_report_changed_after_render(
             {
                 "phase": DISCOVERY,
                 "satisfied": False,
-                "approved_run": None,
+                "completed_run": None,
                 "stale": False,
                 "phase_status": "pending",
-                "reason": "no approved run",
+                "reason": "no current result",
             }
         ],
         "checked_at": "2026-07-20T00:00:00Z",
     }
     changed_report = copy.deepcopy(shown_report)
-    changed_report["requirements"][0]["reason"] = "approved summary is missing or changed"
+    changed_report["requirements"][0]["reason"] = (
+        "current summary is missing or changed"
+    )
     changed_report["checked_at"] = "2026-07-20T00:01:00Z"
     monkeypatch.setattr(webapp, "launch_run", launched)
     monkeypatch.setattr(
@@ -3866,6 +4314,7 @@ def test_phase_four_renders_the_explicit_method_chooser_and_scope_selector(
     assert 'name="method_menu_version"' in html
     assert 'name="method_branch"' in html
     assert "Phase 2 method catalog" in html
+    assert 'name="phase_two_review_version" value=""' in html
     assert "Active Method" in html
     assert "Mathematical definition" in html
     assert "T_n" in html
@@ -3885,6 +4334,89 @@ def test_phase_four_renders_the_explicit_method_chooser_and_scope_selector(
     assert "Either scope can be launched directly" in html
     preliminary = html[html.index('value="preliminary"'):]
     assert "selected" in preliminary[:200]
+
+
+def test_phase_four_renders_method_basis_and_attention_as_separate_signals(
+    web_env: dict,
+) -> None:
+    phase = _phase_four_with_run_modes()
+    method = {
+        "stable_id": "active-method",
+        "label": "Active Method",
+        "status": "recommended",
+        "version": "v2",
+        "launchable": True,
+        "body_html": "<p>Current method definition.</p>",
+        "record_status": {
+            "method": {"state": "current", "label": "Current method"},
+            "theory": {"state": "current", "label": "Current theory"},
+            "empirical": {
+                "state": "update_needed",
+                "label": "Composite status retained for compatibility",
+                "method_applicability": {
+                    "state": "valid_current_version",
+                    "label": "Valid for method v2",
+                    "reason": "The record uses the current mathematical definition.",
+                },
+                "sibling_basis": {
+                    "state": "changed",
+                    "label": "Phase 3 basis changed",
+                    "reason": "Decision-relevant theory changed after this run.",
+                },
+                "research_attention": {
+                    "state": "required",
+                    "indexed_count": 7,
+                    "outdated_count": 2,
+                    "unresolved_count": 1,
+                    "label": "Three evidence entries require attention",
+                    "reasons": ["Two results require revalidation"],
+                },
+            },
+        },
+    }
+    phase_data = {
+        "phase_cfg": phase,
+        "state": {"status": "pending"},
+        "run_history": [],
+        "latest_run": None,
+        "current_run": None,
+        "run_active": False,
+        "active_elsewhere": False,
+        "can_start": True,
+        "prerequisite_report": _ready_prerequisites(),
+        "rounds_policy": phase["rounds"],
+        "stages": phase["stages"],
+        "plan_view": {},
+        "decision_state": "pending",
+        "recovery_only": False,
+        "method_menu": {"entries": [method], "warnings": []},
+        "method_details": [method],
+        "method_ranking_table": [],
+        "catalog_method_selection": True,
+    }
+
+    with webapp.app.test_request_context("/"):
+        rendered = webapp.render_template(
+            "_tab_phase.html",
+            phase_data=phase_data,
+            project=web_env["project"],
+            project_identity="sealed-project-identity",
+            run_permissions={"unattended_tools": True},
+        )
+
+    assert "Method version:" in rendered
+    assert "Valid for method v2" in rendered
+    assert "Phase 3 basis:" in rendered
+    assert "Phase 3 basis changed" in rendered
+    assert "Evidence requiring attention:" in rendered
+    assert "Indexed 7," in rendered
+    assert "outdated 2," in rendered
+    assert "unresolved 1" in rendered
+    assert "not scientific strength" in rendered
+    assert 'data-state="valid_current_version"' in rendered
+    assert 'data-state="changed"' in rendered
+    assert 'data-state="required"' in rendered
+    assert "Composite status retained for compatibility" not in rendered
 
 
 @pytest.mark.parametrize("run_mode", ["preliminary", "comprehensive"])
@@ -3918,9 +4450,11 @@ def test_phase_four_scope_launches_all_three_stages(
     assert call.args[4] == 3
     assert call.kwargs["run_mode"] == run_mode
     assert call.kwargs["run_specific_method_id"] == "active-method"
+    assert call.kwargs["expected_knowledge_heads_version"] == "a" * 64
     assert call.kwargs["expected_method_menu_version"] == (
         webapp.method_menu.catalog_version(web_env["project_dir"])
     )
+    assert call.kwargs["expected_phase_two_review_version"] == "c" * 64
 
 
 def test_phase_four_defaults_to_preliminary_with_all_three_stages(
@@ -4034,6 +4568,84 @@ def _phase_five_config() -> dict:
     }
 
 
+def test_phase_five_shows_collection_review_without_starting_a_run(
+    web_env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    phase_slug = "05-review-revision"
+    web_env["config"]["phases"].append(_phase_five_config())
+    _write_menu_file(
+        web_env["project_dir"],
+        "active-method",
+        "recommended",
+    )
+    reason = (
+        "The Phase 1 reference collection has changed since the manuscript "
+        "was generated."
+    )
+    monkeypatch.setattr(
+        web_phase_data.web_branch_status,
+        "method_record_statuses",
+        lambda *_args: [{
+            "has_theory_history": True,
+            "knowledge_heads_version": "a" * 64,
+            "branch_graph_version": "b" * 64,
+            "launch_context_error": "",
+            "record_status": {
+                "theory": {
+                    "state": "current",
+                    "label": "Theory is aligned",
+                    "reason": "The theory package matches the current method.",
+                },
+                "empirical": {
+                    "state": "current",
+                    "label": "Empirical evidence is aligned",
+                    "reason": (
+                        "The empirical package matches the current method."
+                    ),
+                },
+                "manuscript": {
+                    "state": "update_needed",
+                    "label": "Manuscript inputs need review",
+                    "reason": reason,
+                    "changed_input_labels": [
+                        "Phase 1 reference collection"
+                    ],
+                },
+            },
+        }],
+    )
+    monkeypatch.setattr(
+        web_phase_data,
+        "phase_five_branch_readiness",
+        _ready_phase_five_branch,
+    )
+    monkeypatch.setattr(
+        webapp,
+        "phase_five_branch_readiness",
+        _ready_phase_five_branch,
+    )
+    monkeypatch.setattr(
+        webapp.project_state,
+        "prerequisite_report",
+        _ready_prerequisites,
+    )
+    launched = Mock()
+    monkeypatch.setattr(webapp, "launch_run", launched)
+
+    response = web_env["client"].get(
+        f"/project/{PROJECT_ID}?tab={phase_slug}"
+    )
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "P5: Manuscript inputs need review" in body
+    assert body.count(reason) == 2
+    assert 'name="method_branch" value="active-method"' in body
+    assert "Manuscript requires revision" not in body
+    launched.assert_not_called()
+
+
 def test_phase_five_chooser_and_launch_require_all_exact_branch_results(
     web_env: dict,
     monkeypatch: pytest.MonkeyPatch,
@@ -4118,8 +4730,9 @@ def test_phase_five_chooser_and_launch_require_all_exact_branch_results(
         branch_readiness,
     )
     monkeypatch.setattr(webapp, "phase_five_branch_readiness", branch_readiness)
+    prerequisite_report = Mock(side_effect=_ready_prerequisites)
     monkeypatch.setattr(
-        webapp.project_state, "prerequisite_report", _ready_prerequisites
+        webapp.project_state, "prerequisite_report", prerequisite_report
     )
     launched = Mock(return_value={"run_number": 1, "rounds_requested": 1})
     monkeypatch.setattr(webapp, "launch_run", launched)
@@ -4155,7 +4768,26 @@ def test_phase_five_chooser_and_launch_require_all_exact_branch_results(
     )
     assert radio is not None
     assert "checked" not in radio.group(0)
+    assert re.search(r'data-knowledge-heads-version="[0-9a-f]{64}"', radio.group(0))
+    assert re.search(r'data-branch-graph-version="[0-9a-f]{64}"', radio.group(0))
+    assert 'name="knowledge_heads_version" value=""' in ready_html
+    assert 'name="branch_graph_version" value=""' in ready_html
     assert "data-method-launch" in ready_html
+    assert 'name="run_mode"' in ready_html
+    assert 'value="assembly"' in ready_html
+    assert 'value="review_revision"' in ready_html
+    assert 'name="review_target"' not in ready_html
+
+    legacy_launch = client.post(
+        f"/project/{PROJECT_ID}/phase/{phase_slug}/start",
+        data={
+            **common,
+            **_launch_tokens(web_env, phase_slug),
+            "review_target": "draft/run/01/manuscript-post-review.md",
+        },
+    )
+    assert legacy_launch.status_code == 302
+    launched.assert_not_called()
 
     accepted = client.post(
         f"/project/{PROJECT_ID}/phase/{phase_slug}/start",
@@ -4170,6 +4802,18 @@ def test_phase_five_chooser_and_launch_require_all_exact_branch_results(
     assert call.kwargs["run_specific_method_id"] == "active-method"
     assert call.kwargs["run_specific_method_version"] == "v1"
     assert len(call.kwargs["run_specific_method_sha256"]) == 64
+    assert call.kwargs["expected_knowledge_heads_version"] == "a" * 64
+    assert call.kwargs["expected_branch_graph_version"] == "b" * 64
+    phase_five_calls = [
+        report_call
+        for report_call in prerequisite_report.call_args_list
+        if report_call.args[1] == phase_slug
+    ]
+    assert len(phase_five_calls) == 1
+    assert phase_five_calls[0].kwargs == {
+        "required_completed_runs": required_completed_runs,
+        "required_method_id": "active-method",
+    }
     assert checked_methods
     assert all(identity[:2] == ("active-method", "v1") for identity in checked_methods)
 
@@ -4224,14 +4868,14 @@ def test_phase_five_does_not_claim_ready_when_every_method_is_baseline_blocked(
     )
     assert phase_data["can_run"] is False
     assert phase_data["prerequisite_report"]["satisfied"] is False
-    assert "No active method has intact completed results" in phase_data["gating_reason"]
+    assert "No active method has usable current results" in phase_data["gating_reason"]
 
     response = web_env["client"].get(f"/project/{PROJECT_ID}?tab={phase_slug}")
     body = response.get_data(as_text=True)
     assert response.status_code == 200
     assert all(blocker in body for blocker in blockers)
     assert "Choose a method above before launch." not in body
-    assert "Complete every previous phase" in body
+    assert "Produce usable current results in Phases 1 through 4" in body
 
 
 def test_phase_four_rejects_invalid_run_mode(

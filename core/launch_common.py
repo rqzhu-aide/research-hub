@@ -71,6 +71,7 @@ MAX_SOURCE_DECISION_BYTES = 128 * 1024
 
 
 ELIGIBLE_SOURCE_STATUSES = frozenset({
+    "completed",
     "approved",
     "awaiting_review",
     "revision_requested",
@@ -79,6 +80,7 @@ ELIGIBLE_SOURCE_STATUSES = frozenset({
 
 
 SOURCE_BASELINE_STATUS_BY_RUN_STATUS = {
+    "completed": "current",
     "approved": "accepted",
     "awaiting_review": "proposed",
     "revision_requested": "proposed",

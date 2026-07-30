@@ -22,7 +22,24 @@ Systems](https://rqzhu-aide.github.io/research-hub/docs/operating-systems).
 | **4. Implementation & Experiments** | Independently choose an active method, implement it, and evaluate it with prespecified diagnostics and experiments |
 | **5. Paper Assembly & Review** | Combine compatible theoretical and empirical work from one method branch into a manuscript, then review and revise it |
 
-No phase starts automatically. Phase 2 publishes a valid Complete or Partial method catalog automatically after validation. After Phase 2, the user may independently start Phase 3 or Phase 4 by choosing an active method from the read-only catalog in that phase. Research Hub freezes the method and version for the run and keeps work for the same method in one durable branch. Each sibling phase can use available prior results and discussion from both phases on that branch. Phase 5 requires intact completed results from Phases 1 through 4, with the Phase 3 and Phase 4 results tied to the same selected method snapshot. A Partial Phase 2 result requires an explicit prerequisite override before Phase 3 or Phase 4 can start.
+No phase starts automatically. Phase 2 publishes a valid Complete or Partial
+method catalog automatically after validation. After Phase 2, the user may
+independently start Phase 3 or Phase 4 by choosing an active method from the
+read-only catalog in that phase. Research Hub freezes the method and version for
+the run, including the exact digest of its authoritative mathematical
+definition, and keeps work for the same method in one durable branch. Each sibling
+phase can use available prior results and discussion from both phases on that
+branch.
+
+A calculation-defining Phase 2 change advances the method version. Earlier
+Phase 3 proofs and Phase 4 code or results remain historical until a rerun
+checks or recomputes them for the new version.
+
+Phase 5 requires usable current results from Phases 1 through 4. Phase 1,
+Phase 2, and Phase 4 may be Complete or Partial; Phase 3 must be Complete, and
+Failed never qualifies. The Phase 3 and Phase 4 results must be tied to the same
+selected method snapshot. A Partial Phase 2 result requires an explicit
+prerequisite override before Phase 3 or Phase 4 can start.
 
 Read [Current Limitations](https://rqzhu-aide.github.io/research-hub/docs/known-limitations) before relying on the full workflow.
 

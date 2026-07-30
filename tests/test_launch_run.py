@@ -664,6 +664,168 @@ def test_phase_three_rechecks_the_catalog_version_inside_the_launch_lock(
         )
 
 
+@pytest.mark.parametrize(
+    "scope",
+    [
+        launcher.phase_options.METHOD_SCOPE_FULL_CATALOG,
+        launcher.phase_options.METHOD_SCOPE_FOCUSED,
+    ],
+)
+@pytest.mark.parametrize(
+    ("reviewed_digest", "message"),
+    [
+        ("", "missing or invalid"),
+        ("0" * 64, "changed after launch was requested"),
+    ],
+)
+def test_phase_two_rechecks_the_catalog_before_reservation_for_every_scope(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    scope: str,
+    reviewed_digest: str,
+    message: str,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    phase_slug = launcher.project_state.METHOD_DEVELOPMENT_PHASE
+    monkeypatch.setattr(
+        launcher.launch_plans,
+        "_load_hub_config",
+        lambda: {"phases": [{"slug": phase_slug}]},
+    )
+    monkeypatch.setattr(
+        launcher.project_state,
+        "reserve_run",
+        lambda *_args, **_kwargs: pytest.fail("run was reserved"),
+    )
+
+    with pytest.raises(launcher.LaunchError, match=message):
+        launcher._launch_run_locked(
+            project,
+            1,
+            phase_slug,
+            method_catalog_scope=scope,
+            focused_method_id=(
+                "method-a"
+                if scope == launcher.phase_options.METHOD_SCOPE_FOCUSED
+                else ""
+            ),
+            expected_method_menu_version=reviewed_digest,
+        )
+
+
+def test_phase_three_branch_guard_rejects_stale_knowledge_heads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        launcher.knowledge_heads,
+        "derive_live_heads",
+        lambda *_args: {"verified": True},
+    )
+    monkeypatch.setattr(
+        launcher.knowledge_heads,
+        "heads_version",
+        lambda _heads: "b" * 64,
+    )
+
+    with pytest.raises(
+        launcher.LaunchError, match="Phase 3 or Phase 4 records changed"
+    ):
+        launcher._revalidate_branch_launch_versions(
+            tmp_path,
+            launcher.IDEA_EVALUATION_PHASE,
+            "method-a",
+            ordinary_method_run=True,
+            expected_knowledge_heads_version="a" * 64,
+            expected_phase_two_review_version="",
+            expected_branch_graph_version="",
+        )
+
+
+def test_method_branch_guard_rejects_a_missing_knowledge_version(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        launcher.knowledge_heads,
+        "derive_live_heads",
+        lambda *_args: pytest.fail("missing token must fail before reading heads"),
+    )
+
+    with pytest.raises(
+        launcher.LaunchError, match="context is missing or cannot be verified"
+    ):
+        launcher._revalidate_branch_launch_versions(
+            tmp_path,
+            launcher.DRAFT_ASSEMBLY_PHASE,
+            "method-a",
+            ordinary_method_run=True,
+            expected_knowledge_heads_version="",
+            expected_phase_two_review_version="",
+            expected_branch_graph_version="",
+        )
+
+
+def test_phase_five_branch_guard_binds_the_current_manuscript_graph(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        launcher.knowledge_heads,
+        "derive_live_heads",
+        lambda *_args: {"verified": True},
+    )
+    monkeypatch.setattr(
+        launcher.knowledge_heads,
+        "heads_version",
+        lambda _heads: "a" * 64,
+    )
+    monkeypatch.setattr(
+        launcher.knowledge_graph,
+        "build_branch_basis_graph",
+        lambda *_args: {"graph_sha256": "c" * 64},
+    )
+
+    with pytest.raises(
+        launcher.LaunchError, match="Phase 5 prerequisites changed"
+    ):
+        launcher._revalidate_branch_launch_versions(
+            tmp_path,
+            launcher.PAPER_WRITING_PHASE,
+            "method-a",
+            ordinary_method_run=True,
+            expected_knowledge_heads_version="a" * 64,
+            expected_phase_two_review_version="",
+            expected_branch_graph_version="b" * 64,
+        )
+
+
+@pytest.mark.parametrize(
+    "phase_slug",
+    [launcher.IDEA_EVALUATION_PHASE, "01-literature-review"],
+)
+def test_audit_only_and_nonmethod_runs_require_no_branch_version(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    phase_slug: str,
+) -> None:
+    monkeypatch.setattr(
+        launcher.knowledge_heads,
+        "derive_live_heads",
+        lambda *_args: pytest.fail("token-free launch must not read branch heads"),
+    )
+    launcher._revalidate_branch_launch_versions(
+        tmp_path,
+        phase_slug,
+        "",
+        ordinary_method_run=False,
+        expected_knowledge_heads_version="",
+        expected_branch_graph_version="",
+        expected_phase_two_review_version="",
+    )
+
+
 def test_method_bound_run_requires_a_run_specific_user_choice() -> None:
     with pytest.raises(launcher.LaunchError, match="Choose an active method"):
         launcher._method_selection_for_run(
@@ -1298,16 +1460,27 @@ def test_trusted_context_uses_only_the_selected_method_branch(
         selected_method_id="method-a",
         selected_method_version="v1",
         selected_method_sha256="a" * 64,
+        context_policy={"include_archived_summaries": True},
     )
 
     assert len(context) == 1
     assert context[0]["run_id"] == run_a
-    assert context[0]["kind"] == "prior_method_branch_result"
+    assert context[0]["kind"] == "prior_method_branch_result_history"
     assert context[0]["source_status"] == "awaiting_review"
     assert context[0]["trusted"] is False
     assert context[0]["usable"] is True
     assert context[0]["method_id"] == "method-a"
     assert context[0]["method_sha256"] == "a" * 64
+
+    current_only = launcher._trusted_context(
+        project,
+        phase_slug,
+        config,
+        selected_method_id="method-a",
+        selected_method_version="v1",
+        selected_method_sha256="a" * 64,
+    )
+    assert current_only == []
 
     changed_definition = launcher._trusted_context(
         project,
@@ -1316,8 +1489,11 @@ def test_trusted_context_uses_only_the_selected_method_branch(
         selected_method_id="method-a",
         selected_method_version="v1",
         selected_method_sha256="c" * 64,
+        context_policy={"include_archived_summaries": True},
     )
-    assert changed_definition[0]["kind"] == "prior_method_branch_result_history"
+    assert changed_definition[0]["kind"] == (
+        "prior_method_branch_result_history"
+    )
     assert changed_definition[0]["usable"] is False
 
 
@@ -1344,6 +1520,7 @@ def test_sibling_results_and_role_discussion_are_frozen_for_the_same_branch(
     for phase, run_id, selected_id, status, role in (
         (phase_three, "theory-a", method_id, "awaiting_review", "theorist"),
         (phase_four, "experiment-a", method_id, "approved", "data_scientist"),
+        (phase_three, "theory-partial", method_id, "completed", "theorist"),
         (phase_four, "experiment-b", "method-b", "approved", "data_scientist"),
     ):
         summary = project / "phase-summaries" / phase / f"{run_id}.html"
@@ -1370,6 +1547,9 @@ def test_sibling_results_and_role_discussion_are_frozen_for_the_same_branch(
             }],
         }
         decision = project / "branch-artifacts" / f"{run_id}.decision.json"
+        if run_id == "theory-partial":
+            # The run completed after theory-a but did not replace current theory.
+            run["phase_record"] = {"current_updated": False}
         decision_data = _valid_decision_record()
         decision.write_text(json.dumps(decision_data), encoding="utf-8")
         run["decision_record"] = {
@@ -1447,8 +1627,18 @@ def test_sibling_results_and_role_discussion_are_frozen_for_the_same_branch(
     }
     state_data = {
         "phases": {
-            phase: {"stale": False, "runs": runs}
-            for phase, runs in runs_by_phase.items()
+            phase_three: {
+                "stale": False,
+                "current_run": "theory-a",
+                "current_runs": {method_id: "theory-a"},
+                "runs": runs_by_phase[phase_three],
+            },
+            phase_four: {
+                "stale": False,
+                "current_run": "experiment-a",
+                "current_runs": {method_id: "experiment-a"},
+                "runs": runs_by_phase[phase_four],
+            },
         }
     }
     monkeypatch.setattr(launcher.project_state, "load", lambda _project: state_data)
@@ -1483,6 +1673,7 @@ def test_sibling_results_and_role_discussion_are_frozen_for_the_same_branch(
     )
 
     assert {entry["run_id"] for entry in context} == {"theory-a", "experiment-a"}
+    assert "theory-partial" not in {entry["run_id"] for entry in context}
     assert "experiment-b" not in {entry["run_id"] for entry in context}
     peer = next(entry for entry in context if entry["run_id"] == "experiment-a")
     assert peer["kind"] == "peer_method_branch_result"
@@ -1557,18 +1748,81 @@ _PHASE_FIVE_REQUIRED_PHASES = (
 )
 
 
+def _phase_five_alignment_graph(
+    method: dict[str, object],
+    *,
+    p2: str = "exact_match",
+    p3: str = "exact_match",
+    p4: str = "exact_match",
+) -> dict[str, object]:
+    identity = {
+        "stable_id": method["stable_id"],
+        "version": method["version"],
+        "definition_sha256": method["sha256"],
+    }
+    return {
+        "branch": identity,
+        "nodes": [
+            {
+                "id": "p2-method",
+                "status": {"alignment_status": p2},
+                "diagnostics": [],
+            },
+            {
+                "id": "p3-theory",
+                "status": {"alignment_status": p3},
+                "diagnostics": [],
+            },
+            {
+                "id": "p4-empirical",
+                "status": {"alignment_status": p4},
+                "diagnostics": (
+                    ["record contains stale empirical evidence"]
+                    if p4 != "exact_match"
+                    else []
+                ),
+            },
+        ],
+    }
+
+
 def _install_phase_five_scientific_result_fixtures(
     project: Path,
     monkeypatch: pytest.MonkeyPatch,
     outcomes: dict[str, str],
     *,
     manifest_schema_version: int | None = None,
-) -> dict[str, str]:
+    phase_two_status: str = "approved",
+) -> dict[str, object]:
     manifest_version = manifest_schema_version or launcher.MANIFEST_SCHEMA_VERSION
     method = {
         "stable_id": "method-a",
         "version": "v1",
         "sha256": "a" * 64,
+        "definition_sha256": "a" * 64,
+    }
+    method["provenance"] = {
+        "schema_version": 1,
+        "method_sha256": method["sha256"],
+        "definition_source_run_id": (
+            f"{launcher.project_state.METHOD_DEVELOPMENT_PHASE}-result"
+        ),
+        "review_source_run_id": (
+            f"{launcher.project_state.METHOD_DEVELOPMENT_PHASE}-result"
+        ),
+        "review_scientific_outcome": outcomes[
+            launcher.project_state.METHOD_DEVELOPMENT_PHASE
+        ],
+        "review_scope": "full_catalog",
+        "disposition": "added",
+        "literature_basis": {
+            "schema_version": 1,
+            "availability": "absent",
+            "source_run_id": None,
+            "generation": None,
+            "synthesis_sha256": None,
+            "collection_sha256": None,
+        },
     }
     runs: dict[str, list[dict[str, object]]] = {}
     manifests: dict[tuple[str, str], dict[str, object]] = {}
@@ -1579,6 +1833,11 @@ def _install_phase_five_scientific_result_fixtures(
             project,
             phase_slug,
             run_id,
+            status=(
+                phase_two_status
+                if phase_slug == launcher.project_state.METHOD_DEVELOPMENT_PHASE
+                else "approved"
+            ),
         )
         decision_data = _valid_decision_record()
         decision_data["scientific_outcome"] = outcomes[phase_slug]
@@ -1590,7 +1849,39 @@ def _install_phase_five_scientific_result_fixtures(
             "schema_version": 1,
             "data": launcher.project_state.validate_decision_record(decision_data),
         }
+        run["phase_record"] = {"current_updated": True}
+        if phase_slug == launcher.project_state.METHOD_DEVELOPMENT_PHASE:
+            run["method_menu_seal"] = {
+                "entries": [
+                    {
+                        "stable_id": method["stable_id"],
+                        "version": method["version"],
+                        "sha256": method["sha256"],
+                        "definition_sha256": method["definition_sha256"],
+                    }
+                ]
+            }
         runs[phase_slug] = [run]
+        if phase_slug == launcher.project_state.METHOD_DEVELOPMENT_PHASE:
+            manifests[(phase_slug, run_id)] = {
+                "schema_version": manifest_version,
+                "phase_slug": phase_slug,
+                "run_scope": {
+                    "schema_version": 1,
+                    "kind": "method_catalog",
+                    "scope": "full_catalog",
+                    "focused_method_id": None,
+                },
+                "context_policy": None,
+                "phase_two_literature_basis": dict(
+                    method["provenance"]["literature_basis"]
+                ),
+            }
+        if phase_slug == "01-literature-review":
+            manifests[(phase_slug, run_id)] = {
+                "schema_version": manifest_version,
+                "phase_slug": phase_slug,
+            }
         if phase_slug in {
             launcher.IDEA_EVALUATION_PHASE,
             launcher.DRAFT_ASSEMBLY_PHASE,
@@ -1636,6 +1927,44 @@ def _install_phase_five_scientific_result_fixtures(
         "_read_manifest",
         lambda _project, phase_slug, run_id: manifests[(phase_slug, run_id)],
     )
+    monkeypatch.setattr(
+        launcher.launch_manifest.knowledge_graph,
+        "build_branch_basis_graph",
+        lambda _project, _stable_id: _phase_five_alignment_graph(method),
+    )
+    from core import empirical_records, literature_records, theory_records
+
+    monkeypatch.setattr(
+        literature_records,
+        "load_current_literature_record",
+        lambda _project: {
+            "source_run_id": "01-literature-review-result",
+        },
+    )
+    monkeypatch.setattr(
+        theory_records,
+        "load_current_theory",
+        lambda _project, _stable_id: {
+            "method_identity": {
+                "stable_id": method["stable_id"],
+                "version": method["version"],
+                "definition_sha256": method["sha256"],
+            },
+            "source_run_id": f"{launcher.IDEA_EVALUATION_PHASE}-result",
+        },
+    )
+    monkeypatch.setattr(
+        empirical_records,
+        "load_current_package",
+        lambda _project, _stable_id: {
+            "method": {
+                "stable_id": method["stable_id"],
+                "version": method["version"],
+                "definition_sha256": method["sha256"],
+            },
+            "source_run_id": f"{launcher.DRAFT_ASSEMBLY_PHASE}-result",
+        },
+    )
     return method
 
 def _phase_five_context_config() -> dict[str, object]:
@@ -1666,11 +1995,91 @@ def _phase_five_context_config() -> dict[str, object]:
     }
 
 
-@pytest.mark.parametrize("scientific_outcome", ["Complete", "Partial"])
-def test_phase_five_readiness_accepts_complete_or_partial_scientific_results(
+def test_phase_five_context_uses_selected_methods_superseded_phase_two_review(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    scientific_outcome: str,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    phase_two = launcher.project_state.METHOD_DEVELOPMENT_PHASE
+    run, _summary, _decision = _source_submission(
+        project,
+        phase_two,
+        "method-a-review",
+        status="superseded",
+    )
+    monkeypatch.setattr(
+        launcher.project_state,
+        "load",
+        lambda _project: {
+            "phases": {
+                phase_two: {
+                    "runs": [run],
+                    "stale": True,
+                }
+            }
+        },
+    )
+    monkeypatch.setattr(
+        launcher.project_state,
+        "run_integrity_report",
+        lambda *_args: {"ok": True},
+    )
+
+    context = launcher._trusted_context(
+        project,
+        launcher.PAPER_WRITING_PHASE,
+        _phase_five_context_config(),
+        selected_method_id="method-a",
+        selected_method_version="v1",
+        selected_method_sha256="a" * 64,
+        required_completed_runs={phase_two: "method-a-review"},
+    )
+
+    phase_two_context = next(
+        entry for entry in context if entry["phase"] == phase_two
+    )
+    assert phase_two_context["run_id"] == "method-a-review"
+    assert phase_two_context["source_status"] == "superseded"
+    assert phase_two_context["trusted"] is True
+    assert phase_two_context["usable"] is True
+
+
+@pytest.mark.parametrize(
+    "partial_phase",
+    [
+        "01-literature-review",
+        launcher.project_state.METHOD_DEVELOPMENT_PHASE,
+        launcher.DRAFT_ASSEMBLY_PHASE,
+    ],
+)
+def test_phase_five_readiness_accepts_partial_cumulative_results(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    partial_phase: str,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    outcomes = {
+        phase_slug: "Complete"
+        for phase_slug in _PHASE_FIVE_REQUIRED_PHASES
+    }
+    outcomes[partial_phase] = "Partial"
+    method = _install_phase_five_scientific_result_fixtures(
+        project,
+        monkeypatch,
+        outcomes,
+    )
+
+    readiness = launcher.phase_five_branch_readiness(project, method)
+
+    assert readiness["ready"] is True
+    assert all(item["satisfied"] for item in readiness["requirements"])
+
+
+def test_phase_five_readiness_uses_methods_older_phase_two_review_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project = tmp_path / "project"
     project.mkdir()
@@ -1678,15 +2087,181 @@ def test_phase_five_readiness_accepts_complete_or_partial_scientific_results(
         project,
         monkeypatch,
         {
-            phase_slug: scientific_outcome
+            phase_slug: "Complete"
             for phase_slug in _PHASE_FIVE_REQUIRED_PHASES
         },
+        phase_two_status="superseded",
+    )
+
+    readiness = launcher.phase_five_branch_readiness(project, method)
+    required = launcher.phase_five_required_completed_runs(readiness)
+    phase_two = launcher.project_state.METHOD_DEVELOPMENT_PHASE
+    phase_two_result = next(
+        item["result"]
+        for item in readiness["requirements"]
+        if item["phase"] == phase_two
+    )
+
+    assert phase_two_result["status"] == "superseded"
+    assert required[phase_two] == f"{phase_two}-result"
+
+
+def test_phase_five_readiness_requires_complete_current_theory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    outcomes = {
+        phase_slug: "Complete"
+        for phase_slug in _PHASE_FIVE_REQUIRED_PHASES
+    }
+    outcomes[launcher.IDEA_EVALUATION_PHASE] = "Partial"
+    method = _install_phase_five_scientific_result_fixtures(
+        project,
+        monkeypatch,
+        outcomes,
     )
 
     readiness = launcher.phase_five_branch_readiness(project, method)
 
-    assert readiness["ready"] is True
-    assert all(item["satisfied"] for item in readiness["requirements"])
+    requirements = {
+        item["phase"]: item for item in readiness["requirements"]
+    }
+    assert readiness["ready"] is False
+    assert requirements[launcher.IDEA_EVALUATION_PHASE]["satisfied"] is False
+    assert any(
+        "current scientific outcome is Partial; Phase 5 requires Complete"
+        in blocker
+        for blocker in readiness["blockers"]
+    )
+
+
+def test_phase_five_readiness_rejects_yellow_p3_or_p4_alignment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    method = _install_phase_five_scientific_result_fixtures(
+        project,
+        monkeypatch,
+        {
+            phase_slug: "Complete"
+            for phase_slug in _PHASE_FIVE_REQUIRED_PHASES
+        },
+    )
+    monkeypatch.setattr(
+        launcher.launch_manifest.knowledge_graph,
+        "build_branch_basis_graph",
+        lambda _project, _stable_id: _phase_five_alignment_graph(
+            method,
+            p4="review_required",
+        ),
+    )
+
+    readiness = launcher.phase_five_branch_readiness(project, method)
+    requirements = {
+        item["phase"]: item for item in readiness["requirements"]
+    }
+
+    assert readiness["ready"] is False
+    assert requirements[launcher.IDEA_EVALUATION_PHASE]["satisfied"] is True
+    assert requirements[launcher.DRAFT_ASSEMBLY_PHASE]["satisfied"] is False
+    assert any(
+        "Phase 4 implementation and experiments: requires re-evaluation "
+        "against the current method and sibling result"
+        in blocker
+        for blocker in readiness["blockers"]
+    )
+
+
+def test_phase_five_readiness_rejects_yellow_phase_two_literature_basis(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    method = _install_phase_five_scientific_result_fixtures(
+        project,
+        monkeypatch,
+        {
+            phase_slug: "Complete"
+            for phase_slug in _PHASE_FIVE_REQUIRED_PHASES
+        },
+    )
+    monkeypatch.setattr(
+        launcher.launch_manifest.knowledge_graph,
+        "build_branch_basis_graph",
+        lambda _project, _stable_id: _phase_five_alignment_graph(
+            method,
+            p2="review_required",
+        ),
+    )
+
+    readiness = launcher.phase_five_branch_readiness(project, method)
+    requirements = {
+        item["phase"]: item for item in readiness["requirements"]
+    }
+
+    assert readiness["ready"] is False
+    assert requirements[
+        launcher.project_state.METHOD_DEVELOPMENT_PHASE
+    ]["satisfied"] is False
+    assert any(
+        "new Phase 1 evidence requires review" in blocker
+        for blocker in readiness["blockers"]
+    )
+
+
+def test_phase_five_rejects_phase_two_provenance_for_another_run_scope(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    method = _install_phase_five_scientific_result_fixtures(
+        project,
+        monkeypatch,
+        {
+            phase_slug: "Complete"
+            for phase_slug in _PHASE_FIVE_REQUIRED_PHASES
+        },
+    )
+    read_manifest = launcher.launch_manifest._read_manifest
+    phase_two = launcher.project_state.METHOD_DEVELOPMENT_PHASE
+
+    def mismatched_manifest(
+        project_dir: Path,
+        phase_slug: str,
+        run_id: str,
+    ) -> dict[str, object]:
+        manifest = dict(read_manifest(project_dir, phase_slug, run_id))
+        if phase_slug == phase_two:
+            manifest["run_scope"] = {
+                "schema_version": 1,
+                "kind": "method_catalog",
+                "scope": "focused_method",
+                "focused_method_id": "method-b",
+            }
+        return manifest
+
+    monkeypatch.setattr(
+        launcher.launch_manifest,
+        "_read_manifest",
+        mismatched_manifest,
+    )
+
+    readiness = launcher.phase_five_branch_readiness(project, method)
+    phase_two_requirement = next(
+        item
+        for item in readiness["requirements"]
+        if item["phase"] == phase_two
+    )
+
+    assert readiness["ready"] is False
+    assert phase_two_requirement["satisfied"] is False
+    assert phase_two_requirement["result"] is None
 
 
 @pytest.mark.parametrize("failed_phase", _PHASE_FIVE_REQUIRED_PHASES)
@@ -1719,7 +2294,7 @@ def test_phase_five_readiness_rejects_a_failed_scientific_result(
     assert requirement["satisfied"] is False
     assert requirement["result"] is None
 
-def test_schema_ten_branch_results_are_readable_history_but_do_not_unlock_phase_five(
+def test_schema_ten_branch_results_do_not_enter_current_phase_five_context(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1759,16 +2334,10 @@ def test_schema_ten_branch_results_are_readable_history_but_do_not_unlock_phase_
             launcher.DRAFT_ASSEMBLY_PHASE,
         }
     ]
-    assert {entry["phase"] for entry in branch_history} == {
-        launcher.IDEA_EVALUATION_PHASE,
-        launcher.DRAFT_ASSEMBLY_PHASE,
-    }
-    assert all(entry["usable"] is False for entry in branch_history)
-    assert all(entry["trusted"] is False for entry in branch_history)
-    assert all(entry["kind"].endswith("_history") for entry in branch_history)
+    assert branch_history == []
 
 
-def test_failed_scientific_context_is_retained_as_unusable_advisory_history(
+def test_noncurrent_failed_scientific_context_is_excluded(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1791,15 +2360,11 @@ def test_failed_scientific_context_is_retained_as_unusable_advisory_history(
         selected_method_version=method["version"],
         selected_method_sha256=method["sha256"],
     )
-    failed = next(
+    assert not any(
         entry
         for entry in context
         if entry["phase"] == launcher.IDEA_EVALUATION_PHASE
     )
-    assert failed["scientific_outcome"] == "Failed"
-    assert failed["usable"] is False
-    assert failed["trusted"] is False
-    assert "failed" in failed["evidence_status"].lower()
 
 
 def test_phase_five_branch_readiness_requires_exact_intact_sibling_results(
@@ -1814,6 +2379,7 @@ def test_phase_five_branch_readiness_requires_exact_intact_sibling_results(
         "stable_id": "method-a",
         "version": "v1",
         "sha256": "a" * 64,
+        "definition_sha256": "a" * 64,
     }
 
     def manifest_for(stable_id: str, version: str, digest: str) -> dict[str, object]:
@@ -1839,6 +2405,7 @@ def test_phase_five_branch_readiness_requires_exact_intact_sibling_results(
                     "stable_id": stable_id,
                     "version": version,
                     "sha256": digest,
+                    "definition_sha256": digest,
                 }
             },
         }
@@ -1898,6 +2465,11 @@ def test_phase_five_branch_readiness_requires_exact_intact_sibling_results(
         "_read_manifest",
         lambda _project, phase, run_id: manifests[(phase, run_id)],
     )
+    monkeypatch.setattr(
+        launcher.launch_manifest.knowledge_graph,
+        "build_branch_basis_graph",
+        lambda _project, _stable_id: _phase_five_alignment_graph(method),
+    )
 
     mixed = launcher.phase_five_branch_readiness(project, method)
     assert mixed["ready"] is False
@@ -1937,6 +2509,8 @@ def test_phase_five_branch_readiness_requires_exact_intact_sibling_results(
         "selected_method"
     ]
     selected_method["sha256"] = "c" * 64
+    assert launcher.phase_five_branch_readiness(project, method)["ready"] is True
+    selected_method["definition_sha256"] = "c" * 64
     assert launcher.phase_five_branch_readiness(project, method)["ready"] is False
 
     selected_method["sha256"] = "a" * 64
@@ -2230,6 +2804,21 @@ def test_valid_phase_five_launch_uses_completion_prerequisites_without_override(
         "_has_prior_method_run",
         lambda *_args: False,
     )
+    monkeypatch.setattr(
+        launcher.knowledge_heads,
+        "derive_live_heads",
+        lambda *_args: {"verified": True},
+    )
+    monkeypatch.setattr(
+        launcher.knowledge_heads,
+        "heads_version",
+        lambda _heads: "a" * 64,
+    )
+    monkeypatch.setattr(
+        launcher.knowledge_graph,
+        "build_branch_basis_graph",
+        lambda *_args: {"graph_sha256": "b" * 64},
+    )
     monkeypatch.setattr(launcher.project_state, "reserve_run", reserve)
 
     changed_required_runs = {
@@ -2262,13 +2851,17 @@ def test_valid_phase_five_launch_uses_completion_prerequisites_without_override(
             run_specific_method_version="v1",
             run_specific_method_sha256=str(entry["sha256"]),
             expected_method_menu_version=launcher.method_menu.catalog_version(project),
+            expected_knowledge_heads_version="a" * 64,
+            expected_branch_graph_version="b" * 64,
             required_completed_runs=required_completed_runs,
         )
 
     assert prerequisite_calls == [{
         "required_completed_runs": required_completed_runs,
+        "required_method_id": "method-a",
     }]
     assert reserved["required_completed_runs"] == required_completed_runs
+    assert reserved["required_method_id"] == "method-a"
     assert reserved.get("completed_results", False) is False
     assert reserved["override_metadata"] is None
     assert reserved["dependencies"] == dependencies
@@ -3730,13 +4323,12 @@ def test_lead_prompt_embeds_frozen_research_lead_soul(tmp_path: Path) -> None:
         "## Read before dispatching"
     )
     assert str(project / "draft" / "run" / "01" / "manuscript-review.md") in prompt
-    assert str(
-        project / "draft" / "run" / "01" / "manuscript-post-review.md"
-    ) in prompt
+    assert str(project / "draft" / "run" / "01" / "manuscript.md") in prompt
+    assert "manuscript-post-review.md" not in prompt
     assert str(
         project / "draft" / "run" / "01" / "manuscript-post-review.diff"
     ) in prompt
-    assert "copy the review\nmanuscript byte for byte" in prompt
+    assert "leave the working\nmanuscript byte-identical" in prompt
     assert "write an empty diff" in prompt
     assert "run-id.decision.json" in prompt
     assert '"scientific_outcome": "Complete"' in prompt
@@ -3744,11 +4336,11 @@ def test_lead_prompt_embeds_frozen_research_lead_soul(tmp_path: Path) -> None:
         prompt.split("```json\n", 1)[1].split("\n```", 1)[0]
     )
     launcher.project_state.validate_decision_record(decision_example)
-    assert decision_example["scientific_record_changes"][0]["proposed_values"] == {
+    assert decision_example["scientific_record_changes"][0]["current_values"] == {
         "statement_type": "Empirical statement",
         "wording": "State one material scientific statement exactly.",
         "scope": "State the population, regime, or conditions covered.",
-        "formulation_state": "Proposed",
+        "formulation_state": "Current",
         "assessment_status": "Untested",
         "evidential_basis": [
             "Name the supporting theorem, calculation, numerical result, or source."
@@ -5039,6 +5631,12 @@ def test_phase_four_dispatch_isolates_protocol_then_seals_before_results(
     assert "Mechanically verified prespecification boundary" in (
         result_brief.read_text(encoding="utf-8")
     )
+    assert "knowledge-fragment.json" not in protocol_brief.read_text(
+        encoding="utf-8"
+    )
+    assert "knowledge-fragment.json" in result_brief.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_protocol_seal_cli_verifies_manifest_and_delegates_exact_run(
@@ -5684,3 +6282,62 @@ def test_exact_rerun_phase_four_without_run_mode_is_standard(
         project_dir, launch_common.DRAFT_ASSEMBLY_PHASE, run_id
     )
     assert options["kind"] == "standard"
+
+def test_phase_package_block_names_editable_candidates_and_authority(
+    tmp_path: Path,
+) -> None:
+    output_root = (tmp_path / "branches" / "method-a" / "run" / "01").resolve()
+
+    theory_specialist = launcher.launch_prompts._phase_package_prompt_block(
+        launcher.IDEA_EVALUATION_PHASE,
+        output_root,
+        role="theorist",
+    )
+    theory_lead = launcher.launch_prompts._phase_package_prompt_block(
+        launcher.IDEA_EVALUATION_PHASE,
+        output_root,
+        role="research_lead",
+    )
+    empirical = launcher.launch_prompts._phase_package_prompt_block(
+        launcher.DRAFT_ASSEMBLY_PHASE,
+        output_root,
+    )
+
+    assert str(output_root / "theory-manuscript.md") in theory_specialist
+    assert str(output_root / "knowledge-fragment.json") in theory_specialist
+    assert "Do not edit the run-root candidate files" in theory_specialist
+    assert "only role in this run" in theory_lead
+    assert str(output_root / "empirical-synthesis.md") in empirical
+    assert str(output_root / "evidence-index.json") in empirical
+    assert str(output_root / "knowledge-fragment.json") in empirical
+    assert "every evidence ID exactly once" in empirical
+    assert "read-only launch context" in empirical
+
+
+def test_production_workspace_exposes_package_root_only_to_research_lead(
+    tmp_path: Path,
+) -> None:
+    output_root = (tmp_path / "branches" / "method-a" / "run" / "01").resolve()
+    manifest = {"output_root": str(output_root)}
+
+    lead_root, lead_round, lead_label = (
+        launcher.launch_dispatch._production_task_workspaces(
+            manifest,
+            3,
+            "research_lead",
+        )
+    )
+    specialist_root, specialist_round, specialist_label = (
+        launcher.launch_dispatch._production_task_workspaces(
+            manifest,
+            2,
+            "theorist",
+        )
+    )
+
+    assert lead_root == output_root
+    assert lead_round == output_root / "round-03"
+    assert "package workspace" in lead_label
+    assert specialist_root == output_root / "round-02"
+    assert specialist_round == specialist_root
+    assert "round workspace" in specialist_label

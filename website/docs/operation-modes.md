@@ -36,7 +36,7 @@ make scientific choices on the user's behalf.
 In the direct pattern, the user:
 
 1. opens the project and phase;
-2. reviews the available methods, prior results, and context;
+2. reviews the current methods, current phase records, and offered context choices;
 3. chooses the method or run scope when applicable;
 4. provides run-specific direction;
 5. launches one run;

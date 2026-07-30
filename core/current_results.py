@@ -3,11 +3,11 @@
 Compares a finalized run's frozen method identity against the currently
 published method catalog to determine whether the run is still current.
 
-This module is intentionally tiny — it answers one question:
+This module is intentionally small. It answers one question:
   "Was this run done with the method as it exists now?"
 
 The answer drives a UI badge (fresh / stale / unknown) on the phase tab.
-It does NOT control context assembly or Phase 5 gating — those use their
+It does NOT control context assembly or Phase 5 gating. Those use their
 own existing logic.
 """
 
@@ -41,9 +41,9 @@ def derive_freshness(
     """Compare a run's frozen method identity to the published catalog.
 
     Returns one of:
-      - ``"fresh"``    — version and digest match the active catalog entry
-      - ``"stale"``    — the method has been revised since this run
-      - ``"unknown"``  — cannot determine (no catalog entry, missing identity)
+      - ``"fresh"``: version and digest match the active catalog entry
+      - ``"stale"``: the method has been revised since this run
+      - ``"unknown"``: the identity cannot be determined
 
     Parameters
     ----------
@@ -73,7 +73,10 @@ def derive_freshness(
         return "unknown"  # Catalog not published or method not found
 
     active_version = str(entry.get("version", "")).strip()
-    active_sha = str(entry.get("sha256", "")).strip().lower()
+    try:
+        active_sha = method_menu.method_definition_sha256(entry)
+    except method_menu.MethodMenuValidationError:
+        return "unknown"
 
     run_ver = str(run_version).strip()
     run_sha = str(run_definition_sha256).strip().lower()
@@ -118,8 +121,14 @@ def get_run_freshness(
     selected_method = (
         snapshots.get("selected_method") if isinstance(snapshots, Mapping) else None
     )
+    schema_version = manifest.get("schema_version", 1)
+    digest_field = (
+        "definition_sha256"
+        if type(schema_version) is int and schema_version >= 14
+        else "sha256"
+    )
     sha = (
-        str(selected_method.get("sha256", "")).strip().lower()
+        str(selected_method.get(digest_field, "")).strip().lower()
         if isinstance(selected_method, Mapping)
         else ""
     )
@@ -146,13 +155,14 @@ def _write_test_catalog(
 ) -> str:
     """Write a minimal method catalog entry for testing.
 
-    Returns the sha256 of the written file (as method_menu would compute).
+    Returns the mathematical-definition SHA-256 digest.
     """
 
     root = Path(project_dir).resolve()
     menu_dir = root / "ideas" / "methods"
     menu_dir.mkdir(parents=True, exist_ok=True)
     path = menu_dir / f"{stable_id}.md"
+    definition = "Method body for testing."
     body = f"""---
 stable_id: {stable_id}
 version: {version}
@@ -163,9 +173,11 @@ number: {number}
 
 # {label}
 
-Method body for testing.
+## Mathematical definition
+
+{definition}
 """
     raw = body.encode("utf-8")
     path.write_bytes(raw)
     import hashlib
-    return hashlib.sha256(raw).hexdigest()
+    return hashlib.sha256(definition.encode("utf-8")).hexdigest()

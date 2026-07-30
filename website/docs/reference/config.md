@@ -70,8 +70,8 @@ the boundary between profile state and frozen Research Hub instructions.
 | Phase | Interaction pattern | Participants | User-selectable plan |
 |---|---|---|---|
 | Literature Review | Parallel investigation and synthesis | Lead, theorist, data analyst | Round count |
-| Method Development | Parallel proposal and synthesis | Lead, theorist, data analyst | Round count |
-| Theoretical Development | Ordered theory, computational audit, and synthesis | Theorist, data analyst, research lead | Fixed three-stage run |
+| Method Development | Parallel proposal and synthesis | Lead, theorist, data analyst | Full catalog or one-method focus, plus round count |
+| Theoretical Development | Ordered theory, computational audit, and synthesis | Theorist, data analyst, research lead | Current records only, or current records plus archived Phase 3 summaries |
 | Implementation & Experiments | Ordered empirical work, theoretical audit, and synthesis | Data analyst, theorist, research lead | Preliminary or comprehensive scope |
 | Paper Assembly & Review | Ordered handoffs | Lead and paper reviewer | Assembly or review-revision |
 
@@ -113,7 +113,26 @@ Stages run in a fixed order. Each stage receives the preserved output of the pre
 
 ## Run modes
 
-Phase 4 supports:
+Phase 2 supports two catalog scopes:
+
+- `full_catalog`, which may add, revise, merge, retain, or retire methods;
+- `focused_method`, which may revise one selected active method while every
+  nonselected catalog entry remains unchanged.
+
+A focused run cannot create, rename, merge, retire, or remove methods. A new
+project therefore begins with a full-catalog run.
+
+Phase 3 supports two context policies:
+
+- `current_only`, the default, which uses the current theory manuscript and the
+  current same-branch empirical package when available;
+- `include_archived_summaries`, which adds archived Phase 3 summaries to those
+  current records.
+
+The archived-summary option is disabled until the selected method has Phase 3
+history. It adds compact summaries, not every artifact from every older run.
+
+Phase 4 supports two run scopes:
 
 - `preliminary`, for implementation, focused diagnostics, and limited experiments;
 - `comprehensive`, for full benchmarking, uncertainty, robustness, and
@@ -128,14 +147,13 @@ Phase 5 supports:
 - `assembly`, for combining intact, compatible evidence into a coherent manuscript;
 - `review_revision`, for context-separated review followed by research-lead revision.
 
-The configured Phase 5 `stages` block describes the base assembly plan. Research Hub constructs the review-revision stages when that mode is selected.
+The configured Phase 5 `stages` block describes the base assembly plan. Research
+Hub constructs the review-revision stages when that mode is selected. A verified
+current `manuscript.md` is sufficient; no separate approval state is required.
 
-See [Current Limitations](../known-limitations) for the restriction affecting
-repeated Phase 5 Review & Revision runs in the current implementation.
+## Three kinds of prerequisite
 
-## Four kinds of prerequisite
-
-The interface uses four distinct forms of dependency:
+The interface uses three distinct forms of dependency:
 
 1. **Recommended upstream context.** A `gated_by` entry can produce a warning
    when recommended evidence is missing or has changed. The user can proceed through
@@ -146,9 +164,6 @@ The interface uses four distinct forms of dependency:
    completed result from each of Phases 1 through 4. The Phase 3 and Phase 4
    results must both match the selected method's stable ID, version, and
    definition digest.
-4. **Legacy Phase 5 mode gate.** Phase 5 review-revision currently requires an
-   Assembly run with legacy `approved` status. The current phase panel does not
-   create this status. See [Current Limitations](../known-limitations).
 
 Phase 4 preliminary and comprehensive have no dependency on one another. A
 required method selection, Phase 5 integrity check, or exact method match cannot

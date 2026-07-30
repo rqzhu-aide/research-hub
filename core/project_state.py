@@ -4,10 +4,10 @@ The state file is intentionally small and human-readable, but all writes go
 through this module.  A per-project, cross-process lock protects read/modify/
 write operations and each YAML update is committed with ``os.replace``.
 
-Runs are execution records. A phase separately points at its current trusted
-(``approved_run``) record, so starting or failing a rerun never destroys the
-last trusted result. Downstream work becomes stale only when a replacement is
-accepted or a completed Phase 02 run publishes an affected method revision.
+Runs are immutable execution records. A phase separately points at its current
+scientific record, so starting or failing a rerun never destroys the last valid
+result. Downstream work becomes stale only when a replacement becomes current
+or a completed Phase 02 run publishes an affected method revision.
 """
 
 from __future__ import annotations
@@ -29,17 +29,25 @@ from typing import Any, Iterator, Mapping, Sequence
 import yaml
 
 from core.filesystem_utils import metadata_is_link_or_reparse
-from core import method_menu
+from core import method_menu, promotion_journal
 
 import logging
 log = logging.getLogger(__name__)
 
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 10
 
 PAPER_WRITING_PHASE = "05-review-revision"
+LITERATURE_REVIEW_PHASE = "01-literature-review"
 DRAFT_ASSEMBLY_PHASE = "04-draft-assembly"
 METHOD_DEVELOPMENT_PHASE = "02-method-development"
+IDEA_EVALUATION_PHASE = "03-idea-evaluation"
+METHOD_BOUND_CURRENT_PHASES = frozenset({
+    IDEA_EVALUATION_PHASE,
+    DRAFT_ASSEMBLY_PHASE,
+    PAPER_WRITING_PHASE,
+})
+
 
 # Slug renames: old → new.  Used by _migrate_slug_aliases to rewrite
 # existing project state and filesystem layout so sealed history
@@ -70,16 +78,17 @@ MAX_PROTOCOL_CHECKPOINT_AGGREGATE_BYTES = 16 * 1024 * 1024
 MAX_LEGACY_MIGRATION_BYTES = 64 * 1024 * 1024
 MAX_LEGACY_MIGRATION_FILES = 2_000
 FILE_READ_CHUNK_BYTES = 256 * 1024
-DECISION_RECORD_SCHEMA_VERSION = 2
+DECISION_RECORD_SCHEMA_VERSION = 4
 PHASE_TWO_DECISION_RECORD_SCHEMA_VERSION = 3
-SUPPORTED_DECISION_RECORD_SCHEMA_VERSIONS = frozenset({1, 2, 3})
+CURRENT_RECORD_DECISION_RECORD_SCHEMA_VERSION = 4
+SUPPORTED_DECISION_RECORD_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4})
 MAX_DECISION_RECORD_BYTES = 128 * 1024
 MAX_DECISION_TEXT_LENGTH = 12_000
 MAX_DECISION_LIST_ITEMS = 12
 MAX_SCIENTIFIC_RECORD_CHANGES = 50
 SCIENTIFIC_OUTCOMES = frozenset({"Complete", "Partial", "Failed"})
 COMPLETED_SCIENTIFIC_OUTCOMES = frozenset({"Complete", "Partial"})
-COMPLETED_RESULT_STATUSES = frozenset({"approved", "awaiting_review"})
+COMPLETED_RESULT_STATUSES = frozenset({"completed", "approved", "awaiting_review"})
 APPROVAL_USER_ACTIONS = frozenset({
     "approve",
     "approve_with_limitations",
@@ -93,7 +102,15 @@ PHASE_TWO_USER_ACTIONS = frozenset({
     "return_to_phase_1",
     "defer",
 })
-RECOMMENDED_USER_ACTIONS = APPROVAL_USER_ACTIONS | PHASE_TWO_USER_ACTIONS
+CURRENT_RECORD_USER_ACTIONS = frozenset({
+    "proceed",
+    "rerun",
+    "run_related_phase",
+    "defer",
+})
+RECOMMENDED_USER_ACTIONS = (
+    APPROVAL_USER_ACTIONS | PHASE_TWO_USER_ACTIONS | CURRENT_RECORD_USER_ACTIONS
+)
 DECISION_OPTION_KEYS = frozenset({
     "approve",
     "approve_with_limitations",
@@ -105,6 +122,12 @@ PHASE_TWO_DECISION_OPTION_KEYS = frozenset({
     "proceed",
     "rerun",
     "return_to_phase_1",
+    "defer",
+})
+CURRENT_RECORD_DECISION_OPTION_KEYS = frozenset({
+    "proceed",
+    "rerun",
+    "run_related_phase",
     "defer",
 })
 SCIENTIFIC_RECORD_OPERATIONS = frozenset({"add", "revise", "withdraw"})
@@ -160,6 +183,7 @@ RUN_STATUSES = frozenset({
     "running",
     "submitting",
     "stopping",
+    "completed",
     "awaiting_review",
     "approved",
     "revision_requested",
@@ -169,6 +193,7 @@ RUN_STATUSES = frozenset({
 })
 ACTIVE_RUN_STATUSES = frozenset({"starting", "running", "submitting", "stopping"})
 TERMINAL_RUN_STATUSES = frozenset({
+    "completed",
     "approved",
     "revision_requested",
     "failed",
@@ -187,6 +212,10 @@ class StateConflict(ProjectStateError):
 
 class StateValidationError(ProjectStateError, ValueError):
     """The supplied transition data is invalid."""
+
+
+class StateCommitUncertain(ProjectStateError):
+    """The state file was replaced, but its directory sync did not complete."""
 
 
 # ---------------------------------------------------------------------------
@@ -769,6 +798,18 @@ def _read_unlocked(project_dir: str | Path) -> dict[str, Any]:
     return value
 
 
+def _sync_state_directory(directory: Path) -> None:
+    """Make a completed state-file rename durable where supported."""
+
+    if os.name == "nt":
+        return
+    directory_fd = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
 def _save_unlocked(project_dir: str | Path, data: Mapping[str, Any]) -> None:
     """Atomically replace project.yaml with a fully flushed temporary file."""
 
@@ -795,12 +836,13 @@ def _save_unlocked(project_dir: str | Path, data: Mapping[str, Any]) -> None:
                 )
             os.fsync(handle.fileno())
         os.replace(temporary, path)
-        if os.name != "nt":
-            directory_fd = os.open(directory, os.O_RDONLY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
+        try:
+            _sync_state_directory(directory)
+        except Exception as exc:
+            raise StateCommitUncertain(
+                "project state was replaced, but its directory sync did not "
+                "complete; recovery must reconcile the promotion journal"
+            ) from exc
     finally:
         if temporary.exists():
             temporary.unlink()
@@ -817,7 +859,9 @@ def _save(project_dir: str | Path, data: dict[str, Any]) -> None:
 def _new_phase() -> dict[str, Any]:
     return {
         "status": "pending",
+        "current_run": None,
         "approved_run": None,
+        "current_runs": {},
         "latest_run": None,
         "latest_run_status": None,
         "stale": False,
@@ -1409,6 +1453,8 @@ def _migrate(data: dict[str, Any]) -> dict[str, Any]:
                 run["legacy_submission_artifacts"] = run["submission_artifacts"]
                 run["submission_artifacts"] = {}
             run.setdefault("method_menu_seal", None)
+            run.setdefault("phase_record_seal", None)
+            run.setdefault("phase_record", None)
             run.setdefault("method_menu_changes", None)
             run.setdefault("publication_kind", None)
             run.setdefault("published_at", None)
@@ -1467,6 +1513,11 @@ def _migrate(data: dict[str, Any]) -> dict[str, Any]:
                     run["status"] = "superseded"
 
         phase["approved_run"] = explicit_approved
+        phase.setdefault("current_run", explicit_approved)
+        current_runs = phase.setdefault("current_runs", {})
+        if not isinstance(current_runs, dict):
+            phase["legacy_current_runs"] = current_runs
+            phase["current_runs"] = {}
         phase.setdefault("latest_run", None)
         phase.setdefault("latest_run_status", None)
         phase.setdefault("stale", False)
@@ -1580,6 +1631,137 @@ def _seal_safe_legacy_approved_evidence(
     return changed
 
 
+
+def _promotion_is_current_in_state(
+    data: Mapping[str, Any],
+    phase_slug: str,
+    run_id: str,
+) -> bool:
+    phase = data.get("phases", {}).get(phase_slug, {})
+    if not isinstance(phase, Mapping):
+        return False
+    run = next(
+        (
+            candidate
+            for candidate in phase.get("runs", [])
+            if isinstance(candidate, Mapping)
+            and str(candidate.get("run_id", "")) == run_id
+        ),
+        None,
+    )
+    if (
+        not isinstance(run, Mapping)
+        or run.get("status") not in {"completed", "approved"}
+    ):
+        return False
+    record = run.get("phase_record")
+    if (
+        not isinstance(record, Mapping)
+        or record.get("current_updated") is not True
+        or str(record.get("source_run_id", "")) != run_id
+    ):
+        return False
+    method_id = _phase_record_method_id(run)
+    if phase_slug in METHOD_BOUND_CURRENT_PHASES:
+        current_runs = phase.get("current_runs")
+        return bool(
+            method_id
+            and isinstance(current_runs, Mapping)
+            and str(current_runs.get(method_id, "")) == run_id
+        )
+    return str(phase.get("current_run") or "") == run_id
+
+
+def _reconcile_promotion_journals_unlocked(
+    project_dir: str | Path,
+    data: dict[str, Any],
+) -> None:
+    """Commit or roll back a retained promotion after process termination."""
+
+    from core import phase_records, promotion_recovery
+
+    try:
+        journals = promotion_journal.read_all(state_dir(project_dir))
+    except (OSError, promotion_journal.PromotionJournalError) as exc:
+        raise StateValidationError(
+            f"promotion recovery records could not be read: {exc}"
+        ) from exc
+    expected_root = str(Path(project_dir).resolve())
+    for journal in journals:
+        phase_slug = str(journal["phase_slug"])
+        run_id = str(journal["run_id"])
+        if journal.get("project_root") != expected_root:
+            raise StateValidationError(
+                "promotion recovery record belongs to a different project"
+            )
+        phase = data.get("phases", {}).get(phase_slug)
+        run = next(
+            (
+                candidate
+                for candidate in (
+                    phase.get("runs", [])
+                    if isinstance(phase, Mapping)
+                    else []
+                )
+                if isinstance(candidate, Mapping)
+                and str(candidate.get("run_id", "")) == run_id
+            ),
+            None,
+        )
+        if not isinstance(run, Mapping):
+            raise StateValidationError(
+                f"promotion recovery run is missing from state: {phase_slug} {run_id}"
+            )
+        intent = journal.get("intent")
+        if intent is None and journal.get("status") == "prepared":
+            raise StateValidationError(
+                "A phase-record promotion was interrupted before its rollback "
+                f"metadata was durable: {phase_slug} {run_id}. The canonical "
+                "record requires inspection before another run can start."
+            )
+        if intent is not None:
+            manifest = _validate_recorded_manifest(
+                project_dir,
+                phase_slug,
+                run,
+            )
+            try:
+                phase_records.validate_promotion_intent(
+                    phase_slug,
+                    intent,
+                    operation_id=str(journal.get("operation_id", "")),
+                    run_id=run_id,
+                    manifest=manifest,
+                )
+            except (TypeError, ValueError) as exc:
+                raise StateValidationError(
+                    f"promotion recovery intent is inconsistent: {phase_slug} "
+                    f"{run_id}: {exc}"
+                ) from exc
+        try:
+            promotion_recovery.complete_after_state_decision(
+                project_dir,
+                state_dir(project_dir),
+                journal,
+                make_current=_promotion_is_current_in_state(
+                    data,
+                    phase_slug,
+                    run_id,
+                ),
+                recover_filesystem=True,
+            )
+        except (OSError, ValueError) as exc:
+            raise StateValidationError(
+                f"interrupted promotion could not be reconciled: {phase_slug} "
+                f"{run_id}: {exc}"
+            ) from exc
+
+
+def _load_reconciled_unlocked(project_dir: str | Path) -> dict[str, Any]:
+    data = _migrate(_read_unlocked(project_dir))
+    _reconcile_promotion_journals_unlocked(project_dir, data)
+    return data
+
 def load(project_dir: str | Path) -> dict[str, Any]:
     """Load and, when needed, atomically migrate a project's state."""
 
@@ -1587,6 +1769,7 @@ def load(project_dir: str | Path) -> dict[str, Any]:
         raw = _read_unlocked(project_dir)
         before = copy.deepcopy(raw)
         data = _migrate(raw)
+        _reconcile_promotion_journals_unlocked(project_dir, data)
         _migrate_slug_aliases(project_dir, data)
         _seal_safe_legacy_approved_evidence(project_dir, data)
         if data != before:
@@ -1605,7 +1788,7 @@ def init(
     """Initialize a project, preserving existing runs and unknown metadata."""
 
     with _project_lock(project_dir):
-        data = _migrate(_read_unlocked(project_dir))
+        data = _load_reconciled_unlocked(project_dir)
         existing_project = data.get("project", {})
         data["project"] = {
             **existing_project,
@@ -1680,23 +1863,92 @@ def _active_entries(data: Mapping[str, Any]) -> list[tuple[str, dict[str, Any], 
     return active
 
 
+def _phase_record_method_id(run: Mapping[str, Any]) -> str | None:
+    """Return the method ID recorded on a method-bound current result."""
+
+    record = run.get("phase_record")
+    if not isinstance(record, Mapping):
+        return None
+    identity = record.get("method_identity")
+    if not isinstance(identity, Mapping):
+        identity = record.get("method")
+    if not isinstance(identity, Mapping):
+        return None
+    stable_id = str(identity.get("stable_id", "")).strip()
+    return stable_id or None
+
+
 def _refresh_phase(phase: dict[str, Any]) -> None:
     runs = phase.get("runs", [])
     latest = runs[-1] if runs else None
     phase["latest_run"] = latest.get("run_id") if latest else None
     phase["latest_run_status"] = latest.get("status") if latest else None
+    by_id = {
+        str(run.get("run_id")): run
+        for run in runs
+        if isinstance(run, Mapping) and run.get("run_id")
+    }
+
+    raw_current_runs = phase.get("current_runs")
+    current_runs: dict[str, str] = {}
+    if isinstance(raw_current_runs, Mapping):
+        for raw_method_id, raw_run_id in raw_current_runs.items():
+            method_id = str(raw_method_id).strip()
+            run_id = str(raw_run_id).strip()
+            candidate = by_id.get(run_id)
+            recorded_method = (
+                _phase_record_method_id(candidate)
+                if isinstance(candidate, Mapping)
+                else None
+            )
+            if (
+                method_id
+                and candidate is not None
+                and candidate.get("status") in {"completed", "approved"}
+                and recorded_method == method_id
+            ):
+                current_runs[method_id] = run_id
+    phase["current_runs"] = current_runs
+
+    current_id = phase.get("current_run")
+    current = by_id.get(str(current_id)) if current_id else None
+    if current is None or current.get("status") not in {"completed", "approved"}:
+        current = None
+    if current is not None:
+        method_id = _phase_record_method_id(current)
+        if method_id:
+            current_runs.setdefault(method_id, str(current["run_id"]))
+    elif current_runs:
+        positions = {
+            str(run.get("run_id")): index
+            for index, run in enumerate(runs)
+            if isinstance(run, Mapping)
+        }
+        current_id = max(
+            current_runs.values(),
+            key=lambda run_id: positions.get(run_id, -1),
+        )
+        current = by_id[current_id]
+    phase["current_run"] = current.get("run_id") if current else None
 
     approved_id = phase.get("approved_run")
-    approved = next((r for r in runs if r.get("run_id") == approved_id), None)
-    if approved is None or approved.get("status") != "approved":
-        phase["approved_run"] = None
+    approved = by_id.get(str(approved_id)) if approved_id else None
+    if approved is None or approved.get("status") not in {"completed", "approved"}:
         approved = None
+    if current is None and approved is not None:
+        current = approved
+        phase["current_run"] = approved.get("run_id")
+    elif approved is None and current is not None:
+        approved = current
+    phase["approved_run"] = approved.get("run_id") if approved else None
 
     active = next((r for r in reversed(runs) if r.get("status") in ACTIVE_RUN_STATUSES), None)
     if active is not None:
         phase["status"] = active["status"]
-    elif approved is not None:
-        phase["status"] = "stale" if phase.get("stale") else "approved"
+    elif current is not None:
+        phase["status"] = (
+            "stale" if phase.get("stale") else current.get("status", "completed")
+        )
     elif latest is not None:
         phase["status"] = latest.get("status", "pending")
     else:
@@ -2691,7 +2943,7 @@ def seal_protocol_checkpoint(
     """Seal the Phase 04 computational protocol before main result generation."""
 
     with _project_lock(project_dir):
-        data = _migrate(_read_unlocked(project_dir))
+        data = _load_reconciled_unlocked(project_dir)
         _, run, _ = _resolve_run(data, phase_slug, run_ref)
         _ensure_status(run, {"running"}, "seal a protocol checkpoint for")
         rounds = run.get("rounds", [])
@@ -2797,7 +3049,7 @@ def require_protocol_checkpoint(
     """Verify and return the sealed checkpoint before result work is dispatched."""
 
     with _project_lock(project_dir):
-        data = _migrate(_read_unlocked(project_dir))
+        data = _load_reconciled_unlocked(project_dir)
         _, run, _ = _resolve_run(data, phase_slug, run_ref)
         manifest = _validate_recorded_manifest(project_dir, phase_slug, run)
         _validate_recorded_protocol_checkpoint(
@@ -2829,9 +3081,17 @@ def _phase_six_submission_specs(
         output_root.relative_to(root)
     except ValueError as exc:
         raise StateValidationError("Phase 05 output directory escaped the project") from exc
-    # R5: assembly runs require manuscript.md; full runs require the
-    # post-review pair; review-only runs require nothing.
-    if kind == "assembly":
+    manifest_schema = _manifest_schema_version(manifest)
+    if manifest_schema >= 12 and kind in {"assembly", "full"}:
+        expected = {
+            "working_manuscript": (output_root / "manuscript.md", False),
+        }
+        if kind == "full":
+            expected["review_diff"] = (
+                output_root / "manuscript-post-review.diff",
+                True,
+            )
+    elif kind == "assembly":
         expected = {
             "assembly_manuscript": (output_root / "manuscript.md", False),
         }
@@ -2974,15 +3234,18 @@ def validate_decision_record(value: Any) -> dict[str, Any]:
         "option_consequences",
         "rerun_question",
         "rerun_comparison",
-        "proposed_baseline",
         "scientific_record_changes",
     }
     schema_version = value.get("schema_version")
     if schema_version not in SUPPORTED_DECISION_RECORD_SCHEMA_VERSIONS:
         raise StateValidationError(
-            "decision record schema_version must be 1, 2, or 3"
+            "decision record schema_version must be 1, 2, 3, or 4"
         )
     required = set(base_required)
+    if schema_version == CURRENT_RECORD_DECISION_RECORD_SCHEMA_VERSION:
+        required.add("current_record_summary")
+    else:
+        required.add("proposed_baseline")
     if schema_version >= 2:
         required.add("selected_scientific_object")
     if set(value) != required:
@@ -3002,11 +3265,12 @@ def validate_decision_record(value: Any) -> dict[str, Any]:
             "decision record scientific_outcome must be Complete, Partial, or Failed"
         )
     recommended_action = value.get("recommended_user_action")
-    allowed_actions = (
-        PHASE_TWO_USER_ACTIONS
-        if schema_version == PHASE_TWO_DECISION_RECORD_SCHEMA_VERSION
-        else APPROVAL_USER_ACTIONS
-    )
+    if schema_version == PHASE_TWO_DECISION_RECORD_SCHEMA_VERSION:
+        allowed_actions = PHASE_TWO_USER_ACTIONS
+    elif schema_version == CURRENT_RECORD_DECISION_RECORD_SCHEMA_VERSION:
+        allowed_actions = CURRENT_RECORD_USER_ACTIONS
+    else:
+        allowed_actions = APPROVAL_USER_ACTIONS
     if recommended_action not in allowed_actions:
         allowed_text = ", ".join(sorted(allowed_actions))
         raise StateValidationError(
@@ -3029,11 +3293,12 @@ def validate_decision_record(value: Any) -> dict[str, Any]:
     ]
 
     consequences = value.get("option_consequences")
-    consequence_keys = (
-        PHASE_TWO_DECISION_OPTION_KEYS
-        if schema_version == PHASE_TWO_DECISION_RECORD_SCHEMA_VERSION
-        else DECISION_OPTION_KEYS
-    )
+    if schema_version == PHASE_TWO_DECISION_RECORD_SCHEMA_VERSION:
+        consequence_keys = PHASE_TWO_DECISION_OPTION_KEYS
+    elif schema_version == CURRENT_RECORD_DECISION_RECORD_SCHEMA_VERSION:
+        consequence_keys = CURRENT_RECORD_DECISION_OPTION_KEYS
+    else:
+        consequence_keys = DECISION_OPTION_KEYS
     if not isinstance(consequences, Mapping) or set(consequences) != consequence_keys:
         raise StateValidationError(
             "decision record option_consequences must contain exactly: "
@@ -3054,11 +3319,14 @@ def validate_decision_record(value: Any) -> dict[str, Any]:
             f"{MAX_SCIENTIFIC_RECORD_CHANGES} items"
         )
     normalized_changes: list[dict[str, Any]] = []
+    values_key = (
+        "current_values" if schema_version == 4 else "proposed_values"
+    )
     change_fields = {
         "statement_id",
         "operation",
         "changed_fields",
-        "proposed_values",
+        values_key,
         "evidential_basis",
         "reason",
         "parent_statement_id",
@@ -3110,18 +3378,16 @@ def validate_decision_record(value: Any) -> dict[str, Any]:
                 f"decision record scientific_record_changes[{index}].changed_fields "
                 "must be a unique nonempty list of recognized scientific-record fields"
             )
-        proposed = change.get("proposed_values")
+        proposed = change.get(values_key)
         if not isinstance(proposed, Mapping) or set(proposed) != set(changed):
             raise StateValidationError(
-                f"decision record scientific_record_changes[{index}].proposed_values "
+                f"decision record scientific_record_changes[{index}].{values_key} "
                 "must contain exactly the named changed_fields"
             )
         normalized_values: dict[str, Any] = {}
         for field in changed:
             proposed_value = proposed[field]
-            label = (
-                f"scientific_record_changes[{index}].proposed_values.{field}"
-            )
+            label = f"scientific_record_changes[{index}].{values_key}.{field}"
             if isinstance(proposed_value, str):
                 normalized_values[field] = _decision_text(
                     proposed_value, label, maximum=4_000
@@ -3164,10 +3430,11 @@ def validate_decision_record(value: Any) -> dict[str, Any]:
                     + ", ".join(sorted(allowed_values))
                 )
         proposed_formulation_state = normalized_values.get("formulation_state")
-        if operation == "add" and proposed_formulation_state != "Proposed":
+        required_add_state = "Current" if schema_version == 4 else "Proposed"
+        if operation == "add" and proposed_formulation_state != required_add_state:
             raise StateValidationError(
                 f"decision record scientific_record_changes[{index}] adds a new "
-                "statement and must set formulation_state to Proposed"
+                f"statement and must set formulation_state to {required_add_state}"
             )
         if operation != "withdraw" and proposed_formulation_state == "Withdrawn":
             raise StateValidationError(
@@ -3250,7 +3517,7 @@ def validate_decision_record(value: Any) -> dict[str, Any]:
             "statement_id": statement_id,
             "operation": operation,
             "changed_fields": list(changed),
-            "proposed_values": normalized_values,
+            values_key: normalized_values,
             "evidential_basis": [
                 _decision_text(
                     item,
@@ -3345,11 +3612,16 @@ def validate_decision_record(value: Any) -> dict[str, Any]:
         "rerun_comparison": _decision_text(
             value.get("rerun_comparison"), "rerun_comparison", maximum=4_000
         ),
-        "proposed_baseline": _decision_text(
-            value.get("proposed_baseline"), "proposed_baseline"
-        ),
         "scientific_record_changes": normalized_changes,
     }
+    if schema_version == CURRENT_RECORD_DECISION_RECORD_SCHEMA_VERSION:
+        normalized_record["current_record_summary"] = _decision_text(
+            value.get("current_record_summary"), "current_record_summary"
+        )
+    else:
+        normalized_record["proposed_baseline"] = _decision_text(
+            value.get("proposed_baseline"), "proposed_baseline"
+        )
     if schema_version >= 2:
         normalized_record["selected_scientific_object"] = normalized_selected_object
     return normalized_record
@@ -3443,9 +3715,12 @@ def _validate_decision_record_context(
     """Bind every proposed scientific-record change to this exact run."""
 
     if manifest is None:
-        if data.get("schema_version") == PHASE_TWO_DECISION_RECORD_SCHEMA_VERSION:
+        if data.get("schema_version") in {
+            PHASE_TWO_DECISION_RECORD_SCHEMA_VERSION,
+            CURRENT_RECORD_DECISION_RECORD_SCHEMA_VERSION,
+        }:
             raise StateValidationError(
-                "decision record schema 3 requires a current Phase 02 manifest"
+                "decision record schema 3 or 4 requires a current run manifest"
             )
         return
     phase_slug = str(manifest.get("phase_slug", "")).strip()
@@ -3477,7 +3752,17 @@ def _validate_decision_record_context(
             raise StateValidationError(
                 "decision record schema 3 is reserved for current Phase 02 runs"
             )
-        if manifest_schema >= 7 and decision_schema != DECISION_RECORD_SCHEMA_VERSION:
+        if manifest_schema >= 12:
+            if decision_schema != CURRENT_RECORD_DECISION_RECORD_SCHEMA_VERSION:
+                raise StateValidationError(
+                    "schema-12 non-Phase-02 runs require decision record schema 4"
+                )
+            if selected_object is not None:
+                raise StateValidationError(
+                    "the method choice is fixed at launch, so a schema-4 result "
+                    "must not select another scientific object"
+                )
+        elif manifest_schema >= 7 and decision_schema != 2:
             raise StateValidationError(
                 "schema-7 and later runs require decision record schema 2"
             )
@@ -3831,6 +4116,109 @@ def _completion_report_from_data(
         "checked_at": _now_iso(),
     }
 
+
+def _current_record_from_phase(
+    phase: Mapping[str, Any],
+    phase_slug: str,
+    project_dir: str | Path | None,
+) -> tuple[Mapping[str, Any] | None, str, str]:
+    """Return the exact usable current result for one prerequisite phase."""
+
+    current_id = str(
+        phase.get("current_run") or phase.get("approved_run") or ""
+    ).strip()
+    if not current_id:
+        return None, "no current result", ""
+    run = next(
+        (
+            candidate
+            for candidate in phase.get("runs", [])
+            if isinstance(candidate, Mapping)
+            and str(candidate.get("run_id", "")) == current_id
+        ),
+        None,
+    )
+    if run is None:
+        return None, "the current run pointer is invalid", ""
+    if str(run.get("status", "")) not in {"completed", "approved"}:
+        return None, "the current run is not a completed result", ""
+    if bool(phase.get("stale")):
+        return None, "the current result is stale", ""
+    outcome = _scientific_outcome(run)
+    if outcome not in COMPLETED_SCIENTIFIC_OUTCOMES:
+        return None, "the current result has a Failed or missing scientific outcome", ""
+    if (
+        phase_slug == METHOD_DEVELOPMENT_PHASE
+        and phase.get("publication_readiness") == "partial"
+    ):
+        return None, "the current Phase 2 method catalog is scientifically partial", ""
+    if not run.get("submitted_at") or not run.get("final_summary"):
+        return None, "the current result has no submitted final summary", ""
+    if project_dir is None:
+        return run, "current completed result is recorded; integrity was not evaluated", ""
+    try:
+        _validate_run_integrity(
+            project_dir,
+            phase_slug,
+            run,
+            require_summary=True,
+        )
+        manifest = _validate_recorded_manifest(project_dir, phase_slug, run)
+    except (OSError, ProjectStateError) as exc:
+        return None, "current evidence is missing or changed", str(exc)
+    if _manifest_schema_version(manifest) >= 12:
+        record = run.get("phase_record")
+        if (
+            not isinstance(record, Mapping)
+            or record.get("current_updated") is not True
+            or str(record.get("source_run_id", "")) != current_id
+        ):
+            return None, "the current run has no verified promoted record", ""
+    return run, "current, completed, and intact", ""
+
+
+def _current_record_report_from_data(
+    data: Mapping[str, Any],
+    phase_slug: str,
+    dependencies: Mapping[str, Sequence[str]],
+    project_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    """Report authoritative current prerequisites without scanning history."""
+
+    requirements: list[dict[str, Any]] = []
+    for prerequisite in dependencies.get(phase_slug, []):
+        phase = data.get("phases", {}).get(prerequisite, {})
+        result, reason, integrity_detail = _current_record_from_phase(
+            phase,
+            prerequisite,
+            project_dir,
+        )
+        current_pointer = str(
+            phase.get("current_run") or phase.get("approved_run") or ""
+        ).strip()
+        result_id = str(result.get("run_id", "")) if result else None
+        requirements.append({
+            "phase": prerequisite,
+            "satisfied": result is not None,
+            "current_run": current_pointer or None,
+            "completed_run": result_id,
+            "approved_run": phase.get("approved_run"),
+            "stale": bool(phase.get("stale")),
+            "phase_status": phase.get("status", "pending"),
+            "scientific_outcome": _scientific_outcome(result) if result else "",
+            "reason": reason,
+            "integrity_detail": integrity_detail,
+        })
+    blockers = [item["phase"] for item in requirements if not item["satisfied"]]
+    return {
+        "phase": phase_slug,
+        "policy": "current_records",
+        "satisfied": not blockers,
+        "blockers": blockers,
+        "requirements": requirements,
+        "checked_at": _now_iso(),
+    }
+
 def _normalize_required_completed_runs(
     required_completed_runs: Mapping[str, str],
 ) -> dict[str, str]:
@@ -3859,16 +4247,33 @@ def _normalize_required_completed_runs(
     return normalized
 
 
+def _normalize_required_method_id(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        or "\x00" in value
+    ):
+        raise StateValidationError(
+            "required_method_id must be a non-empty method stable ID"
+        )
+    return value.strip()
+
+
 def _required_completed_report_from_data(
     data: Mapping[str, Any],
     phase_slug: str,
     required_completed_runs: Mapping[str, str],
     project_dir: str | Path | None,
+    *,
+    required_method_id: str | None = None,
 ) -> dict[str, Any]:
     """Report whether each exact prerequisite run remains scientifically usable."""
 
     requirements: list[dict[str, Any]] = []
     normalized = _normalize_required_completed_runs(required_completed_runs)
+    normalized_method_id = _normalize_required_method_id(required_method_id)
     for prerequisite, required_run_id in normalized.items():
         phase = data.get("phases", {}).get(prerequisite, {})
         run = next(
@@ -3883,10 +4288,24 @@ def _required_completed_report_from_data(
         outcome = _scientific_outcome(run) if isinstance(run, Mapping) else ""
         integrity_detail = ""
         satisfied = False
+        status = str(run.get("status", "")) if isinstance(run, Mapping) else ""
+        referenced_phase_two_review = bool(
+            status == "superseded"
+            and prerequisite == METHOD_DEVELOPMENT_PHASE
+            and project_dir is not None
+            and method_menu.catalog_references_review_run(
+                project_dir,
+                required_run_id,
+                stable_id=normalized_method_id or "",
+            )
+        )
         if run is None:
             reason = "the exact completed run is no longer recorded"
-        elif str(run.get("status", "")) not in COMPLETED_RESULT_STATUSES:
-            reason = "the exact completed run is no longer approved or awaiting review"
+        elif (
+            status not in COMPLETED_RESULT_STATUSES
+            and not referenced_phase_two_review
+        ):
+            reason = "the exact run is no longer a completed scientific result"
         elif not run.get("submitted_at") or not run.get("final_summary"):
             reason = "the exact completed run has no submitted final summary"
         elif outcome not in COMPLETED_SCIENTIFIC_OUTCOMES:
@@ -3920,7 +4339,7 @@ def _required_completed_report_from_data(
             "integrity_detail": integrity_detail,
         })
     blockers = [item["phase"] for item in requirements if not item["satisfied"]]
-    return {
+    report = {
         "phase": phase_slug,
         "required_completed_runs": dict(normalized),
         "policy": "required_completed_runs",
@@ -3929,6 +4348,9 @@ def _required_completed_report_from_data(
         "requirements": requirements,
         "checked_at": _now_iso(),
     }
+    if normalized_method_id is not None:
+        report["required_method_id"] = normalized_method_id
+    return report
 
 
 def _approval_context_report_from_data(
@@ -3949,12 +4371,17 @@ def _approval_context_report_from_data(
         if isinstance(item, Mapping) and item.get("phase")
     }
     snapshot_required_runs = snapshot.get("required_completed_runs")
+    snapshot_required_method = snapshot.get("required_method_id")
     exact_completion_policy = bool(
         snapshot.get("policy") == "required_completed_runs"
         or isinstance(snapshot_required_runs, Mapping)
     )
     completion_policy = bool(
         snapshot.get("policy") == "completed_results"
+        and not exact_completion_policy
+    )
+    current_record_policy = bool(
+        snapshot.get("policy") == "current_records"
         and not exact_completion_policy
     )
     if exact_completion_policy:
@@ -3972,9 +4399,18 @@ def _approval_context_report_from_data(
             phase_slug,
             required_completed_runs,
             project_dir,
+            required_method_id=(
+                snapshot_required_method
+                if snapshot_required_method is not None
+                else None
+            ),
         )
     elif completion_policy:
         current_report = _completion_report_from_data(
+            data, phase_slug, dependencies, project_dir
+        )
+    elif current_record_policy:
+        current_report = _current_record_report_from_data(
             data, phase_slug, dependencies, project_dir
         )
     else:
@@ -4008,6 +4444,8 @@ def _approval_context_report_from_data(
         identity_field = (
             "completed_run"
             if completion_policy or exact_completion_policy
+            else "current_run"
+            if current_record_policy
             else "approved_run"
         )
         current_id = current_requirement.get(identity_field)
@@ -4050,6 +4488,22 @@ def _approval_context_report_from_data(
                     launch_id,
                     current_id,
                     "the completed prerequisite evidence is missing or changed",
+                )
+            continue
+        if current_record_policy:
+            if current_id != launch_id:
+                add_change(
+                    prerequisite,
+                    launch_id,
+                    current_id,
+                    "the current prerequisite result changed after launch",
+                )
+            elif not current_requirement.get("satisfied"):
+                add_change(
+                    prerequisite,
+                    launch_id,
+                    current_id,
+                    "the current prerequisite evidence is missing, stale, or changed",
                 )
             continue
         current_stale = bool(source_phase.get("stale"))
@@ -4145,6 +4599,15 @@ def _approval_context_report_from_data(
                 if current_result is not None
                 else None
             )
+        elif current_record_policy:
+            current_result, _, _ = _current_record_from_phase(
+                source_phase, source_name, project_dir
+            )
+            current_id = (
+                str(current_result.get("run_id", ""))
+                if current_result is not None
+                else None
+            )
         else:
             current_id = source_phase.get("approved_run")
         integrity_changed = False
@@ -4160,14 +4623,14 @@ def _approval_context_report_from_data(
             try:
                 allowed_statuses = (
                     COMPLETED_RESULT_STATUSES
-                    if completion_policy
+                    if completion_policy or current_record_policy
                     else frozenset({"approved"})
                 )
                 if (
                     current_run is None
                     or current_run.get("status") not in allowed_statuses
                     or (
-                        completion_policy
+                        (completion_policy or current_record_policy)
                         and _scientific_outcome(current_run)
                         not in COMPLETED_SCIENTIFIC_OUTCOMES
                     )
@@ -4196,7 +4659,9 @@ def _approval_context_report_from_data(
             except (OSError, ProjectStateError):
                 integrity_changed = True
         if current_id != launch_id or (
-            not completion_policy and bool(source_phase.get("stale"))
+            not completion_policy
+            and not current_record_policy
+            and bool(source_phase.get("stale"))
         ):
             add_change(
                 source_name,
@@ -4205,6 +4670,8 @@ def _approval_context_report_from_data(
                 (
                     "a completed context source changed after launch"
                     if completion_policy
+                    else "a current context source changed or became stale after launch"
+                    if current_record_policy
                     else "an approved context source changed or became stale after launch"
                 ),
             )
@@ -4213,7 +4680,11 @@ def _approval_context_report_from_data(
                 source_name,
                 launch_id,
                 current_id,
-                "approved context-source evidence is missing or changed",
+                (
+                    "current context-source evidence is missing or changed"
+                    if current_record_policy
+                    else "approved context-source evidence is missing or changed"
+                ),
             )
 
     launch_override = copy.deepcopy(run.get("override_metadata"))
@@ -4248,7 +4719,9 @@ def reserve_run(
     replace_awaiting_review_run_id: str | None = None,
     expected_prerequisite_report_version: str | None = None,
     completed_results: bool = False,
+    current_records: bool = False,
     required_completed_runs: Mapping[str, str] | None = None,
+    required_method_id: str | None = None,
 ) -> str:
     """Atomically reserve the project's sole active execution and return its ID.
 
@@ -4256,18 +4729,29 @@ def reserve_run(
     prerequisite report and override are snapshotted on the run so the UI can
     explain the user's decision later. ``completed_results`` uses completed,
     intact scientific results instead of user approval as the dependency rule.
+    ``current_records`` requires the exact fresh, promoted current result.
     ``required_completed_runs`` binds the report to exact completed run IDs.
     """
 
-    if completed_results and required_completed_runs is not None:
+    selected_policies = sum((completed_results, current_records, required_completed_runs is not None))
+    if selected_policies > 1:
         raise StateValidationError(
-            "completed_results and required_completed_runs are mutually exclusive"
+            "completed_results, current_records, and required_completed_runs "
+            "are mutually exclusive"
         )
     normalized_required_runs = (
         _normalize_required_completed_runs(required_completed_runs)
         if required_completed_runs is not None
         else None
     )
+    normalized_required_method = _normalize_required_method_id(required_method_id)
+    if (
+        normalized_required_method is not None
+        and normalized_required_runs is None
+    ):
+        raise StateValidationError(
+            "required_method_id is valid only with required_completed_runs"
+        )
 
     if isinstance(rounds_requested, bool):
         raise StateValidationError("rounds_requested must be a positive integer")
@@ -4279,7 +4763,7 @@ def reserve_run(
         raise StateValidationError("rounds_requested must be at least 1")
 
     with _project_lock(project_dir):
-        data = _migrate(_read_unlocked(project_dir))
+        data = _load_reconciled_unlocked(project_dir)
         active = _active_entries(data)
         if active:
             current_phase, current_run, _ = active[0]
@@ -4339,6 +4823,11 @@ def reserve_run(
                 phase_slug,
                 normalized_required_runs,
                 project_dir,
+                required_method_id=normalized_required_method,
+            )
+        elif current_records:
+            report = _current_record_report_from_data(
+                data, phase_slug, normalized_dependencies, project_dir
             )
         elif completed_results:
             report = _completion_report_from_data(
@@ -4370,6 +4859,8 @@ def reserve_run(
         if report["blockers"] and normalized_override is None:
             if normalized_required_runs is not None:
                 required_state = "bound to intact exact completed runs"
+            elif current_records:
+                required_state = "current, completed, and intact"
             elif completed_results:
                 required_state = "completed and intact"
             else:
@@ -4416,6 +4907,8 @@ def reserve_run(
             "review_target": None,
             "submission_artifacts": {},
             "method_menu_seal": None,
+            "phase_record_seal": None,
+            "phase_record": None,
             "method_menu_changes": None,
             "publication_kind": None,
             "published_at": None,
@@ -4458,7 +4951,7 @@ def set_process_pid(
         raise StateValidationError("process PID must be a positive integer")
     identity = str(process_identity or "").strip() or None
     with _project_lock(project_dir):
-        data = _migrate(_read_unlocked(project_dir))
+        data = _load_reconciled_unlocked(project_dir)
         _, run, _ = _resolve_run(data, phase_slug, run_ref)
         _ensure_status(run, {"starting", "running"}, "set process PID for")
         existing = run.get("process_pid")
@@ -4509,7 +5002,7 @@ def set_run_context(
     normalized_entries: list[dict[str, str]] = []
     seen_sources: set[tuple[str, str]] = set()
     with _project_lock(project_dir):
-        data = _migrate(_read_unlocked(project_dir))
+        data = _load_reconciled_unlocked(project_dir)
         _, run, _ = _resolve_run(data, phase_slug, run_ref)
         _ensure_status(run, {"starting", "running"}, "set context for")
         for entry in entries:
@@ -4624,7 +5117,7 @@ def seal_run_manifest(
     if manifest.get("phase_slug") != phase_slug or timeout_minutes < 1:
         raise StateValidationError("run manifest identity or timeout is invalid")
     with _project_lock(project_dir):
-        data = _migrate(_read_unlocked(project_dir))
+        data = _load_reconciled_unlocked(project_dir)
         _, run, _ = _resolve_run(data, phase_slug, run_ref)
         _ensure_status(run, {"starting"}, "seal the manifest for")
         if manifest.get("run_id") != run.get("run_id"):
@@ -4671,7 +5164,7 @@ def seal_review_target(
         raise StateValidationError("review target hash does not match its contents")
 
     with _project_lock(project_dir):
-        data = _migrate(_read_unlocked(project_dir))
+        data = _load_reconciled_unlocked(project_dir)
         _, run, _ = _resolve_run(data, phase_slug, run_ref)
         _ensure_status(run, {"starting", "running"}, "seal the review target for")
         existing = run.get("review_target")
@@ -4739,7 +5232,7 @@ def start_round(
     if not normalized_agents:
         raise StateValidationError("a round must record at least one agent")
     with _project_lock(project_dir):
-        data = _migrate(_read_unlocked(project_dir))
+        data = _load_reconciled_unlocked(project_dir)
         _, run, _ = _resolve_run(data, phase_slug, run_ref)
         _ensure_status(run, {"starting", "running"}, "start a round in")
         if any(round_.get("started") and not round_.get("completed") for round_ in run["rounds"]):
@@ -4771,6 +5264,18 @@ def start_round(
         _save_unlocked(project_dir, data)
         return expected
 
+
+def _phase_four_standard_task_workspace(
+    manifest: Mapping[str, Any],
+    round_n: int,
+    role: str,
+) -> Path:
+    """Return the enforced workspace for a modern standard Phase 4 task."""
+
+    output_root = Path(str(manifest.get("output_root", ""))).resolve()
+    if role == "research_lead":
+        return output_root
+    return (output_root / f"round-{round_n:02d}").resolve()
 
 def record_task(
     project_dir: str | Path,
@@ -4841,7 +5346,7 @@ def record_task(
         normalized_workspace = str(resolved_workspace)
 
     with _project_lock(project_dir):
-        data = _migrate(_read_unlocked(project_dir))
+        data = _load_reconciled_unlocked(project_dir)
         _, run, _ = _resolve_run(data, phase_slug, run_ref)
         _ensure_status(run, {"running"}, "record a task for")
         if round_n < 1 or round_n > len(run["rounds"]):
@@ -4930,17 +5435,18 @@ def record_task(
             manifest = _validate_recorded_manifest(project_dir, phase_slug, run)
             # F7 fix: manifest may be None for legacy direct runs.
             if manifest is not None and _manifest_schema_version(manifest) >= 7:
-                expected_workspace = (
-                    Path(str(manifest.get("output_root", "")))
-                    / f"round-{round_n:02d}"
-                ).resolve()
+                expected_workspace = _phase_four_standard_task_workspace(
+                    manifest,
+                    round_n,
+                    normalized_role,
+                )
                 if (
                     normalized_workspace is None
                     or Path(normalized_workspace) != expected_workspace
                 ):
                     raise StateValidationError(
                         "schema-7 Phase 04 task workspace does not match its "
-                        "write-limited round directory"
+                        "write-limited run directory"
                     )
         for phase in data.get("phases", {}).values():
             for existing_run in phase.get("runs", []):
@@ -4986,7 +5492,7 @@ def complete_round(
         )
 
     with _project_lock(project_dir):
-        data = _migrate(_read_unlocked(project_dir))
+        data = _load_reconciled_unlocked(project_dir)
         _, run, _ = _resolve_run(data, phase_slug, run_ref)
         _ensure_status(run, {"running"}, "complete a round in")
         if round_n < 1 or round_n > len(run["rounds"]):
@@ -5135,7 +5641,7 @@ def stage_run_submission(
     """Record a valid summary while the worker is still under user control."""
 
     with _project_lock(project_dir):
-        data = _migrate(_read_unlocked(project_dir))
+        data = _load_reconciled_unlocked(project_dir)
         _, run, _ = _resolve_run(data, phase_slug, run_ref)
         _ensure_status(run, {"running"}, "submit")
         requested = run["rounds_requested"]
@@ -5191,7 +5697,43 @@ def stage_run_submission(
         run["decision_record"] = _seal_decision_record(
             project_dir, manifest, decision_record
         )
-        if (
+        if _manifest_schema_version(manifest) >= 12:
+            if not isinstance(manifest, Mapping):
+                raise StateValidationError(
+                    "current submission requires a sealed run manifest"
+                )
+            output_root = str(manifest.get("output_root", "")).strip()
+            if not output_root:
+                raise StateValidationError(
+                    "current run manifest has no output directory"
+                )
+            from core import phase_records
+
+            try:
+                phase_seal = phase_records.seal_output(
+                    project_dir,
+                    phase_slug,
+                    output_root,
+                    run_id=str(run["run_id"]),
+                    scientific_outcome=_scientific_outcome(run),
+                    manifest=manifest,
+                    counterpart_basis=phase_records.manifest_counterpart_basis(
+                        manifest,
+                        phase_slug,
+                    ),
+                )
+            except (OSError, ValueError) as exc:
+                raise StateValidationError(
+                    f"The submitted phase record is invalid: {exc}"
+                ) from exc
+            run["phase_record_seal"] = copy.deepcopy(phase_seal)
+            if phase_slug == METHOD_DEVELOPMENT_PHASE and phase_seal.get(
+                "eligible"
+            ):
+                run["method_menu_seal"] = copy.deepcopy(
+                    phase_seal.get("data")
+                )
+        elif (
             phase_slug == METHOD_DEVELOPMENT_PHASE
             and _manifest_schema_version(manifest) >= 9
         ):
@@ -5273,6 +5815,20 @@ def _promotion_changed_method_ids(
     return None
 
 
+def _promotion_downstream_invalidated_method_ids(
+    promotion: Mapping[str, Any],
+) -> set[str] | None:
+    """Return branches invalidated by a calculation, version, or retirement."""
+
+    values = promotion.get("downstream_invalidated_stable_ids")
+    if isinstance(values, list) and all(
+        isinstance(value, str) and value.strip() for value in values
+    ):
+        return {value.strip() for value in values}
+    # Promotions created before this field existed are handled conservatively.
+    return _promotion_changed_method_ids(promotion)
+
+
 def _method_menu_change_record(
     promotion: Mapping[str, Any], changed_ids: set[str] | None
 ) -> dict[str, Any]:
@@ -5287,12 +5843,88 @@ def _method_menu_change_record(
     return record
 
 
+def _stale_phase_descendants_unlocked(
+    data: dict[str, Any],
+    phase_slug: str,
+    run_id: str,
+    timestamp: str,
+) -> list[str]:
+    """Mark current downstream phase records stale after an upstream update."""
+
+    dependencies = _normalize_dependencies(data.get("dependencies", {}))
+    reverse: dict[str, list[str]] = {}
+    for dependent, prerequisites in dependencies.items():
+        for prerequisite in prerequisites:
+            reverse.setdefault(prerequisite, []).append(dependent)
+    descendants: list[str] = []
+    queue = list(reverse.get(phase_slug, []))
+    seen: set[str] = set()
+    while queue:
+        dependent = queue.pop(0)
+        if dependent in seen:
+            continue
+        seen.add(dependent)
+        descendants.append(dependent)
+        queue.extend(reverse.get(dependent, []))
+
+    staled: list[str] = []
+    for dependent in descendants:
+        dependent_phase = data.get("phases", {}).get(dependent)
+        if not isinstance(dependent_phase, dict) or not (
+            dependent_phase.get("current_run")
+            or dependent_phase.get("approved_run")
+        ):
+            continue
+        dependent_phase["stale"] = True
+        dependent_phase["stale_at"] = timestamp
+        dependent_phase["stale_reason"] = (
+            f"upstream phase {phase_slug} produced a new current record"
+        )
+        dependent_phase["stale_by_run"] = run_id
+        staled.append(dependent)
+    return staled
+
+
+def _compact_phase_record_state(
+    run: Mapping[str, Any],
+    scientific_outcome: str,
+    promotion: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Keep only small reader-facing current-record metadata in state."""
+
+    record: dict[str, Any] = {
+        "schema_version": 1,
+        "source_run_id": str(run.get("run_id", "")),
+        "scientific_outcome": scientific_outcome,
+        "current_updated": promotion is not None,
+    }
+    if promotion is None:
+        return record
+    for key in (
+        "kind",
+        "generation",
+        "paper_count",
+        "summary_sha256",
+        "index_sha256",
+        "manuscript_sha256",
+        "knowledge_sha256",
+        "current_directory",
+        "method_identity",
+        "method",
+        "publication_readiness",
+    ):
+        value = promotion.get(key)
+        if value is not None:
+            record[key] = copy.deepcopy(value)
+    return record
+
+
 def _approved_method_identity(
     project_dir: str | Path,
     phase_slug: str,
     phase: Mapping[str, Any],
 ) -> str | None:
-    approved_id = phase.get("approved_run")
+    approved_id = phase.get("current_run") or phase.get("approved_run")
     if not isinstance(approved_id, str) or not approved_id:
         return None
     approved = next(
@@ -5301,7 +5933,7 @@ def _approved_method_identity(
             for candidate in phase.get("runs", [])
             if isinstance(candidate, Mapping)
             and candidate.get("run_id") == approved_id
-            and candidate.get("status") == "approved"
+            and candidate.get("status") in {"completed", "approved"}
         ),
         None,
     )
@@ -5357,11 +5989,14 @@ def _stale_changed_method_descendants_unlocked(
         identity = None
         affected = forced
         reason = "an upstream result depends on an affected method"
-        if not affected and isinstance(phase, Mapping) and phase.get("approved_run"):
+        has_current = isinstance(phase, Mapping) and bool(
+            phase.get("current_run") or phase.get("approved_run")
+        )
+        if not affected and has_current:
             identity = _approved_method_identity(project_dir, phase_slug, phase)
             if identity is None and conservative_on_unknown:
                 affected = True
-                reason = "the approved run has no verifiable sealed method identity"
+                reason = "the current run has no verifiable sealed method identity"
             elif identity is not None and (changed_ids is None or identity in changed_ids):
                 affected = True
                 reason = (
@@ -5369,7 +6004,7 @@ def _stale_changed_method_descendants_unlocked(
                     or f"method {identity} changed in the published Phase 02 menu"
                 )
 
-        if affected and isinstance(phase, dict) and phase.get("approved_run"):
+        if affected and isinstance(phase, dict) and has_current:
             phase["stale"] = True
             phase["stale_at"] = timestamp
             phase["stale_reason"] = reason
@@ -5397,7 +6032,7 @@ def mark_method_dependents_stale(
     if not normalized_reason:
         raise StateValidationError("method staleness reason must be nonempty")
     with _project_lock(project_dir):
-        data = _migrate(_read_unlocked(project_dir))
+        data = _load_reconciled_unlocked(project_dir)
         staled = _stale_changed_method_descendants_unlocked(
             project_dir,
             data,
@@ -5451,6 +6086,380 @@ def _publish_method_menu_run_unlocked(
     phase["stale_by_run"] = None
 
 
+def _finalize_current_record_submission_unlocked(
+    project_dir: str | Path,
+    data: dict[str, Any],
+    phase_slug: str,
+    phase: dict[str, Any],
+    run: dict[str, Any],
+    manifest: Mapping[str, Any],
+    timestamp: str,
+) -> None:
+    """Promote a schema 12 phase record and finish without an approval queue."""
+
+    from core import phase_records, promotion_recovery
+
+    scientific_outcome = _scientific_outcome(run)
+    if scientific_outcome not in SCIENTIFIC_OUTCOMES:
+        raise StateValidationError(
+            "current submission has no valid scientific outcome"
+        )
+    if scientific_outcome == "Failed":
+        run["status"] = "failed"
+        run["publication_outcome"] = "Failed"
+        run["publication_readiness"] = "failed"
+        run["phase_record"] = _compact_phase_record_state(
+            run, scientific_outcome, None
+        )
+        _refresh_derived_state(data)
+        _save_unlocked(project_dir, data)
+        return
+
+    seal = run.get("phase_record_seal")
+    if not isinstance(seal, Mapping):
+        raise StateValidationError(
+            "current submission has no sealed phase-record candidate"
+        )
+    output_root = str(manifest.get("output_root", "")).strip()
+    if not output_root:
+        raise StateValidationError(
+            "current run manifest has no output directory"
+        )
+
+    branch_method_id: str | None = None
+    if phase_slug in METHOD_BOUND_CURRENT_PHASES:
+        try:
+            branch_method_id = phase_records.manifest_method_identity(manifest)[
+                "stable_id"
+            ]
+        except (KeyError, TypeError, ValueError) as exc:
+            raise StateValidationError(
+                "method-bound current result has no valid frozen method identity"
+            ) from exc
+
+    control_dir = state_dir(project_dir)
+    run_id = str(run["run_id"])
+    operation_id = promotion_journal.operation_id(phase_slug, run_id)
+    try:
+        intent = phase_records.plan_output_promotion(
+            project_dir,
+            phase_slug,
+            output_root,
+            seal,
+            manifest=manifest,
+            operation_id=operation_id,
+            lock_held=True,
+        )
+        intent = phase_records.validate_promotion_intent(
+            phase_slug,
+            intent,
+            operation_id=operation_id,
+            run_id=run_id,
+            manifest=manifest,
+        )
+    except (OSError, ValueError) as exc:
+        raise StateValidationError(
+            f"The phase-record promotion could not be planned safely: {exc}"
+        ) from exc
+
+    try:
+        prepared_journal = promotion_journal.prepare(
+            control_dir,
+            project_dir,
+            phase_slug,
+            run_id,
+            intent=intent,
+        )
+    except (OSError, promotion_journal.PromotionJournalError) as exc:
+        raise StateValidationError(
+            f"The phase-record promotion could not be prepared safely: {exc}"
+        ) from exc
+
+    promotion: Mapping[str, Any] | None = None
+    promoted_journal: Mapping[str, Any] | None = None
+    try:
+        promoted = phase_records.promote_output(
+            project_dir,
+            phase_slug,
+            output_root,
+            seal,
+            manifest=manifest,
+            lock_held=True,
+            retain_backup=True,
+            promotion_intent=intent,
+        )
+    except (OSError, ValueError) as exc:
+        if intent is not None:
+            try:
+                current_journal = promotion_journal.read(
+                    promotion_journal.journal_path(control_dir, run_id)
+                )
+                promotion_recovery.complete_after_state_decision(
+                    project_dir,
+                    control_dir,
+                    current_journal,
+                    make_current=False,
+                    recover_filesystem=True,
+                )
+            except Exception as recovery_error:
+                log.critical(
+                    "Exact phase-record rollback failed after execution "
+                    "error; its journal was retained: %s",
+                    recovery_error,
+                )
+                raise StateValidationError(
+                    "The submitted phase record could not become current, "
+                    "and exact rollback remains pending"
+                ) from exc
+        else:
+            try:
+                promotion_journal.remove(control_dir, run_id)
+            except (
+                OSError,
+                promotion_journal.PromotionJournalError,
+            ) as cleanup_exc:
+                log.error(
+                    "Prepared phase-record recovery journal could not be "
+                    "removed: %s",
+                    cleanup_exc,
+                )
+        raise StateValidationError(
+            f"The submitted phase record could not become current: {exc}"
+        ) from exc
+    if promoted is not None:
+        if not isinstance(promoted, Mapping):
+            raise StateValidationError(
+                "phase-record promotion returned invalid metadata; its recovery "
+                "journal was retained for inspection"
+            )
+        promotion = dict(promoted)
+        try:
+            promoted_journal = promotion_journal.record_promotion(
+                control_dir,
+                run_id,
+                promotion,
+            )
+        except (OSError, promotion_journal.PromotionJournalError) as exc:
+            if intent is not None:
+                try:
+                    current_journal = promotion_journal.read(
+                        promotion_journal.journal_path(control_dir, run_id)
+                    )
+                    promotion_recovery.complete_after_state_decision(
+                        project_dir,
+                        control_dir,
+                        current_journal,
+                        make_current=False,
+                        recover_filesystem=True,
+                    )
+                except Exception as rollback_error:
+                    log.critical(
+                        "Exact phase-record rollback failed after journal "
+                        "error; its journal was retained: %s",
+                        rollback_error,
+                    )
+            else:
+                try:
+                    phase_records.rollback_promotion(
+                        project_dir,
+                        phase_slug,
+                        promotion,
+                    )
+                except Exception as rollback_error:
+                    log.critical(
+                        "Phase-record rollback failed after journal error: %s",
+                        rollback_error,
+                    )
+                else:
+                    try:
+                        promotion_journal.remove(control_dir, run_id)
+                    except Exception as cleanup_exc:
+                        log.error(
+                            "Prepared phase-record recovery journal could not "
+                            "be removed after rollback: %s",
+                            cleanup_exc,
+                        )
+            raise StateValidationError(
+                f"The published phase record could not be journaled safely: {exc}"
+            ) from exc
+    else:
+        if intent is not None:
+            try:
+                promotion_recovery.complete_after_state_decision(
+                    project_dir,
+                    control_dir,
+                    prepared_journal,
+                    make_current=False,
+                    recover_filesystem=True,
+                )
+            except Exception as recovery_error:
+                raise StateValidationError(
+                    "A planned phase-record promotion returned no transaction; "
+                    "exact rollback remains pending"
+                ) from recovery_error
+            raise StateValidationError(
+                "A planned phase-record promotion returned no transaction"
+            )
+        try:
+            promotion_journal.remove(control_dir, run_id)
+        except (OSError, promotion_journal.PromotionJournalError) as exc:
+            raise StateValidationError(
+                f"The no-change promotion journal could not be removed: {exc}"
+            ) from exc
+
+    changed_ids: set[str] | None = None
+    downstream_invalidated_ids: set[str] | None = None
+    change_record: dict[str, Any] | None = None
+    if phase_slug == METHOD_DEVELOPMENT_PHASE and promotion is not None:
+        changed_ids = _promotion_changed_method_ids(promotion)
+        downstream_invalidated_ids = (
+            _promotion_downstream_invalidated_method_ids(promotion)
+        )
+        change_record = _method_menu_change_record(promotion, changed_ids)
+
+    try:
+        if promotion is not None:
+            current_runs = phase.setdefault("current_runs", {})
+            if not isinstance(current_runs, dict):
+                raise StateValidationError(
+                    "phase current_runs must be a method-to-run mapping"
+                )
+            old_current_id = None
+            if branch_method_id is not None:
+                old_current_id = current_runs.get(branch_method_id)
+                if not old_current_id:
+                    old_current_id = next(
+                        (
+                            str(candidate.get("run_id"))
+                            for candidate in reversed(phase.get("runs", []))
+                            if candidate is not run
+                            and isinstance(candidate, Mapping)
+                            and candidate.get("status")
+                            in {"completed", "approved"}
+                            and _phase_record_method_id(candidate)
+                            == branch_method_id
+                        ),
+                        None,
+                    )
+            else:
+                old_current_id = phase.get("current_run") or phase.get(
+                    "approved_run"
+                )
+            if old_current_id and old_current_id != run["run_id"]:
+                old = next(
+                    (
+                        candidate
+                        for candidate in phase.get("runs", [])
+                        if candidate.get("run_id") == old_current_id
+                    ),
+                    None,
+                )
+                if isinstance(old, dict) and old.get("status") in {
+                    "completed",
+                    "approved",
+                }:
+                    old["status"] = "superseded"
+                    old["superseded_at"] = timestamp
+                    old["superseded_by"] = run["run_id"]
+            if branch_method_id is not None:
+                current_runs[branch_method_id] = run["run_id"]
+            phase["current_run"] = run["run_id"]
+            # Compatibility pointer for older readers. It no longer denotes a
+            # user approval in schema 12 projects.
+            phase["approved_run"] = run["run_id"]
+            phase["stale"] = False
+            phase["stale_at"] = None
+            phase["stale_reason"] = None
+            phase["stale_by_run"] = None
+            if phase_slug == METHOD_DEVELOPMENT_PHASE:
+                run["method_menu_changes"] = change_record
+                _stale_changed_method_descendants_unlocked(
+                    project_dir,
+                    data,
+                    str(run["run_id"]),
+                    timestamp,
+                    downstream_invalidated_ids,
+                )
+            elif phase_slug != LITERATURE_REVIEW_PHASE:
+                # Phase 1 effects are method-specific. The branch graph marks
+                # each Phase 2 review basis and each Phase 5 manuscript
+                # directly, without making unchanged Phase 3 or Phase 4
+                # records stale.
+                _stale_phase_descendants_unlocked(
+                    data,
+                    phase_slug,
+                    str(run["run_id"]),
+                    timestamp,
+                )
+
+        readiness = (
+            "ready"
+            if scientific_outcome == "Complete" and promotion is not None
+            else "partial"
+            if scientific_outcome == "Partial"
+            else "record_unchanged"
+        )
+        run["status"] = "completed"
+        run["published_at"] = timestamp if promotion is not None else None
+        run["publication_kind"] = str(seal.get("kind", "none"))
+        run["publication_outcome"] = scientific_outcome
+        run["publication_readiness"] = readiness
+        run["phase_record"] = _compact_phase_record_state(
+            run, scientific_outcome, promotion
+        )
+        if promotion is not None or not (
+            phase.get("current_run") or phase.get("approved_run")
+        ):
+            phase["publication_readiness"] = readiness
+        _refresh_derived_state(data)
+        _save_unlocked(project_dir, data)
+    except StateCommitUncertain:
+        # The new state file is already visible, but its directory entry may
+        # not be durable. Keep the canonical promotion and its journal so the
+        # next locked load can follow whichever state file actually survives.
+        raise
+    except Exception as state_error:
+        if promotion is not None and promoted_journal is not None:
+            try:
+                promotion_recovery.complete_after_state_decision(
+                    project_dir,
+                    control_dir,
+                    promoted_journal,
+                    make_current=False,
+                    recover_filesystem=True,
+                )
+            except Exception as recovery_error:
+                log.critical(
+                    "Exact phase-record rollback failed after state "
+                    "finalization error; its journal was retained: %s",
+                    recovery_error,
+                )
+                raise StateValidationError(
+                    "Project state could not be saved, and exact phase-record "
+                    "rollback remains pending"
+                ) from state_error
+        raise
+
+    if promotion is not None:
+        if promoted_journal is None:
+            raise StateValidationError(
+                "Published phase record has no durable promotion journal"
+            )
+        try:
+            promotion_recovery.complete_after_state_decision(
+                project_dir,
+                control_dir,
+                promoted_journal,
+                make_current=True,
+                recover_filesystem=False,
+            )
+        except Exception as cleanup_error:
+            raise StateValidationError(
+                "Project state is current, but promotion completion remains "
+                f"pending: {cleanup_error}"
+            ) from cleanup_error
+
+
 def finalize_run_submission(
     project_dir: str | Path,
     phase_slug: str,
@@ -5466,7 +6475,7 @@ def finalize_run_submission(
         raise StateValidationError("expected PID must be a positive integer")
 
     with _project_lock(project_dir):
-        data = _migrate(_read_unlocked(project_dir))
+        data = _load_reconciled_unlocked(project_dir)
         phase, run, _ = _resolve_run(data, phase_slug, run_ref)
         if run.get("status") != "submitting":
             return False
@@ -5481,6 +6490,22 @@ def finalize_run_submission(
         timestamp = _now_iso()
         run["completed"] = timestamp
         run["ended_at"] = timestamp
+        if _manifest_schema_version(manifest) >= 12:
+            if not isinstance(manifest, Mapping):
+                raise StateValidationError(
+                    "current-record finalization requires a sealed run manifest"
+                )
+            _finalize_current_record_submission_unlocked(
+                project_dir,
+                data,
+                phase_slug,
+                phase,
+                run,
+                manifest,
+                timestamp,
+            )
+            return True
+
         publishes_method_menu = bool(
             phase_slug == METHOD_DEVELOPMENT_PHASE
             and _manifest_schema_version(manifest) >= 9
@@ -5540,6 +6565,9 @@ def finalize_run_submission(
             )
 
         changed_ids = _promotion_changed_method_ids(promotion)
+        downstream_invalidated_ids = (
+            _promotion_downstream_invalidated_method_ids(promotion)
+        )
         change_record = _method_menu_change_record(promotion, changed_ids)
         try:
             _publish_method_menu_run_unlocked(
@@ -5554,7 +6582,7 @@ def finalize_run_submission(
                 data,
                 str(run["run_id"]),
                 timestamp,
-                changed_ids,
+                downstream_invalidated_ids,
             )
             _refresh_derived_state(data)
             _save_unlocked(project_dir, data)
@@ -5616,7 +6644,7 @@ def approve_run(
     """
 
     with _project_lock(project_dir):
-        data = _migrate(_read_unlocked(project_dir))
+        data = _load_reconciled_unlocked(project_dir)
         phase, run, _ = _resolve_run(data, phase_slug, run_ref)
         _ensure_status(run, {"awaiting_review"}, "approve")
         _validate_run_integrity(
@@ -5782,7 +6810,7 @@ def request_revision(
     if not str(note).strip():
         raise StateValidationError("revision request requires a nonempty note")
     with _project_lock(project_dir):
-        data = _migrate(_read_unlocked(project_dir))
+        data = _load_reconciled_unlocked(project_dir)
         _, run, _ = _resolve_run(data, phase_slug, run_ref)
         _ensure_status(run, {"awaiting_review"}, "request revision for")
         run["status"] = "revision_requested"
@@ -5811,7 +6839,7 @@ def begin_run_cleanup(
     ):
         raise StateValidationError("expected PID must be a positive integer")
     with _project_lock(project_dir):
-        data = _migrate(_read_unlocked(project_dir))
+        data = _load_reconciled_unlocked(project_dir)
         _, run, _ = _resolve_run(data, phase_slug, run_ref)
         if expected_pid is not None and run.get("process_pid") != expected_pid:
             return False
@@ -5853,7 +6881,7 @@ def finalize_run_cleanup(
             "unconfirmed cleanup requires an explicit recovery note"
         )
     with _project_lock(project_dir):
-        data = _migrate(_read_unlocked(project_dir))
+        data = _load_reconciled_unlocked(project_dir)
         _, run, _ = _resolve_run(data, phase_slug, run_ref)
         if run.get("status") != "stopping":
             return False
@@ -6052,23 +7080,40 @@ def prerequisite_report(
     *,
     gating: Mapping[str, Sequence[str]] | None = None,
     completed_results: bool = False,
+    current_records: bool = False,
     required_completed_runs: Mapping[str, str] | None = None,
+    required_method_id: str | None = None,
 ) -> dict[str, Any]:
-    if completed_results and required_completed_runs is not None:
+    selected_policies = sum((completed_results, current_records, required_completed_runs is not None))
+    if selected_policies > 1:
         raise StateValidationError(
-            "completed_results and required_completed_runs are mutually exclusive"
+            "completed_results, current_records, and required_completed_runs "
+            "are mutually exclusive"
         )
     data = load(project_dir)
     supplied = dependencies if dependencies is not None else gating
     normalized = _normalize_dependencies(
         supplied if supplied is not None else data.get("dependencies", {})
     )
+    normalized_required_method = _normalize_required_method_id(required_method_id)
+    if (
+        normalized_required_method is not None
+        and required_completed_runs is None
+    ):
+        raise StateValidationError(
+            "required_method_id is valid only with required_completed_runs"
+        )
     if required_completed_runs is not None:
         return _required_completed_report_from_data(
             data,
             phase_slug,
             _normalize_required_completed_runs(required_completed_runs),
             project_dir,
+            required_method_id=normalized_required_method,
+        )
+    if current_records:
+        return _current_record_report_from_data(
+            data, phase_slug, normalized, project_dir
         )
     if completed_results:
         return _completion_report_from_data(
@@ -6085,7 +7130,7 @@ def run_integrity_report(
     """Report whether all sealed evidence for one submitted run is unchanged."""
 
     with _project_lock(project_dir):
-        data = _migrate(_read_unlocked(project_dir))
+        data = _load_reconciled_unlocked(project_dir)
         _, run, _ = _resolve_run(data, phase_slug, run_ref)
         try:
             _validate_run_integrity(
@@ -6114,7 +7159,7 @@ def approval_context_report(
     """Explain whether approval needs an explicit context acknowledgement."""
 
     with _project_lock(project_dir):
-        data = _migrate(_read_unlocked(project_dir))
+        data = _load_reconciled_unlocked(project_dir)
         _, run, _ = _resolve_run(data, phase_slug, run_ref)
         supplied = dependencies if dependencies is not None else gating
         normalized = _normalize_dependencies(

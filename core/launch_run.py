@@ -4,7 +4,8 @@
 
 The launcher prepares one run and delegates its internal work to the configured
 research lead. It never starts another phase and it never approves a result.
-The lead's final action submits an immutable summary for user review.
+The lead's final action submits an immutable summary for user inspection and
+the next user-directed decision.
 
 This module is the orchestration facade. Implementation details live in
 focused sibling modules (launch_common, launch_process, launch_manifest,
@@ -30,10 +31,15 @@ from typing import Any, Mapping, Sequence
 
 
 
+from core import knowledge_heads
+from core import knowledge_graph
 from core import launch_common
+from core import phase_options
+from core import phase_records
 from core import method_menu
 from core import project_state
 from core import profile_skills
+from core import manuscript_records
 from core import launch_dispatch
 from core import launch_manifest
 from core import launch_plans
@@ -164,7 +170,6 @@ from core.launch_plans import (
     phase_supports_theory_plans,
     phase_supports_run_modes,
     theory_audit_source_options,
-    _review_revision_gate_satisfied,
 )
 from core.launch_process import (
     MAX_COMMAND_OUTPUT_BYTES,
@@ -345,6 +350,116 @@ def _workspace_board_slug(project_dir: Path, project_id: int) -> str:
     return f"rhub-{workspace_id}-p{project_id}"
 
 
+def _revalidate_branch_launch_versions(
+    project_dir: Path,
+    phase_slug: str,
+    stable_id: str,
+    *,
+    ordinary_method_run: bool,
+    expected_knowledge_heads_version: str,
+    expected_phase_two_review_version: str,
+    expected_branch_graph_version: str,
+) -> None:
+    """Reject a method launch when its reviewed branch state changed."""
+
+    if not ordinary_method_run or phase_slug not in {
+        launch_common.IDEA_EVALUATION_PHASE,
+        launch_common.DRAFT_ASSEMBLY_PHASE,
+        launch_common.PAPER_WRITING_PHASE,
+    }:
+        return
+
+    reviewed_heads = str(expected_knowledge_heads_version).strip().lower()
+    if not launch_common._is_sha256_digest(reviewed_heads):
+        raise launch_common.LaunchError(
+            "The selected method context is missing or cannot be verified. "
+            "Reload this phase and review the selected method again."
+        )
+    try:
+        current_heads = knowledge_heads.derive_live_heads(
+            project_dir, stable_id
+        )
+        current_heads_version = knowledge_heads.heads_version(current_heads)
+    except (OSError, ValueError) as exc:
+        raise launch_common.LaunchError(
+            "The current Phase 3 and Phase 4 records could not be verified. "
+            "Reload this phase after resolving the invalid branch record."
+        ) from exc
+    if not hmac.compare_digest(reviewed_heads, current_heads_version):
+        raise launch_common.LaunchError(
+            "The selected method's Phase 3 or Phase 4 records changed after "
+            "this page was shown. "
+            "Reload this phase and review the selected method again."
+        )
+
+    if phase_slug in {
+        launch_common.IDEA_EVALUATION_PHASE,
+        launch_common.DRAFT_ASSEMBLY_PHASE,
+    }:
+        reviewed_phase_two = str(
+            expected_phase_two_review_version
+        ).strip().lower()
+        if not launch_common._is_sha256_digest(reviewed_phase_two):
+            raise launch_common.LaunchError(
+                "The selected method's Phase 2 literature-review status is "
+                "missing or cannot be verified. Reload this phase and review "
+                "the selected method again."
+            )
+        try:
+            graph = knowledge_graph.build_branch_basis_graph(
+                project_dir, stable_id
+            )
+            current_phase_two = (
+                knowledge_graph.phase_two_review_projection_version(graph)
+            )
+        except (OSError, ValueError) as exc:
+            raise launch_common.LaunchError(
+                "The selected method's Phase 2 literature-review status "
+                "cannot be verified. Reload this phase after resolving the "
+                "invalid method record."
+            ) from exc
+        if not hmac.compare_digest(
+            reviewed_phase_two, current_phase_two
+        ):
+            raise launch_common.LaunchError(
+                "The selected method's Phase 2 literature-review status "
+                "changed after this page was shown. Reload this phase and "
+                "review the selected method again."
+            )
+
+    if phase_slug != launch_common.PAPER_WRITING_PHASE:
+        return
+    reviewed_graph = str(expected_branch_graph_version).strip().lower()
+    if not launch_common._is_sha256_digest(reviewed_graph):
+        raise launch_common.LaunchError(
+            "The selected Phase 5 context is missing or cannot be verified. "
+            "Reload Phase 5 and review the selected method again."
+        )
+    try:
+        graph = knowledge_graph.build_branch_basis_graph(
+            project_dir, stable_id
+        )
+        current_graph_version = str(
+            graph.get("graph_sha256", "")
+        ).strip().lower()
+    except (OSError, ValueError) as exc:
+        raise launch_common.LaunchError(
+            "The current Phase 5 branch records could not be verified. "
+            "Reload Phase 5 after resolving the invalid branch record."
+        ) from exc
+    if not launch_common._is_sha256_digest(current_graph_version):
+        raise launch_common.LaunchError(
+            "The current Phase 5 branch context cannot be verified. "
+            "Reload Phase 5 after resolving the invalid branch record."
+        )
+    if not hmac.compare_digest(reviewed_graph, current_graph_version):
+        raise launch_common.LaunchError(
+            "The selected method's Phase 5 prerequisites changed after this "
+            "page was shown. "
+            "Reload Phase 5 and review the selected method again."
+        )
+
+
 def launch_run(
     project_dir: str | Path,
     project_id: int,
@@ -362,10 +477,16 @@ def launch_run(
     proof_audit_source_run_id: str = "",
     proof_audit: bool = False,
     run_mode: str = "",
+    method_catalog_scope: str = "",
+    focused_method_id: str = "",
+    theory_context_policy: str = "",
     run_specific_method_id: str = "",
     run_specific_method_version: str = "",
     run_specific_method_sha256: str = "",
     expected_method_menu_version: str = "",
+    expected_knowledge_heads_version: str = "",
+    expected_phase_two_review_version: str = "",
+    expected_branch_graph_version: str = "",
     expected_phase_plan_version: str = "",
     expected_workspace_path: str = "",
     expected_project_directory_name: str = "",
@@ -432,10 +553,18 @@ def launch_run(
             proof_audit_source_run_id=proof_audit_source_run_id,
             proof_audit=proof_audit,
             run_mode=run_mode,
+            method_catalog_scope=method_catalog_scope,
+            focused_method_id=focused_method_id,
+            theory_context_policy=theory_context_policy,
             run_specific_method_id=run_specific_method_id,
             run_specific_method_version=run_specific_method_version,
             run_specific_method_sha256=run_specific_method_sha256,
             expected_method_menu_version=expected_method_menu_version,
+            expected_knowledge_heads_version=expected_knowledge_heads_version,
+            expected_phase_two_review_version=(
+                expected_phase_two_review_version
+            ),
+            expected_branch_graph_version=expected_branch_graph_version,
             expected_phase_plan_version=expected_phase_plan_version,
             include_downstream=include_downstream,
             required_completed_runs=required_completed_runs,
@@ -459,10 +588,16 @@ def _launch_run_locked(
     proof_audit_source_run_id: str = "",
     proof_audit: bool = False,
     run_mode: str = "",
+    method_catalog_scope: str = "",
+    focused_method_id: str = "",
+    theory_context_policy: str = "",
     run_specific_method_id: str = "",
     run_specific_method_version: str = "",
     run_specific_method_sha256: str = "",
     expected_method_menu_version: str = "",
+    expected_knowledge_heads_version: str = "",
+    expected_phase_two_review_version: str = "",
+    expected_branch_graph_version: str = "",
     expected_phase_plan_version: str = "",
     include_downstream: bool = False,
     required_completed_runs: Mapping[str, str] | None = None,
@@ -610,6 +745,81 @@ def _launch_run_locked(
         if method_selection
         else ""
     )
+    run_scope_record: dict[str, Any] | None = None
+    context_policy_record: dict[str, Any] | None = None
+    requested_method_scope = str(method_catalog_scope).strip()
+    requested_focused_method = str(focused_method_id).strip()
+    requested_theory_context = str(theory_context_policy).strip()
+    if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE:
+        if len(expected_menu_version) != 64 or any(
+            character not in "0123456789abcdef"
+            for character in expected_menu_version
+        ):
+            raise launch_common.LaunchError(
+                "The reviewed Phase 2 method catalog version is missing or invalid"
+            )
+        try:
+            current_menu_version = method_menu.catalog_version(project_dir)
+        except (OSError, ValueError) as exc:
+            raise launch_common.LaunchError(
+                "The Phase 2 method catalog could not be verified"
+            ) from exc
+        if not hmac.compare_digest(
+            expected_menu_version, current_menu_version
+        ):
+            raise launch_common.LaunchError(
+                "The Phase 2 method catalog changed after launch was requested. "
+                "Reload Phase 2 and review the methods again"
+            )
+        menu = method_menu.load_method_menu(project_dir)
+        active_method_ids = {
+            str(entry.get("stable_id", "")).strip()
+            for entry in menu.get("entries", [])
+            if isinstance(entry, Mapping)
+            and not entry.get("errors")
+            and entry.get("status") != "retired"
+        }
+        try:
+            run_scope_record = phase_options.phase_two_scope(
+                requested_method_scope,
+                focused_method_id=requested_focused_method,
+                active_method_ids=active_method_ids,
+            )
+        except phase_options.PhaseOptionError as exc:
+            raise launch_common.LaunchError(str(exc)) from exc
+        if run_scope_record["scope"] == phase_options.METHOD_SCOPE_FOCUSED:
+            if menu.get("warnings"):
+                raise launch_common.LaunchError(
+                    "A focused Phase 2 run requires a valid current method catalog"
+                )
+    elif requested_method_scope or requested_focused_method:
+        raise launch_common.LaunchError(
+            "A method-catalog scope is valid only for Phase 2"
+        )
+
+    if (
+        phase_slug == launch_common.IDEA_EVALUATION_PHASE
+        and phase.get("audit_only") is not True
+    ):
+        has_archived_summaries = bool(
+            resolved_method_id
+            and launch_prompts._has_archived_method_summary(
+                project_dir,
+                phase_slug,
+                resolved_method_id,
+            )
+        )
+        try:
+            context_policy_record = phase_options.phase_three_context_policy(
+                requested_theory_context,
+                has_archived_summaries=has_archived_summaries,
+            )
+        except phase_options.PhaseOptionError as exc:
+            raise launch_common.LaunchError(str(exc)) from exc
+    elif requested_theory_context:
+        raise launch_common.LaunchError(
+            "A theory context policy is valid only for a standard Phase 3 run"
+        )
     phase_five_readiness: dict[str, Any] | None = None
     phase_five_required_runs: dict[str, str] | None = None
     if phase_slug == launch_common.PAPER_WRITING_PHASE:
@@ -617,6 +827,27 @@ def _launch_run_locked(
             raise launch_common.LaunchError(
                 "Phase 5 requires an active Phase 2 method selected for this run"
             )
+        if selected_run_mode == launch_common.RUN_MODE_REVIEW_REVISION:
+            expected_manuscript_method = phase_records.method_identity(
+                selected_method_entry
+            )
+            try:
+                current_manuscript = manuscript_records.load_current_manuscript(
+                    project_dir, expected_manuscript_method["stable_id"]
+                )
+            except (OSError, ValueError) as exc:
+                raise launch_common.LaunchError(
+                    "The current Phase 5 manuscript could not be verified"
+                ) from exc
+            if (
+                not isinstance(current_manuscript, Mapping)
+                or current_manuscript.get("method_identity")
+                != expected_manuscript_method
+            ):
+                raise launch_common.LaunchError(
+                    "Review-revision requires a current manuscript for this exact "
+                    "method. Run Phase 5 assembly first"
+                )
         phase_five_readiness = launch_manifest.phase_five_branch_readiness(
             project_dir, selected_method_entry
         )
@@ -713,11 +944,21 @@ def _launch_run_locked(
         hermes_root=hermes_root,
     )
 
+    prerequisite_policy = (
+        {"required_completed_runs": phase_five_required_runs}
+        if phase_five_required_runs is not None
+        else {"current_records": True}
+    )
     report = project_state.prerequisite_report(
         project_dir,
         phase_slug,
         dependencies,
-        required_completed_runs=phase_five_required_runs,
+        **prerequisite_policy,
+        required_method_id=(
+            resolved_method_id
+            if phase_five_required_runs is not None
+            else None
+        ),
     )
     current_prerequisite_version = project_state.decision_report_version(
         "prerequisite", report
@@ -746,7 +987,7 @@ def _launch_run_locked(
         if not reason:
             blockers = ", ".join(report.get("blockers", []))
             raise launch_common.LaunchError(
-                f"This run is missing approved, current prerequisite results from {blockers}. "
+                f"This run is missing completed, intact prerequisite results from {blockers}. "
                 "Review the warning and explicitly confirm the override in the web UI."
             )
         if not submitted_prerequisite_version:
@@ -756,6 +997,10 @@ def _launch_run_locked(
             )
         override = {"actor": "user", "reason": reason}
 
+    ordinary_method_run = bool(
+        launch_manifest.phase_requires_method_binding(phase)
+        and phase.get("audit_only") is not True
+    )
     prior_run_exists = (
         launch_prompts._has_prior_method_run(
             project_dir, phase_slug, resolved_method_id
@@ -784,6 +1029,17 @@ def _launch_run_locked(
     manifest_file: Path | None = None
     # Phase 05 review-revision is checked against the resolved branch identity.
     try:
+        _revalidate_branch_launch_versions(
+            project_dir,
+            phase_slug,
+            resolved_method_id,
+            ordinary_method_run=ordinary_method_run,
+            expected_knowledge_heads_version=expected_knowledge_heads_version,
+            expected_phase_two_review_version=(
+                expected_phase_two_review_version
+            ),
+            expected_branch_graph_version=expected_branch_graph_version,
+        )
         run_id = project_state.reserve_run(
             project_dir,
             phase_slug,
@@ -797,10 +1053,22 @@ def _launch_run_locked(
             expected_prerequisite_report_version=(
                 submitted_prerequisite_version or None
             ),
-            required_completed_runs=phase_five_required_runs,
+            required_method_id=(
+                resolved_method_id
+                if phase_five_required_runs is not None
+                else None
+            ),
+            **prerequisite_policy,
         )
         index = launch_common._run_index(project_dir, phase_slug, run_id)
         run_number = index + 1
+        current_record_inputs = phase_records.current_context_records(
+            project_dir,
+            method=selected_method_entry,
+            include_manuscript=(
+                phase_slug == launch_common.PAPER_WRITING_PHASE
+            ),
+        )
         context_inputs = launch_prompts._trusted_context(
             project_dir,
             phase_slug,
@@ -809,10 +1077,12 @@ def _launch_run_locked(
             selected_method_id=resolved_method_id,
             selected_method_version=resolved_method_version,
             selected_method_sha256=(
-                str(selected_method_entry.get("sha256", ""))
+                method_menu.method_definition_sha256(selected_method_entry)
                 if selected_method_entry
                 else ""
             ),
+            context_policy=context_policy_record,
+            required_completed_runs=phase_five_required_runs,
         )
         project_state.set_run_context(
             project_dir, phase_slug, run_id, context_inputs
@@ -823,21 +1093,85 @@ def _launch_run_locked(
             run_id,
             context_inputs,
             selected_method=selected_method_entry,
+            current_records=current_record_inputs,
         )
-        if (
-            phase_slug == launch_common.PAPER_WRITING_PHASE
-            and selected_run_mode == launch_common.RUN_MODE_REVIEW_REVISION
-            and resolved_method_id
-        ):
-            assembly_run = launch_plans._find_approved_assembly_run(
-                project_dir, resolved_method_id
-            )
-            if not assembly_run:
+        _revalidate_branch_launch_versions(
+            project_dir,
+            phase_slug,
+            resolved_method_id,
+            ordinary_method_run=ordinary_method_run,
+            expected_knowledge_heads_version=expected_knowledge_heads_version,
+            expected_phase_two_review_version=(
+                expected_phase_two_review_version
+            ),
+            expected_branch_graph_version=expected_branch_graph_version,
+        )
+        frozen_launch_state: Mapping[str, Any]
+        frozen_heads: Mapping[str, Any] | None = None
+        counterpart_basis: Mapping[str, Any] | None = None
+        phase_two_literature_basis: Mapping[str, Any] | None = None
+        if ordinary_method_run:
+            if not resolved_method_id:
                 raise launch_common.LaunchError(
-                    "A review-revision Phase 05 run requires a prior approved assembly "
-                    "run for this method branch. Launch an assembly run first to "
-                    "produce the manuscript, then approve it before reviewing and revising."
+                    "Method-bound run has no selected stable method ID"
                 )
+        provisional_manifest = {
+            "schema_version": launch_manifest.MANIFEST_SCHEMA_VERSION,
+            "project_dir": str(project_dir),
+            "phase_slug": phase_slug,
+            "run_id": run_id,
+            "snapshots": snapshots,
+        }
+        try:
+            frozen_launch_state = knowledge_heads.derive_frozen_launch_state(
+                project_dir,
+                provisional_manifest,
+                (
+                    resolved_method_id
+                    if ordinary_method_run
+                    else None
+                ),
+            )
+            raw_heads = frozen_launch_state["knowledge_heads"]
+            if ordinary_method_run:
+                frozen_heads = knowledge_heads.validate_heads(raw_heads)
+            elif raw_heads is not None:
+                raise knowledge_heads.KnowledgeHeadsValidationError(
+                    "nonmethod run derived unexpected branch knowledge heads"
+                )
+        except knowledge_heads.KnowledgeHeadsError as exc:
+            raise launch_common.LaunchError(
+                f"Frozen current records could not be prepared: {exc}"
+            ) from exc
+        if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE:
+            try:
+                phase_two_literature_basis = (
+                    phase_records.phase_two_literature_basis(
+                        frozen_launch_state[knowledge_heads.P1_KEY]
+                    )
+                )
+            except phase_records.PhaseRecordError as exc:
+                raise launch_common.LaunchError(str(exc)) from exc
+        if ordinary_method_run:
+            if phase_slug == launch_common.IDEA_EVALUATION_PHASE:
+                counterpart_basis = frozen_heads[knowledge_heads.P4_KEY]
+            elif phase_slug == launch_common.DRAFT_ASSEMBLY_PHASE:
+                counterpart_basis = frozen_heads[knowledge_heads.P3_KEY]
+            elif phase_slug == launch_common.PAPER_WRITING_PHASE:
+                if selected_method_entry is None:
+                    raise launch_common.LaunchError(
+                        "Phase 5 has no frozen selected method"
+                    )
+                phase5_state = phase_records.frozen_phase5_state(
+                    project_dir,
+                    provisional_manifest,
+                    selected_method_entry,
+                )
+                frozen_launch_state = dict(frozen_launch_state)
+                frozen_launch_state["p5_manuscript"] = phase5_state[
+                    "p5_manuscript"
+                ]
+
         output_root = launch_plans._branch_aware_output_root(
             project_dir,
             str(phase.get("folder", "")),
@@ -847,20 +1181,42 @@ def _launch_run_locked(
         launch_common._ensure_contained_directory(
             output_root, project_dir, label="run output directory"
         )
-        if phase_slug == launch_common.METHOD_DEVELOPMENT_PHASE:
-            try:
-                method_menu.stage_method_menu(project_dir, output_root)
-            except (OSError, ValueError) as exc:
-                raise launch_common.LaunchError(
-                    f"The Phase 2 method catalog could not be staged: {exc}"
-                ) from exc
+        try:
+            prepared_record = phase_records.prepare_output(
+                project_dir,
+                phase_slug,
+                output_root,
+                run_id=run_id,
+                method=selected_method_entry,
+                run_mode=selected_run_mode,
+                counterpart_basis=counterpart_basis,
+                frozen_current_records=frozen_launch_state,
+                expected_catalog_sha256=(
+                    expected_menu_version
+                    if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE
+                    else None
+                ),
+            )
+            if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE:
+                prepared_digest = (
+                    prepared_record.get("source_catalog_sha256")
+                    if isinstance(prepared_record, Mapping)
+                    else None
+                )
+                if type(prepared_digest) is not str or not hmac.compare_digest(
+                    prepared_digest, expected_menu_version
+                ):
+                    raise launch_common.LaunchError(
+                        "The staged Phase 2 catalog does not match the reviewed source"
+                    )
+        except (OSError, ValueError) as exc:
+            raise launch_common.LaunchError(
+                f"The phase current record could not be prepared: {exc}"
+            ) from exc
         paper_review: dict[str, Any] = {
             "kind": "full",
             "review_path": str(launch_plans._paper_manuscript_paths(output_root)["review"]),
         }
-        # R5 fix: assembly mode has no reviewer stage. Use an "assembly"
-        # kind that expects manuscript.md (the assembled manuscript), not
-        # the review/post-review pair. Review-revision mode keeps "full".
         if (
             phase_slug == launch_common.PAPER_WRITING_PHASE
             and selected_run_mode == launch_common.RUN_MODE_ASSEMBLY
@@ -870,44 +1226,30 @@ def _launch_run_locked(
                 "kind": "assembly",
                 "assembly_path": str(launch_plans._paper_manuscript_paths(output_root)["assembly"]),
             }
-        # R2 fix: for review_revision runs, freeze the approved assembly
-        # run's manuscript into the new run's review path. Without this,
-        # the reviewer has no manuscript to review because the file never exists.
-        assembly_run_ref = locals().get("assembly_run")
-        if (
-            selected_run_mode == launch_common.RUN_MODE_REVIEW_REVISION
-            and assembly_run_ref
+        elif (
+            phase_slug == launch_common.PAPER_WRITING_PHASE
+            and selected_run_mode == launch_common.RUN_MODE_REVIEW_REVISION
         ):
-            assembly_root = Path(str(assembly_run_ref["output_root"]))
-            # R5: assembly runs produce manuscript.md, not manuscript-post-review.md.
-            # Fall back to post_review for older runs sealed before the R5 fix.
-            assembly_paths = launch_plans._paper_manuscript_paths(assembly_root)
-            assembly_manuscript = assembly_paths["assembly"]
-            if not assembly_manuscript.is_file():
-                assembly_manuscript = assembly_paths["post_review"]
+            working_manuscript = launch_plans._paper_manuscript_paths(
+                output_root
+            )["assembly"]
             review_path = launch_plans._paper_manuscript_paths(output_root)["review"]
-            if assembly_manuscript.is_file():
-                manuscript_payload = launch_common._bounded_bytes(
-                    assembly_manuscript,
-                    label="assembly manuscript",
-                    max_bytes=launch_common.MAX_REVIEW_MANUSCRIPT_BYTES,
-                )
-                manuscript_digest = hashlib.sha256(manuscript_payload).hexdigest()
-                launch_common._write_bytes_atomic(review_path, manuscript_payload)
-                paper_review = {
-                    "schema_version": 2,
-                    "kind": "review_only",
-                    "source_path": str(assembly_manuscript),
-                    "source_sha256": manuscript_digest,
-                    "review_path": str(review_path),
-                    "review_sha256": manuscript_digest,
-                    "from_assembly_run": True,
-                }
-            else:
-                raise launch_common.LaunchError(
-                    "The approved assembly run's manuscript is missing. "
-                    "This may indicate a corrupted project state."
-                )
+            manuscript_payload = launch_common._bounded_bytes(
+                working_manuscript,
+                label="current working manuscript",
+                max_bytes=launch_common.MAX_REVIEW_MANUSCRIPT_BYTES,
+            )
+            manuscript_digest = hashlib.sha256(manuscript_payload).hexdigest()
+            launch_common._write_bytes_atomic(review_path, manuscript_payload)
+            paper_review = {
+                "schema_version": 2,
+                "kind": "full",
+                "source_path": str(working_manuscript),
+                "source_sha256": manuscript_digest,
+                "review_path": str(review_path),
+                "review_sha256": manuscript_digest,
+                "from_current_manuscript": True,
+            }
         if review_source:
             source_path, source_digest, _source_baseline = review_source
             review_path = launch_plans._paper_manuscript_paths(output_root)["review"]
@@ -923,35 +1265,21 @@ def _launch_run_locked(
                 "review_sha256": source_digest,
             }
         paper_paths = launch_plans._paper_manuscript_paths(output_root)
-        # R5 fix: assembly mode requires manuscript.md, not the
-        # post-review/diff pair. Review-revision mode requires the
-        # post-review pair (reviewer creates review, reviser creates
-        # post-review). Review-target mode requires nothing extra.
         if (
             phase_slug == launch_common.PAPER_WRITING_PHASE
-            and selected_run_mode == launch_common.RUN_MODE_ASSEMBLY
+            and not review_source
         ):
             submission_outputs = {
-                "assembly_manuscript": {
+                "working_manuscript": {
                     "path": str(paper_paths["assembly"]),
                     "allow_empty": False,
                 },
             }
-        elif (
-            phase_slug == launch_common.PAPER_WRITING_PHASE
-            and not review_source
-            and selected_run_mode != launch_common.RUN_MODE_ASSEMBLY
-        ):
-            submission_outputs = {
-                "post_review_manuscript": {
-                    "path": str(paper_paths["post_review"]),
-                    "allow_empty": False,
-                },
-                "review_diff": {
+            if selected_run_mode == launch_common.RUN_MODE_REVIEW_REVISION:
+                submission_outputs["review_diff"] = {
                     "path": str(paper_paths["diff"]),
                     "allow_empty": True,
-                },
-            }
+                }
         else:
             submission_outputs = {}
         if review_source:
@@ -1013,6 +1341,8 @@ def _launch_run_locked(
             branch_readiness=phase_five_readiness,
             run_mode=str(phase.get("run_plan", "")),
             output_root=output_root,
+            run_scope=run_scope_record,
+            context_policy=context_policy_record,
         )
         launch_common._write_text_atomic(prompt_file, prompt)
         timeout_minutes = int(config.get("hub", {}).get("run_timeout_minutes", 120))
@@ -1057,6 +1387,13 @@ def _launch_run_locked(
             "prompt_path": str(prompt_file),
             "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
             "snapshots": snapshots,
+            "knowledge_heads": frozen_heads,
+            "method_catalog_basis": (
+                {"schema_version": 1, "sha256": expected_menu_version}
+                if phase_slug == project_state.METHOD_DEVELOPMENT_PHASE
+                else None
+            ),
+            "phase_two_literature_basis": phase_two_literature_basis,
             "prerequisite_snapshot": run.get("prerequisite_snapshot", report),
             "paper_review": paper_review,
             "submission_outputs": submission_outputs,
@@ -1066,6 +1403,8 @@ def _launch_run_locked(
             "phase_plan_version": current_phase_plan_version,
             "prerequisite_report_version": current_prerequisite_version,
             "include_downstream": bool(include_downstream),
+            "run_scope": run_scope_record,
+            "context_policy": context_policy_record,
         }
         # Protocol checkpoint: only when explicitly declared in the phase config
         # (was hard-coded for Phase 04; now config-driven so phases can opt in)

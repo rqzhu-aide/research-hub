@@ -218,8 +218,15 @@
       const emptyDetail = form.querySelector("[data-method-detail-empty]");
       const auditSource = form.querySelector("[data-theory-audit-source]");
       const auditSourceRow = form.querySelector("[data-theory-audit-row]");
+      const contextCurrent = form.querySelector("[data-theory-context-current]");
+      const contextHistory = form.querySelector("[data-theory-context-history]");
+      const contextHistoryRow = form.querySelector("[data-theory-history-row]");
+      const contextHelp = form.querySelector("[data-theory-context-help]");
       const launchButton = form.querySelector("[data-method-launch]");
       const choiceHint = form.querySelector("[data-method-choice-hint]");
+      const knowledgeHeadsVersion = form.querySelector("[data-knowledge-heads-version]");
+      const phaseTwoReviewVersion = form.querySelector("[data-phase-two-review-version]");
+      const branchGraphVersion = form.querySelector("[data-branch-graph-version]");
 
       const update = () => {
         const auditOnly = planSelect?.value === "audit_only";
@@ -235,6 +242,45 @@
         const selected = auditOnly
           ? null
           : radios.find((radio) => radio.checked && !radio.disabled) || null;
+        if (knowledgeHeadsVersion) {
+          knowledgeHeadsVersion.value = selected?.dataset.knowledgeHeadsVersion || "";
+        }
+        if (phaseTwoReviewVersion) {
+          phaseTwoReviewVersion.value = selected?.dataset.phaseTwoReviewVersion || "";
+        }
+        if (branchGraphVersion) {
+          branchGraphVersion.value = selected?.dataset.branchGraphVersion || "";
+        }
+        const missingKnowledgeVersion = Boolean(
+          selected && knowledgeHeadsVersion && !knowledgeHeadsVersion.value
+        );
+        const missingPhaseTwoReviewVersion = Boolean(
+          selected && phaseTwoReviewVersion && !phaseTwoReviewVersion.value
+        );
+        const missingGraphVersion = Boolean(
+          selected && branchGraphVersion && !branchGraphVersion.value
+        );
+        const hasTheoryHistory = selected?.dataset.hasTheoryHistory === "true";
+        if (contextCurrent) contextCurrent.disabled = auditOnly;
+        if (contextHistory) {
+          contextHistory.disabled = auditOnly || !hasTheoryHistory;
+          contextHistory.setAttribute("aria-disabled", String(contextHistory.disabled));
+          if (contextHistory.disabled && contextHistory.checked && contextCurrent) {
+            contextCurrent.checked = true;
+          }
+        }
+        contextHistoryRow?.classList.toggle(
+          "is-disabled", auditOnly || !hasTheoryHistory
+        );
+        if (contextHelp) {
+          contextHelp.textContent = auditOnly
+            ? "Audit-only runs use the exact sealed source selected below."
+            : !selected
+              ? "Choose a method first. Archived summaries are available only for methods with a prior Phase 3 run."
+              : hasTheoryHistory
+                ? "This method has prior Phase 3 summaries. Include them only when they may contain useful information missing from the current package."
+                : "This is the first Phase 3 run for this method, so archived summaries are not available.";
+        }
         options.forEach((option) => {
           option.classList.toggle(
             "phase3-method-option-selected",
@@ -257,10 +303,19 @@
         if (launchButton) {
           const baseBlocked = launchButton.dataset.baseBlocked === "true";
           const missingAuditSource = auditOnly && (!auditSource || !auditSource.value);
-          launchButton.disabled = baseBlocked || missingAuditSource || (!auditOnly && !selected);
+          launchButton.disabled = baseBlocked || missingAuditSource ||
+            (!auditOnly && (!selected || missingKnowledgeVersion ||
+              missingPhaseTwoReviewVersion || missingGraphVersion));
           launchButton.setAttribute("aria-disabled", String(launchButton.disabled));
         }
-        if (choiceHint) choiceHint.hidden = auditOnly || Boolean(selected);
+        if (choiceHint) {
+          const unverifiedSelection = missingKnowledgeVersion ||
+            missingPhaseTwoReviewVersion || missingGraphVersion;
+          choiceHint.hidden = auditOnly || (Boolean(selected) && !unverifiedSelection);
+          choiceHint.textContent = unverifiedSelection
+            ? "The current branch state cannot be verified. Reload this phase after resolving the invalid branch record."
+            : "Choose a method above before launch.";
+        }
         if (visibleDetail && window.MathJax?.typesetPromise) {
           window.MathJax.typesetPromise([visibleDetail]).catch(() => {});
         }
@@ -270,7 +325,38 @@
         radios.forEach((radio) => radio.addEventListener("change", update));
         planSelect?.addEventListener("change", update);
         auditSource?.addEventListener("change", update);
+        contextHistory?.addEventListener("change", update);
         form.dataset.theoryPlansInitialized = "true";
+      }
+      update();
+    });
+  }
+
+  function initializePhaseTwoScope(root = document) {
+    const forms = [];
+    if (root.matches?.("form.launch-form-lower")) forms.push(root);
+    root.querySelectorAll?.("form.launch-form-lower").forEach((form) => forms.push(form));
+    forms.forEach((form) => {
+      const panel = form.querySelector("[data-phase-two-scope]");
+      if (!panel) return;
+      const radios = Array.from(panel.querySelectorAll("[data-phase-two-scope-radio]"));
+      const focusRow = panel.querySelector("[data-phase-two-focus-row]");
+      const focusSelect = panel.querySelector("[data-phase-two-focus]");
+
+      const update = () => {
+        const selected = radios.find((radio) => radio.checked && !radio.disabled);
+        const focused = selected?.value === "focused_method";
+        if (focusRow) focusRow.hidden = !focused;
+        if (focusSelect) {
+          focusSelect.disabled = !focused;
+          focusSelect.required = focused;
+          if (!focused) focusSelect.value = "";
+        }
+      };
+
+      if (panel.dataset.phaseTwoScopeInitialized !== "true") {
+        radios.forEach((radio) => radio.addEventListener("change", update));
+        panel.dataset.phaseTwoScopeInitialized = "true";
       }
       update();
     });
@@ -521,6 +607,7 @@
       initializeGuardedForms(replacement);
       ensureMathJax(replacement);
       initializeMethodSelection(replacement);
+      initializePhaseTwoScope(replacement);
       clearAsyncError(replacement, "project-tabs");
       clearAsyncError(replacement, "project-interaction");
       if (pushHistory) {
@@ -780,6 +867,7 @@
     initializeGuardedForms();
     ensureMathJax();
     initializeMethodSelection();
+    initializePhaseTwoScope();
   });
 
   window.setInterval(() => {
@@ -816,6 +904,7 @@
   restoreDraftsAfterError();
   ensureMathJax();
   initializeMethodSelection();
+  initializePhaseTwoScope();
   formatTimes();
 
   // ── Theme toggle (light/dark) ──

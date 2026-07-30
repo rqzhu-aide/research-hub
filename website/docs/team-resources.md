@@ -37,10 +37,11 @@ the same across phases unless a maintainer edits it.
 | Phase 4: Implementation and Experiments | Analyst-led protocol, implementation, and experiments, theorist audit, then lead synthesis |
 | Phase 5: Paper Assembly and Review | Manuscript assembly or reviewer-led assessment and research-lead revision |
 
-Phase 3 and Phase 4 also receive available prior results, role reports,
-discussion, and supporting artifacts from both phases when they belong to the
-same method branch. Later stages in the current run receive the reports already
-produced by earlier stages.
+Phase 3 receives the current same-branch theory and empirical records. Archived
+Phase 3 summaries are added only when the user selects that option. Phase 4
+receives the current theory manuscript and cumulative empirical package, whose
+index identifies applicable and outdated evidence. Later stages in the current
+run receive the reports already produced by earlier stages.
 
 ## Standing role instructions and phase playbooks
 

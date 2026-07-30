@@ -66,9 +66,8 @@
         <div class="overview-card-status">
           {% if row_status in ['starting', 'running', 'submitting', 'stopping'] %}
             <span class="run-status-badge">{{ row_status | replace('_', ' ') }}</span>
-          {% elif latest %}
-            {% set run_num = latest.number | default(latest.run_number | default('')) %}
-            <span>Run {{ run_num }}</span>
+          {% elif s.decision_label | default(none) %}
+            <span>{{ s.decision_label }}</span>
             {% if row_status == 'approved' %}<span class="run-complete-badge">✓</span>{% endif %}
           {% else %}
             <span class="muted">Not started</span>
@@ -96,7 +95,7 @@
   {% endif %}
 </section>
 
-{# ── Project timeline — longitudinal run history ── #}
+{# Project timeline: longitudinal run history. #}
 <section class="panel timeline-panel" aria-labelledby="timeline-heading">
   <div class="panel-head">
     <div>
@@ -116,7 +115,6 @@
   {% if all_runs %}
     <div class="timeline-legend">
       <span><i class="tl-dot tl-completed"></i> Completed</span>
-      <span><i class="tl-dot tl-partial"></i> Partial</span>
       <span><i class="tl-dot tl-running"></i> Running</span>
       <span><i class="tl-dot tl-failed"></i> Failed</span>
       {% if phase_summaries | selectattr('stale') | list %}<span class="tl-stale-badge">⚠ stale</span>{% endif %}
@@ -150,10 +148,10 @@
       <p class="section-kicker">Recent events</p>
       {% set recent = all_runs | sort(attribute='started') | list | reverse | list %}
       {% for r in recent[:5] %}
-        {% set simple_status = 'Completed' if r.status in ['approved', 'awaiting_review', 'superseded', 'completed'] else ('Running' if r.status == 'running' else ('Partial' if r.status == 'failed' and r.summary_available else ('Failed' if r.status in ['failed', 'cancelled'] else r.status | replace('_', ' ')))) %}
+        {% set simple_status = 'Completed' if r.status in ['approved', 'awaiting_review', 'superseded', 'completed'] else ('Running' if r.status == 'running' else ('Failed' if r.status in ['failed', 'cancelled'] else r.status | replace('_', ' '))) %}
         <div class="tl-event">
           <time class="tl-event-time">{{ r.started[:16] | replace('T', ' ') if r.started else '' }}</time>
-          <span class="tl-event-text"><strong>{{ r.phase }}</strong> — {{ simple_status }}{% if r.stale %} <small>(stale)</small>{% endif %}</span>
+          <span class="tl-event-text"><strong>{{ r.phase }}</strong>: {{ simple_status }}{% if r.stale %} <small>(stale)</small>{% endif %}</span>
         </div>
       {% endfor %}
     </div>

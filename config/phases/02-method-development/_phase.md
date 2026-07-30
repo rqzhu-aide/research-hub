@@ -43,15 +43,51 @@ differs from, and what gap it fills. An idea that merely redoes classified prior
 work is not a contribution. The reference library makes this check concrete.
 
 ## When this phase may be run
-Requires a current Phase 01 summary approved by the user. If that summary is
-unavailable, the web UI identifies the missing prior evidence, but the user may
-choose to proceed. The lead must then state what prior evidence is unavailable.
+Uses the current Phase 01 reference record. If that record is unavailable, the
+web UI identifies the missing prior evidence, but the user may choose to proceed.
+The lead must then state what prior evidence is unavailable.
 
-**On rerun:** the current published Phase 02 menu is the starting catalog, and
-older runs are comparison evidence. Re-evaluate every current method, preserve
-stable identities and numbers, and generate fresh ideas where the scientific
-question supports them. Existing methods may be refined, merged, retained, or
-retired. The team should think broadly again without discarding provenance.
+At launch, Research Hub fixes the exact Phase 01 reference collection and
+literature synthesis used by the run. A later Phase 01 update cannot alter an
+active run. If no Phase 01 record is available, that absence is recorded as the
+literature basis.
+
+At launch, the user chooses one catalog scope:
+
+- **Full catalog (`full_catalog`)**: reconsider every entry in the complete
+  current menu against the fixed Phase 01 basis. The team may add new methods
+  and refine, merge, retain, or retire existing methods while preserving stable
+  identities and permanent numbers.
+- **Focus one method (`focused_method`)**: reconsider only the active stable
+  method ID named in the run prompt against the fixed Phase 01 basis. The team
+  may improve its definition, positioning, version, and active status, but may
+  not add, remove, merge, rename, or retire any method. Every nonselected method
+  file must remain byte-for-byte unchanged.
+
+The current published menu is the starting catalog for either scope. Older run
+summaries are comparison records, not the catalog to rebuild.
+
+A valid Complete or Partial publication records the review separately for each
+method covered by the run. Research Hub, not the agents, writes the following
+system-managed provenance:
+
+- the **definition source**, which is the run that last changed the exact current
+  method definition;
+- the **review source**, which is the most recent Phase 02 run that assessed the
+  method against its recorded Phase 01 basis; and
+- the exact Phase 01 reference collection and literature synthesis reviewed.
+
+If a method is reviewed and retained without a definition change, its review
+source and literature basis advance, while its definition source remains the
+same. A full-catalog run records this review for every catalog entry. A focused
+run records it only for the selected method.
+
+When Phase 01 later changes, the interface may mark a method's Phase 02
+literature status yellow until the user chooses a full-catalog or focused
+Phase 02 rerun. This does not itself change the method definition or invalidate
+matching Phase 03 and Phase 04 work. No status launches a run. Phase 05 requires
+the selected method to have been reviewed against the current Phase 01 basis.
+
 ## Study structure
 Each role proposes multiple ideas independently in round 1, working from their
 scientific perspective (theoretical, computational, contribution-level). In
@@ -89,6 +125,35 @@ and rules in `_lead.md`. Research Hub validates and publishes that catalog only
 after a non-Failed submission. The Web UI continues to show the earlier
 published menu while a run is active, then lists the new catalog, including
 retired methods, after publication.
+
+During publication, Research Hub verifies the staged method definitions and
+writes the system-managed per-method provenance. The lead must not create,
+infer, or edit those provenance fields.
+
+## Method definition and version rule
+
+Each method file has exactly one authoritative `## Mathematical definition`
+section. Put all material that determines the calculation in that section:
+the estimator or objective, algorithm or update rule, tuning definition,
+normalization, and any assumption that changes a computed quantity. Do not
+place an alternative operative definition in another section.
+
+Advance the method version whenever the mathematical definition changes in a
+way that can change a calculation. Keep the version unchanged when a rerun only
+changes status, literature positioning, explanatory prose, downstream research
+questions, or formatting outside the authoritative section. Leave that section
+exactly unchanged when retaining the version. Research Hub computes its digest
+and rejects a changed definition published under the same version. It writes
+the version history and digest; agents do not edit them.
+
+Phase 03 proofs and Phase 04 method-dependent computations bind to the exact
+tuple `stable_id`, `version`, and `definition_sha256`. Work for an earlier
+version remains interpretable as history, but a downstream rerun must judge its
+validity for the new version before any conclusion is treated as current.
+
+In focused mode, publication succeeds only if the selected method is the sole
+scientific object changed and all nonselected method files remain exact copies
+of the current catalog.
 Phase 03 and Phase 04 list active files when the user starts a theoretical or
 empirical run and chooses the method for that run. The two choices are
 independent. Menu files persist across runs; retirement changes

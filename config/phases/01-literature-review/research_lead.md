@@ -51,19 +51,18 @@ defined in the team norms.
    contribution, with reasons. State that this is the research lead's conclusion
    for later comparison with the other roles.
 7. **Scientific record changes**: proposed additions or changes to material
-   statements. Do not reproduce the full accepted scientific record.
+   statements. Do not reproduce the full current scientific record.
 
-**Reference library.** For every paper you classify in your closest-work table,
-write a per-reference summary file to `references/papers/{source}-{id}.md`
-(e.g. `arxiv-2509.09162.md`). Use the format specified in the lead's reference
-library instructions: YAML frontmatter (arxiv_id, title, authors, year, venue,
-relation, found_in_run, found_by_role, also_found_in) + one-line summary +
-relevance to this project + key results/tools + classification. If a file
-already exists from a prior run, append this run's number to `also_found_in`
-and amend the notes — do not overwrite. This is mandatory, not optional.
+**Reference candidates.** For every paper you classify in your closest-work
+table, include a complete candidate card in this report using the format in the
+lead instructions. Identify the intended `{source}-{id}.md` filename. If its
+canonical identity or filename already exists, label it as already represented
+and do not propose a card. Do not write to the canonical reference library or
+the shared run-local delta. The lead reconciles all new role candidates and
+writes the delta.
 
 ## Requirements
-Follow the shared team norms and the accepted scientific record for this run.
+Follow the shared team norms and the current scientific record for this run.
 Describe prior work accurately and distinguish the candidate contribution
 precisely. Continue targeted searches and citation chaining until additional
 queries do not change the closest-work set, contribution boundary, or material

@@ -41,8 +41,8 @@ agents:
 # Phase definitions
 #
 # The user explicitly starts every run. The research_lead then executes only
-# that run's configured plan, submits a summary for review, and stops. Neither
-# completion nor approval starts another phase.
+# that run's configured plan, submits its result for inspection, and stops. No
+# later phase starts until the user launches it.
 #
 # Fields:
 #   slug: phase identifier (NN-name), used everywhere

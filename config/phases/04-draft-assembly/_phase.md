@@ -26,9 +26,9 @@ not an empirical result.
 
 The stages are sequential. The theorist reads the analyst's current-stage
 report, code references, and results. The research lead reads both current-stage
-reports. Every role also reads the frozen prior Phase 3 and Phase 4 summaries
-and discussion reports from the same method branch that are named in the run
-prompt.
+reports. Every role also reads the canonical current Phase 3 record, when one
+exists, and the current cumulative Phase 4 synthesis, evidence index, and
+knowledge fragment named in the run prompt.
 
 ## Run scope
 
@@ -118,20 +118,32 @@ Phase 2 definition and labels unproved mathematical explanations as conjectures.
 ## Prior information and reruns
 
 The run freezes the method's stable ID, version, canonical definition, and
-content digest. Work only on that object. Another active method requires a
+definition digest. Work only on that object. Another active method requires a
 separate launch, and the Phase 2 catalog is read-only here.
 
-Read all frozen prior same-branch Phase 3 and Phase 4 summaries and discussion
-reports enumerated in the run prompt. A prior Phase 3 result can supply proved
-predictions and assumptions. A prior Phase 4 result can supply code, empirical
-findings, failures, and open design questions. Preserve disagreements and source
-status rather than blending incompatible conclusions.
+The exact basis for every implementation and method-dependent computation is
+the tuple `stable_id`, `version`, and `definition_sha256`. Matching the stable
+ID alone is not enough. After a calculation-defining Phase 2 revision, earlier
+scientific outputs and method implementations remain historical and are not
+current evidence for the new version. The team judges the required repair or
+recomputation during a user-initiated rerun.
 
-On a rerun, improve the scientific evidence by correcting a bug, completing a
+Read the canonical current same-branch records enumerated in the run prompt. A
+current Phase 3 result can supply proved predictions and assumptions. The Phase
+4 evidence index supplies all retained artifacts and their current disposition;
+its synthesis supplies the compact current interpretation; and its knowledge
+fragment supplies the current empirical statements, their dependencies, and
+their links to evidence. Do not reconstruct the empirical record from old run
+summaries.
+
+On a rerun, extend or repair the cumulative evidence by correcting a bug,
+revalidating evidence after a calculation-defining version change, completing a
 diagnostic, extending the study, strengthening uncertainty quantification,
 adding a missing baseline, testing a failure regime, or addressing a theory and
-experiment discrepancy. Prior run files are sealed records and must not be
-edited.
+experiment discrepancy. Existing artifacts remain immutable at their recorded
+paths. You may update their disposition, but a non-current evidence ID never
+returns to `current`. Revalidation or replacement creates a new run-local
+evidence entry with a new ID.
 
 ## Files and outputs
 
@@ -143,6 +155,65 @@ Write all outputs under the exact run output root, normally
 - Code, data summaries, figures, and reproducibility files live under the same
   run root at the exact paths recorded in the reports.
 - Write the HTML summary to the exact path provided for this run.
+- The research lead must leave the complete current synthesis at the exact path
+  `empirical-synthesis.md` and the complete evidence index at the exact path
+  `evidence-index.json` in the run output root.
+- The research lead must also leave the complete structured empirical record at
+  the exact path `knowledge-fragment.json` in the run output root.
+
+Research Hub prepares all three run-root files from the verified current
+package. The data analyst and theorist read them and report proposed changes.
+They do not edit the run-root package. The research lead is its sole finalizer.
+
+The evidence index is cumulative:
+
+- retain every existing `evidence_id` and its immutable artifact identity;
+- add one entry for each new artifact, with its project-relative path, SHA-256,
+  size, source run ID, run scope, `evidence_type`, status, status reason, and
+  whether it depends on the method definition;
+- use only `current`, `outdated`, `superseded`, `withdrawn`, or `unresolved` as
+  evidence statuses;
+- classify code and scientific outputs of type `figure`, `model`, `report`,
+  `result`, or `table` as method-dependent and bind them to the exact method
+  identity;
+- classify raw source `data`, generic `log`, `protocol`, or `other`
+  infrastructure as reusable only when the status reason states why it is
+  mathematically independent of the method calculation;
+- when the method version changed, leave every exact-method prior entry
+  `outdated`;
+- if this run revalidates or replaces outdated evidence, append a new `current`
+  entry whose artifact and `source_run_id` belong to this run, and mark the old
+  entry `superseded` when the new evidence replaces it;
+- never relabel an `outdated`, `unresolved`, `superseded`, or `withdrawn`
+  evidence ID as `current`;
+- do not repeat work already represented by `current` evidence unless a named
+  scientific reason requires a new measurement.
+- after rewriting `empirical-synthesis.md`, update the index's `synthesis`
+  SHA-256 and byte size while leaving its exact path as
+  `empirical-synthesis.md`.
+
+Rewrite `empirical-synthesis.md` as a compact account of what the current method
+does empirically. State the applicable evidence, outdated or unresolved
+evidence, negative results, and changes from this run. It is not a chronological
+run history.
+
+Rewrite `knowledge-fragment.json` as the complete current set of empirical
+statements and evidence links. Preserve the prepared method identity,
+generation, and source run ID. Set `coverage` to `complete` for either a
+Complete or Partial scientific outcome. Include every evidence ID exactly once
+with the same status used in `evidence-index.json`. Reassess carried statements
+when the method version changed, and retain only statements that describe
+the current state of knowledge. Keep `lead_summary` compact and focused on the
+method's fundamental empirical behavior, changes that affect user decisions,
+and unresolved questions.
+
+A valid Complete or Partial package becomes the branch's current empirical
+package. A Failed or invalid run leaves the previous package current.
+
+The final report states three judgments separately: whether the package matches
+the exact current method, whether outdated or unresolved evidence requires
+research attention, and whether the run's scientific outcome is Complete,
+Partial, or Failed. None of these judgments substitutes for another.
 
 Each report begins with Complete, Partial, or Failed as defined in the team
 norms.
@@ -157,7 +228,7 @@ findings. The user may:
 - launch Phase 3 or Phase 4 for another active method;
 - rerun Phase 2 when the canonical method definition must change;
 - proceed to Phase 5 only after both Phase 3 and Phase 4 have completed for the
-  same method identity;
+  same exact `stable_id`, `version`, and `definition_sha256`;
 - defer further work.
 
 Phase 4 does not launch another phase and does not choose the user's next action.

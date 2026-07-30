@@ -12,22 +12,30 @@ Read:
 - `setting.md`;
 - the published Phase 2 summary and canonical method definition;
 - the Phase 1 literature assessment, including relevant baselines;
-- every frozen prior same-branch Phase 3 and Phase 4 summary and discussion
-  report enumerated in the run prompt.
+- the canonical current Phase 3 record and cumulative Phase 4 package enumerated
+  in the run prompt.
 
-Verify the selected stable ID, version, definition path, and SHA-256 digest. If
-they are missing or inconsistent, report a launch-integrity failure. No role may
-choose another method or edit the Phase 2 catalog.
+Verify the selected stable ID, version, definition path, and
+`definition_sha256`. Treat that tuple as the exact calculation used by the run.
+If any field is missing or inconsistent, report a launch-integrity failure. No
+role may choose another method or edit the Phase 2 catalog.
+
+After a method-version change, treat prior code and scientific outputs as
+historical. Raw source data and generic infrastructure may be proposed for
+reuse only with an explicit mathematical-independence argument. The team may
+decide that little or extensive recomputation is needed, but any revalidated or
+replacement result must be a new artifact with a new evidence ID.
 
 Phase 3 is optional context. A Phase 4 run may begin directly from the Phase 2
 definition. When same-branch Phase 3 results exist, use their assumptions,
 theorems, bounds, and open questions. When they do not exist, do not infer a
 missing guarantee.
 
-Give every role the complete frozen same-branch context named in the prompt,
-including prior summaries and role reports from both sibling phases. Do not
-import an unlisted artifact or material from another branch. Prior files are
-sealed and the current run writes only to its new run directory.
+Give every role the canonical current same-branch context named in the prompt.
+For Phase 4, use the current `empirical-synthesis.md`, `evidence-index.json`,
+and `knowledge-fragment.json`, including the indexed artifact paths, evidence
+dispositions, current statements, and evidence links. Do not import an unlisted
+artifact or material from another branch.
 
 ## Step 2: Interpret the selected run mode
 
@@ -46,7 +54,7 @@ appropriate.
 
 ## Step 3: Stage 1, data analyst
 
-Assign the analyst the selected definition and all frozen prior context. The
+Assign the analyst the selected definition and current cumulative context. The
 analyst must first record a study protocol with hypotheses, outcomes, baselines,
 settings, sample sizes, replications, uncertainty measures, stopping rules, and
 success or failure criteria. Complete the protocol checkpoint before the analyst
@@ -60,11 +68,19 @@ Then require the analyst to:
 - complete the selected preliminary or comprehensive scope;
 - record actual measurements, uncertainty, failures, and negative results;
 - identify all protocol deviations and exploratory analyses;
-- provide exact code, data, figure, table, and command paths.
+- provide exact code, data, figure, table, and command paths;
+- report every proposed evidence-index addition and status change while
+  preserving all earlier evidence IDs and immutable artifact fields, assigning
+  an `evidence_type`, and applying the exact-method rule;
+- propose current empirical statements and evidence links for the knowledge
+  fragment, including any carried statement that needs revision after a method
+  change;
+- leave `empirical-synthesis.md`, `evidence-index.json`, and
+  `knowledge-fragment.json` unchanged at the run root.
 
 ## Step 4: Stage 2, theorist
 
-Give the theorist the same frozen context and the completed current analyst
+Give the theorist the same current context and the completed current analyst
 report and artifacts. Require an audit of:
 
 - correspondence between the Phase 2 definition and the implementation;
@@ -72,21 +88,37 @@ report and artifacts. Require an audit of:
   results;
 - assumptions, approximations, discretization, and numerical behavior;
 - correspondence between the data and any available same-branch Phase 3 result;
-- plausible explanations for every important discrepancy.
+- plausible explanations for every important discrepancy;
+- the proposed evidence-index dispositions and their scientific justification;
+- the analyst's proposed empirical statements, dependencies, and evidence
+  links, including the continued validity of carried statements.
 
 If Phase 3 has not run, the theorist may state exact consequences of the Phase 2
 definition and formulate conjectures, but may not invent a proved guarantee.
+The theorist reports recommended package changes but does not edit the three
+run-root package files.
 
 ## Step 5: Stage 3, research lead
 
-Give the lead all prior context and both current reports. Require the lead to:
+Give the lead the current package and both current reports. Require the lead to:
 
 - classify each central empirical claim using its estimate, uncertainty, design,
   and audit status;
 - retain null results, failures, and protocol deviations;
 - distinguish empirical findings from mathematical conclusions;
 - state how the results inform a Phase 3 run or rerun;
-- preserve unresolved disagreements in a structured ledger.
+- preserve unresolved disagreements in a structured ledger;
+- act as the sole finalizer of `empirical-synthesis.md`,
+  `evidence-index.json`, and `knowledge-fragment.json` at the run root;
+- finalize `evidence-index.json` without dropping or mutating an earlier
+  artifact identity;
+- rewrite `empirical-synthesis.md` as the compact complete current empirical
+  account, including outdated and unresolved evidence;
+- update the evidence index's synthesis SHA-256 and byte size after the final
+  synthesis write;
+- rewrite `knowledge-fragment.json` as the full current statement set and
+  exact evidence links, with `coverage` set to `complete` for a Complete or
+  Partial scientific outcome.
 
 The lead cannot ask an earlier role to revise within this run. A required fix or
 additional experiment becomes a precise target for a user-initiated rerun.
@@ -107,8 +139,10 @@ Brief required by the team norms. Include:
    questions raised when no such result exists.
 9. **Reproducibility record**.
 10. **Unresolved-issues ledger**.
-11. **Proposed scientific baseline** and scientific record changes.
-12. **Recommendation**.
+11. **Current empirical record** and scientific record changes.
+12. **Status separation**: exact-method applicability, research attention from
+    outdated or unresolved evidence, and scientific completion outcome.
+13. **Recommendation**.
 
 The recommendation may be:
 
@@ -117,7 +151,7 @@ The recommendation may be:
 - **study another active method** in a separate Phase 3 or Phase 4 launch;
 - **rerun Phase 2** only when the canonical definition or catalog must change;
 - **proceed to Phase 5** only when both Phase 3 and Phase 4 have completed for
-  the exact same method identity;
+  the same exact `stable_id`, `version`, and `definition_sha256`;
 - **defer further work**.
 
 The user alone chooses and starts the next run.
@@ -127,10 +161,29 @@ The user alone chooses and starts the next run.
 - Follow the three stages in the configured order.
 - Complete the protocol checkpoint before the main result-producing work.
 - Give each later role every earlier current-stage report.
-- Give every role all frozen prior same-branch Phase 3 and Phase 4 context named
-  in the prompt.
+- Give every role the canonical current Phase 3 record and all three files in
+  the cumulative Phase 4 package named in the prompt.
 - Treat the Phase 2 catalog as read-only.
 - Apply the completion standard for the selected empirical scope.
 - Require runnable code and recorded measurements.
 - Quantify uncertainty when the design supports it.
 - Preserve negative results, deviations, failures, and disagreements.
+- Before submission, verify that `evidence-index.json` retains every prior entry,
+  gives each new artifact a unique ID and exact digest, and marks every obsolete
+  exact-method entry `outdated`. Code and scientific outputs cannot be declared
+  method-independent. Raw data or generic infrastructure may be declared
+  reusable only with a precise independence reason.
+- Preserve the prepared top-level method identity, generation, and source run
+  ID in both JSON files. Set `synthesis.path` to `empirical-synthesis.md` and
+  update its digest and byte size to match the final file.
+- Ensure `empirical-synthesis.md` states the current method's performance and
+  limitations without requiring a reader to reconstruct them from old runs.
+- Verify that `knowledge-fragment.json` has `coverage: complete`, contains the
+  full current statement set, and binds every evidence ID exactly once with the
+  same status as `evidence-index.json`.
+- Reassess carried statements after a method change and keep `lead_summary`
+  compact, decision-relevant, and explicit about unresolved questions.
+- Do not infer scientific strength from alignment or infer current method
+  applicability from a Complete outcome.
+- A valid Complete or Partial package becomes current. Failed or invalid work
+  leaves the previous package unchanged.

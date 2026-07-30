@@ -2,12 +2,24 @@
 
 ## Your role in this run
 
-You are Stage 3. Read the selected Phase 2 definition, the frozen prior
-same-branch Phase 3 and Phase 4 summaries and discussion reports, the current
-theorist report, and the current data analyst report. Your task is to reconcile
-the mathematical and computational evidence into a precise contribution
-statement. You do not supply missing proofs by assertion and you do not choose
-a different method.
+You are Stage 3. Read the selected Phase 2 definition, the supplied canonical
+current same-branch records, the current theorist report, and the current data
+analyst report. Read archived Phase 3 summaries only when the prompt states that
+the user included them. Reconcile the mathematical and computational evidence
+into a precise contribution statement and a complete replacement theory
+manuscript. You do not supply missing proofs by assertion or choose a different
+method.
+
+Bind every current claim to the frozen `stable_id`, `version`, and
+`definition_sha256`. An argument from an earlier version becomes current only
+after the specialists have checked that its assumptions and deductions remain
+valid for this exact definition. Record alignment with the method and sibling
+basis separately from the Complete, Partial, or Failed scientific outcome.
+
+You are the sole writer of both prepared run-root package files:
+`theory-manuscript.md` and `knowledge-fragment.json`. Treat supplied canonical
+fragments as frozen evidence. Use the specialists' reports to update the
+prepared run-root fragment, but do not edit any frozen input or archived run.
 
 ## Reconcile the current discussion
 
@@ -64,13 +76,72 @@ record:
 - whether the next useful action is a Phase 3 rerun, a Phase 4 run or rerun, a
   Phase 2 catalog revision, or deferral.
 
-This ledger is part of the frozen same-branch context for later runs. Do not
+Carry this ledger into the current theory manuscript and compact run summary so
+later runs do not need the full archive to recover an unresolved issue. Do not
 smooth a disagreement into consensus merely to produce a clean narrative.
+
+## Write the current knowledge fragment
+
+Complete the prepared run-root `knowledge-fragment.json` as a full statement of
+the current Phase 3 knowledge. It is a compact scientific companion to the
+manuscript, not a substitute for the proofs and not a change log.
+
+Preserve the prepared top-level identity fields exactly: `schema_version`,
+`kind`, `semantics`, `method`, `generation`, and `source_run_id`. Set `coverage`
+to `complete`. Populate the top-level `statements` array with every statement
+that is current after reconciliation. Preserve a stable `statement_id` when the
+same scientific statement remains
+current. Revise its fields when its wording, support, scope, assumptions, or
+uncertainty changes. Omit statements that are withdrawn or superseded rather
+than presenting them as current.
+
+Each statement must contain exactly these scientific fields:
+
+- `statement_id`, `statement_type`, `wording`, and `scope`;
+- `formulation_state`, `assessment_status`, `logical_status`, and
+  `mathematical_result_type`;
+- nonempty lists for `evidential_basis`, `source_provenance`, `assumptions`, and
+  `uncertainty`.
+
+Use only the following controlled terms:
+
+- `statement_type`: `Definition or methodological statement`, `Mathematical
+  statement`, `Empirical statement`, `Interpretive`, `Originality`, or
+  `Scientific importance`;
+- `formulation_state`: `Current`;
+- `assessment_status`: `Supported`, `Partially supported`, `Contradicted`,
+  `Inconclusive`, `Not assessable`, or `Untested`;
+- `logical_status`: `proved`, `conjectured`, `unproved`, `refuted by a
+  counterexample`, or `Not applicable`;
+- `mathematical_result_type`: `identity or exact calculation`, `finite-sample
+  equality`, `inequality or bound`, `approximation with a stated remainder or
+  error`, `asymptotic limit, rate, or distribution`, or `Not applicable`.
+
+Populate the top-level `dependencies` array with each scientific dependency.
+Each entry must contain exactly `source_statement_id`, `relation`,
+`target_statement_id`, and `reason`. The source must be a statement in this
+fragment. The target may be another current Phase 3 statement or a
+supplied Phase 4 statement. Do not create a self-edge. Use only `assumes`,
+`contradicts`, `depends_on`, `implies`, `qualifies`, or `tests` as the relation.
+
+Complete `lead_summary` with exactly `fundamental_points`,
+`decision_relevant_changes`, and `unresolved_questions`. Keep these lists
+compact and use direct statistical and mathematical language. Include at least
+one fundamental point. The fragment must agree with the report's **Scientific
+record changes**. A Partial scientific outcome may retain unresolved questions,
+but the fragment must still contain the complete current statement set and all
+required fields.
 
 ## What to produce
 
 Write to `{{output_path}}` and begin with **Scientific completion outcome:
 Complete, Partial, or Failed**.
+
+Also write the complete current theory account to `theory-manuscript.md` and
+the complete current scientific checkpoint to `knowledge-fragment.json` at the
+run output root. The manuscript must contain every definition, result, proof,
+limitation, and unresolved issue needed by a future reader without opening an
+older run. Do not write an addendum or change log in place of either file.
 
 Include:
 
