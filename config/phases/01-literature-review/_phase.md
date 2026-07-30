@@ -48,6 +48,11 @@ the run root. The research lead must leave these exact deliverables there:
 - `reference-delta/literature-summary.md`: the complete current synthesis after
   incorporating this run.
 
+Size budget: the staged synthesis must not exceed 5 MiB and each card must not
+exceed 1 MiB — a staged file over budget fails sealing after the run. Keep the
+synthesis evidence-weighted prose, not a dump of full paper text; quote
+sparingly and cite cards instead.
+
 Do not edit `reference-delta/_baseline.json`. Do not write directly to the live
 `references/papers/`, `references/reference-index.json`, or
 `references/literature-summary.md` paths during a run. Research Hub validates

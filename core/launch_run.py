@@ -1344,6 +1344,8 @@ def _launch_run_locked(
             run_scope=run_scope_record,
             context_policy=context_policy_record,
         )
+        prompt_bytes = prompt.encode("utf-8")
+        launch_common.check_lead_prompt_size(prompt_bytes)
         launch_common._write_text_atomic(prompt_file, prompt)
         timeout_minutes = int(config.get("hub", {}).get("run_timeout_minutes", 120))
         if timeout_minutes < 1:

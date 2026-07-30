@@ -55,6 +55,24 @@ MAX_TASK_BRIEF_BYTES = 4 * 1024 * 1024
 MAX_LEAD_PROMPT_BYTES = 16 * 1024 * 1024
 
 
+def check_lead_prompt_size(prompt_bytes: bytes) -> None:
+    """Reject an over-cap lead prompt before the run starts.
+
+    The same cap is re-checked at worker start; this launch-time check turns
+    an over-cap prompt into a clean launch error instead of a
+    launch-then-immediately-fail run.
+    """
+
+    if len(prompt_bytes) > MAX_LEAD_PROMPT_BYTES:
+        raise LaunchError(
+            "The assembled lead prompt exceeds the "
+            f"{MAX_LEAD_PROMPT_BYTES // (1024 * 1024)} MiB safety limit "
+            f"({len(prompt_bytes)} bytes). Reduce prior-phase context "
+            "(for example fewer archived summaries or a smaller literature "
+            "synthesis) and launch again."
+        )
+
+
 MAX_DIRECTIVE_BYTES = 256 * 1024
 
 

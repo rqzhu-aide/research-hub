@@ -6502,3 +6502,13 @@ def test_failed_run_enters_global_context_only_when_newer(
 
     older_failure = build(["failed", "good"])
     assert {entry["run_id"] for entry in older_failure} == {"run-good"}
+
+
+def test_check_lead_prompt_size_enforces_cap_before_launch() -> None:
+    from core import launch_common
+
+    launch_common.check_lead_prompt_size(b"x" * launch_common.MAX_LEAD_PROMPT_BYTES)
+    with pytest.raises(launch_common.LaunchError, match="safety limit"):
+        launch_common.check_lead_prompt_size(
+            b"x" * (launch_common.MAX_LEAD_PROMPT_BYTES + 1)
+        )
