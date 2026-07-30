@@ -10,3 +10,4 @@ projects/
 .hermes/
 *.egg-info/
 review/
+situations/
