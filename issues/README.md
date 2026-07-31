@@ -17,6 +17,8 @@ tracked — retained locally for reference only).
 | 11 | [The Ten-Method P2 Catalog](11-ten-method-p2-catalog.md) | How does P2 scale with many methods? | #14 |
 | 17 | [Control-Dir Loss & Registry Divergence](17-control-dir-loss-and-registry-divergence.md) | What breaks when each storage part is lost? | #19-note (residual) |
 | 20 | [The Uncorrectable Reference Card](20-p1-card-correction-retraction.md) | How is a wrong card fixed? | #22 |
+| 22 | [Context Reduction](22-context-reduction-agent-runs.md) + [review](22-context-reduction-analysis.md) | Frozen context is ~193 KB re-read by every agent every round | — (analysis) |
+| 23 | [Context Construction Plan](23-context-construction-plan.md) | Phase + role + run-specific context views; verification of the 22-analysis | — (plan, ready to implement) |
 
 Archived July 30, 2026 (second maintenance cycle): 12 (#16 fixed —
 promotion-time identity check), 13 (#17 disclosed), 15 (folded into #16),
