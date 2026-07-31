@@ -125,6 +125,26 @@ additional experiment becomes a precise target for a user-initiated rerun.
 
 ## Step 6: Final synthesis
 
+## Handoff briefs for downstream roles
+Before submitting, write one brief per downstream consumer role as
+`handoff/{role}.md` in the run output directory (a sibling of your round
+reports). These briefs are the primary documents downstream agents read; the
+full summary and decision record remain available for depth.
+
+Write briefs for: **paper_reviewer** (Phase 5: evidence status and what the data showed) and **research_lead** (Phase 5: outdated or unresolved evidence).
+
+Each brief is at most ~200 lines and contains exactly three parts:
+1. **What you must know** — the findings and current records this role relies on.
+2. **What you must verify or honor** — assumptions, limitations, and unresolved
+   items this role must respect or check.
+3. **What changed** — versus the previous current record (state "initial run"
+   when there is none).
+
+Write for the reader's task, not from your own workflow: a downstream role
+should be able to start from your brief without reading the raw reports.
+Research Hub seals these files at finalization; missing briefs are recorded
+as a warning, and downstream runs then fall back to digests and raw reports.
+
 Write the HTML summary to the exact path provided. Begin with the User Decision
 Brief required by the team norms. Include:
 

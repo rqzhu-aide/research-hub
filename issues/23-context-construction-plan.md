@@ -8,6 +8,16 @@
 biggest lever. Plan below is implementable in three small steps without touching
 the integrity model.
 
+> **STATUS (2026-07-30, later): IMPLEMENTED.** All steps shipped:
+> Step 3 norms 19.9→9.7 KB; Step 2 `_condense_decision_payload` + frozen
+> `decisions/*-digest.md` per upstream decision; Step 1 role-scoped reading
+> lists in `_dispatch_task` (digest-first, role-matched discussion guidance,
+> charter/norms demoted to references); Step 0 `handoff/{role}.md` briefs —
+> contract in the four lead playbooks, sealed at `finalize_run_submission`
+> (`_seal_handoff_briefs_unlocked`, missing → `handoff_warning` never a
+> failure), collected into context entries, frozen under `handoff/`, and
+> listed role-matched in task briefs. Suite: 893 passed.
+
 ---
 
 ## 1. Independent verification

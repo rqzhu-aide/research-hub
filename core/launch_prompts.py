@@ -423,6 +423,47 @@ def _snapshot_run_inputs(
                 "size": discussion_size,
             })
         frozen_entry["discussion"] = frozen_discussion
+        frozen_handoff: list[dict[str, Any]] = []
+        for brief in entry.get("handoff_briefs", []):
+            if not isinstance(brief, Mapping):
+                raise launch_common.LaunchError(
+                    "Prior handoff brief inventory contains an invalid record"
+                )
+            try:
+                brief_size = int(brief.get("size", -1))
+            except (TypeError, ValueError) as exc:
+                raise launch_common.LaunchError(
+                    "Prior handoff brief has invalid size metadata"
+                ) from exc
+            brief_role = "".join(
+                character
+                for character in str(brief.get("role", "role"))
+                if character.isascii() and (character.isalnum() or character in {"-", "_"})
+            ) or "role"
+            brief_snapshot = copy(
+                project_dir / str(brief.get("path", "")),
+                f"handoff/{entry['phase']}-{entry['run_id']}-{brief_role}.md",
+                max_bytes=project_state.MAX_RUN_ARTIFACT_BYTES,
+                historical_context=True,
+            )
+            expected_brief_digest = str(brief.get("sha256", "")).lower()
+            if (
+                brief_size < 1
+                or not expected_brief_digest
+                or brief_snapshot["sha256"] != expected_brief_digest
+                or Path(brief_snapshot["path"]).stat().st_size != brief_size
+            ):
+                raise launch_common.LaunchError(
+                    "Prior handoff brief changed while the run was being frozen: "
+                    f"{entry['phase']} run {entry['run_id']}"
+                )
+            frozen_handoff.append({
+                **dict(brief),
+                **brief_snapshot,
+                "role": str(brief.get("role", "")),
+                "size": brief_size,
+            })
+        frozen_entry["handoff_briefs"] = frozen_handoff
         frozen_supporting: list[dict[str, Any]] = []
         supporting_counts: dict[int, int] = {}
         supporting_sizes: dict[int, int] = {}
@@ -887,6 +928,32 @@ def _has_archived_method_summary(
         if integrity_ok:
             return True
     return False
+
+
+def _context_handoff_records(run: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Return the sealed role-facing handoff briefs from a prior run."""
+
+    records: list[dict[str, Any]] = []
+    for brief in run.get("handoff_briefs", []) or []:
+        if not isinstance(brief, Mapping):
+            continue
+        path = str(brief.get("path", "")).strip()
+        role = str(brief.get("role", "")).strip()
+        digest = str(brief.get("sha256", "")).strip().lower()
+        try:
+            size = int(brief.get("size", -1))
+        except (TypeError, ValueError):
+            continue
+        if (
+            not path
+            or not role
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+            or size < 1
+        ):
+            continue
+        records.append({"path": path, "role": role, "sha256": digest, "size": size})
+    return records
 
 
 def _context_discussion_records(
@@ -1545,6 +1612,7 @@ def _trusted_context(
                 "scientific_outcome": scientific_outcome,
                 "evidence_status": evidence_status,
                 "discussion": _context_discussion_records(run, manifest),
+                "handoff_briefs": _context_handoff_records(run),
                 "supporting_artifacts": (
                     _context_supporting_artifact_records(run)
                     if branch_scoped

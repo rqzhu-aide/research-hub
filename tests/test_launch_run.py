@@ -6788,6 +6788,18 @@ def test_snapshot_freezes_a_condensed_decision_digest(
     decision_path.write_text(json.dumps(decision_payload), encoding="utf-8")
     decision_bytes = decision_path.read_bytes()
 
+    handoff_rel = "runs/01-literature-review/run-1/handoff/research_lead.md"
+    handoff_path = project / handoff_rel
+    handoff_path.parent.mkdir(parents=True)
+    handoff_path.write_text("# For the research lead\n", encoding="utf-8")
+    handoff_bytes = handoff_path.read_bytes()
+    handoff_entry = {
+        "path": handoff_rel,
+        "role": "research_lead",
+        "sha256": hashlib.sha256(handoff_bytes).hexdigest(),
+        "size": len(handoff_bytes),
+    }
+
     team_dir = tmp_path / "team"
     team_dir.mkdir()
     (team_dir / "charter.md").write_text("charter", encoding="utf-8")
@@ -6814,6 +6826,7 @@ def test_snapshot_freezes_a_condensed_decision_digest(
         "discussion": [],
         "supporting_artifacts": [],
         "protocol_artifacts": [],
+        "handoff_briefs": [handoff_entry],
         "decision_record": {
             "path": decision_rel,
             "sha256": hashlib.sha256(decision_bytes).hexdigest(),
@@ -6848,3 +6861,15 @@ def test_snapshot_freezes_a_condensed_decision_digest(
     # The full record stays frozen alongside.
     assert Path(frozen["decision_record"]["path"]).name == "01-literature-review-run-1.json"
     assert len(text.encode("utf-8")) < len(decision_bytes) + 512
+
+    # Handoff briefs are frozen with role identity preserved.
+    frozen_briefs = frozen["handoff_briefs"]
+    assert len(frozen_briefs) == 1
+    brief = frozen_briefs[0]
+    assert brief["role"] == "research_lead"
+    brief_path = Path(brief["path"])
+    assert brief_path.name == "01-literature-review-run-1-research_lead.md"
+    assert brief_path.is_relative_to(
+        launcher.run_context_dir(project, "03-idea-evaluation", "digest-run")
+    )
+    assert brief["sha256"] == hashlib.sha256(brief_path.read_bytes()).hexdigest()

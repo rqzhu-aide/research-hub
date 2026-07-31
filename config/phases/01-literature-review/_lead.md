@@ -214,6 +214,26 @@ Do not select an option for the user. After submitting the summary, stop. The
 user alone decides whether to rerun this phase, start Method Development, or
 defer further work.
 
+## Handoff briefs for downstream roles
+Before submitting, write one brief per downstream consumer role as
+`handoff/{role}.md` in the run output directory (a sibling of your round
+reports). These briefs are the primary documents downstream agents read; the
+full summary and decision record remain available for depth.
+
+Write briefs for: **research_lead** (Phase 2 method scoping) and **paper_reviewer** (Phase 5 citations).
+
+Each brief is at most ~200 lines and contains exactly three parts:
+1. **What you must know** — the findings and current records this role relies on.
+2. **What you must verify or honor** — assumptions, limitations, and unresolved
+   items this role must respect or check.
+3. **What changed** — versus the previous current record (state "initial run"
+   when there is none).
+
+Write for the reader's task, not from your own workflow: a downstream role
+should be able to start from your brief without reading the raw reports.
+Research Hub seals these files at finalization; missing briefs are recorded
+as a warning, and downstream runs then fall back to digests and raw reports.
+
 ## Requirements
 - Follow the shared team norms and use the current scientific record for this
   run.

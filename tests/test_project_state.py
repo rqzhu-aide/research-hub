@@ -3220,3 +3220,69 @@ def test_missing_state_with_empty_workspace_returns_empty(
 
     data = state.load(project)
     assert data["phases"] == {}
+
+
+def test_seal_handoff_briefs_seals_known_roles_and_warns_on_missing(
+    tmp_path: Path,
+) -> None:
+    """Handoff briefs are sealed with hashes at finalization; missing
+    expected consumer roles produce a warning, never a failure."""
+    project = tmp_path / "proj"
+    output_root = project / "branches" / "method-a" / "evaluations" / "run" / "01"
+    handoff = output_root / "handoff"
+    handoff.mkdir(parents=True)
+    (handoff / "data_scientist.md").write_text("# For the data scientist\n", encoding="utf-8")
+    (handoff / "not_a_role.md").write_text("ignored\n", encoding="utf-8")
+
+    run: dict = {}
+    manifest = {"output_root": str(output_root)}
+    state._seal_handoff_briefs_unlocked(
+        project, state.IDEA_EVALUATION_PHASE, run, manifest, "2026-07-30T00:00:00Z"
+    )
+
+    sealed = run["handoff_briefs"]
+    assert [b["role"] for b in sealed] == ["data_scientist"]
+    brief = sealed[0]
+    assert brief["path"].endswith("handoff/data_scientist.md")
+    assert brief["sha256"] == hashlib.sha256(
+        (handoff / "data_scientist.md").read_bytes()
+    ).hexdigest()
+    assert brief["size"] > 0
+    warning = run["handoff_warning"]
+    assert warning["code"] == "handoff_briefs_missing"
+    assert warning["missing_roles"] == ["paper_reviewer"]
+
+    # All expected briefs present -> no warning.
+    (handoff / "paper_reviewer.md").write_text("# For the reviewer\n", encoding="utf-8")
+    run2: dict = {}
+    state._seal_handoff_briefs_unlocked(
+        project, state.IDEA_EVALUATION_PHASE, run2, manifest, "2026-07-30T00:00:00Z"
+    )
+    assert [b["role"] for b in run2["handoff_briefs"]] == ["data_scientist", "paper_reviewer"]
+    assert "handoff_warning" not in run2
+
+    # No handoff directory at all -> warning covers every expected role.
+    run3: dict = {}
+    empty_root = project / "empty-run"
+    empty_root.mkdir()
+    state._seal_handoff_briefs_unlocked(
+        project,
+        state.LITERATURE_REVIEW_PHASE,
+        run3,
+        {"output_root": str(empty_root)},
+        "2026-07-30T00:00:00Z",
+    )
+    assert "handoff_briefs" not in run3
+    assert run3["handoff_warning"]["missing_roles"] == ["research_lead", "paper_reviewer"]
+
+    # Terminal phase (P5) expects no briefs and never warns.
+    run4: dict = {}
+    state._seal_handoff_briefs_unlocked(
+        project,
+        state.PAPER_WRITING_PHASE,
+        run4,
+        {"output_root": str(empty_root)},
+        "2026-07-30T00:00:00Z",
+    )
+    assert "handoff_briefs" not in run4
+    assert "handoff_warning" not in run4

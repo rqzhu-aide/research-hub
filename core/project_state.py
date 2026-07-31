@@ -6497,6 +6497,77 @@ def _finalize_current_record_submission_unlocked(
             ) from cleanup_error
 
 
+# Downstream consumer roles each phase's lead must write a handoff brief for.
+# Briefs live at {output_root}/handoff/{role}.md and are sealed at finalization.
+HANDOFF_BRIEF_ROLES: dict[str, tuple[str, ...]] = {
+    LITERATURE_REVIEW_PHASE: ("research_lead", "paper_reviewer"),
+    METHOD_DEVELOPMENT_PHASE: ("theorist", "data_scientist", "paper_reviewer"),
+    IDEA_EVALUATION_PHASE: ("data_scientist", "paper_reviewer"),
+    DRAFT_ASSEMBLY_PHASE: ("paper_reviewer", "research_lead"),
+}
+_HANDOFF_BRIEF_MAX_BYTES = 64 * 1024
+_HANDOFF_KNOWN_ROLES = frozenset({
+    "theorist", "data_scientist", "research_lead", "paper_reviewer",
+})
+
+
+def _seal_handoff_briefs_unlocked(
+    project_dir: str | Path,
+    phase_slug: str,
+    run: dict[str, Any],
+    manifest: Mapping[str, Any] | None,
+    timestamp: str,
+) -> None:
+    """Seal role-facing handoff briefs written by the run's research lead.
+
+    Briefs are optional for backward compatibility: runs without them keep
+    working (downstream context falls back to digests and raw discussion),
+    and a missing expected brief is recorded as a warning, never a failure.
+    """
+
+    if not isinstance(manifest, Mapping):
+        return
+    project_dir = Path(project_dir).resolve()
+    output_root = Path(str(manifest.get("output_root", "")).strip())
+    handoff_dir = output_root / "handoff"
+    expected = HANDOFF_BRIEF_ROLES.get(phase_slug, ())
+    sealed: list[dict[str, Any]] = []
+    if handoff_dir.is_dir():
+        for candidate in sorted(handoff_dir.glob("*.md")):
+            role = candidate.stem.strip()
+            if not role or role not in _HANDOFF_KNOWN_ROLES:
+                continue
+            relative = _normalize_existing_path(
+                project_dir, candidate, nonempty_file=True
+            )
+            digest, size = _hash_bounded_file(
+                Path(project_dir).resolve() / relative,
+                maximum=_HANDOFF_BRIEF_MAX_BYTES,
+                label="handoff brief",
+            )
+            sealed.append({
+                "path": relative,
+                "role": role,
+                "sha256": digest,
+                "size": size,
+            })
+    if sealed:
+        run["handoff_briefs"] = sealed
+    if expected:
+        missing = [role for role in expected if role not in {b["role"] for b in sealed}]
+        if missing:
+            run["handoff_warning"] = {
+                "code": "handoff_briefs_missing",
+                "message": (
+                    "This run did not provide handoff briefs for downstream "
+                    f"roles: {', '.join(missing)}. Downstream runs will fall "
+                    "back to decision digests and raw role reports."
+                ),
+                "missing_roles": missing,
+                "recorded_at": timestamp,
+            }
+
+
 def finalize_run_submission(
     project_dir: str | Path,
     phase_slug: str,
@@ -6525,6 +6596,9 @@ def finalize_run_submission(
         )
         manifest = _validate_recorded_manifest(project_dir, phase_slug, run)
         timestamp = _now_iso()
+        _seal_handoff_briefs_unlocked(
+            project_dir, phase_slug, run, manifest, timestamp
+        )
         run["completed"] = timestamp
         run["ended_at"] = timestamp
         if _manifest_schema_version(manifest) >= 12:

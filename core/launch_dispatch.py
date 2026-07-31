@@ -429,6 +429,20 @@ def _dispatch_task(
                     f"({item.get('kind', 'context')}; {evidence_label}; "
                     f"SHA-256 {item['sha256']}): {item['path']}"
                 )
+            for brief in item.get("handoff_briefs", []):
+                brief_role = str(brief.get("role") or "")
+                if brief_role == role:
+                    guidance = "written for your role by the upstream team — read this first"
+                else:
+                    guidance = (
+                        f"written for {brief_role or 'another role'} — "
+                        "consult only if your task touches it"
+                    )
+                context_lines.append(
+                    f"  - Handoff brief, {item['phase']} run {item['run_id']} "
+                    f"({guidance}; SHA-256 {brief.get('sha256', 'not recorded')}): "
+                    f"{brief.get('path')}"
+                )
             for report in item.get("discussion", []):
                 report_role = str(report.get("role") or "")
                 if report_role == role:
