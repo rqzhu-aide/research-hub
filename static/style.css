@@ -1415,3 +1415,25 @@ progress::-moz-progress-bar { background: var(--running); }
 @media (max-width: 720px) {
   .decision-brief-row { grid-template-columns: 1fr; gap: 3px; }
 }
+
+
+/* ── Method branch dropdown + selected-method card ── */
+.method-branch-select { width: 100%; max-width: 560px; margin-bottom: 12px; }
+.method-branch-select option { color: var(--text); }
+.method-branch-select option:disabled { color: var(--faint); }
+.method-branch-select option.method-branch-option-recommended { color: var(--approved); }
+.method-branch-select option.method-branch-option-viable { color: var(--running); }
+.method-branch-select option.method-branch-option-frontier { color: var(--review); }
+.method-branch-select option.method-branch-option-retired { color: var(--faint); }
+.method-branch-select option.method-branch-option-invalid { color: var(--danger); }
+.phase3-method-cards { min-height: 120px; }
+.method-card {
+  display: grid; gap: 6px; padding: 12px;
+  border: 1px solid var(--accent); border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.method-card .method-option-title { font-weight: 700; display: block; }
+.method-card .method-option-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; color: var(--muted); font-size: .75rem; }
+.method-selection-inactive .phase3-method-cards,
+.method-selection-inactive .method-branch-select { opacity: .55; }

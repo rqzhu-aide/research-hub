@@ -1868,7 +1868,12 @@ def test_method_menu_branch_selection_drives_run_specific_identity(
     assert "Mathematical definition" in body
     assert "A^{-1}b" in body
     assert "data-mathjax-required" in body
-    assert 'value="old-idea"' not in body
+    # Retired methods are listed in the dropdown but disabled (unselectable).
+    assert re.search(
+        r'<option[^>]*value="old-idea"[^>]*disabled', body
+    ) or re.search(
+        r'<option[^>]*disabled[^>]*value="old-idea"', body
+    )
     assert 'name="method_branch" value="spectral-graph-coupling" checked' not in body
     assert "btn-retire-method" not in body
 
@@ -4322,13 +4327,19 @@ def test_phase_four_renders_the_explicit_method_chooser_and_scope_selector(
     assert "Mathematical definition" in html
     assert "T_n" in html
     assert "data-mathjax-required" in html
-    assert 'value="retired-method"' not in html
-    radio = re.search(
-        r'<input[^>]+name="method_branch"[^>]+value="active-method"[^>]*>',
+    # Retired methods are listed in the dropdown but disabled (unselectable).
+    assert re.search(
+        r'<option[^>]*value="retired-method"[^>]*disabled', html
+    ) or re.search(
+        r'<option[^>]*disabled[^>]*value="retired-method"', html
+    )
+    option = re.search(
+        r'<option[^>]+value="active-method"[^>]*>',
         html,
     )
-    assert radio is not None
-    assert "checked" not in radio.group(0)
+    assert option is not None
+    assert "disabled" not in option.group(0)
+    assert "selected" not in option.group(0)
     assert "data-method-launch" in html
     assert "data-phase3-launch" not in html
     assert 'name="run_mode"' in html
@@ -4644,7 +4655,9 @@ def test_phase_five_shows_collection_review_without_starting_a_run(
     assert response.status_code == 200
     assert "P5: Manuscript inputs need review" in body
     assert body.count(reason) == 2
-    assert 'name="method_branch" value="active-method"' in body
+    option = re.search(r'<option[^>]+value="active-method"[^>]*>', body)
+    assert option is not None
+    assert "disabled" not in option.group(0)
     assert "Manuscript requires revision" not in body
     launched.assert_not_called()
 
@@ -4746,7 +4759,9 @@ def test_phase_five_chooser_and_launch_require_all_exact_branch_results(
     assert 'name="method_menu_version"' in blocked_html
     assert "Active Method" in blocked_html
     assert "Phase 4 implementation and experiments" in blocked_html
-    assert 'value="active-method"' not in blocked_html
+    blocked_option = re.search(r'<option[^>]+value="active-method"[^>]*>', blocked_html)
+    assert blocked_option is not None
+    assert "disabled" in blocked_option.group(0)
 
     common = {
         "csrf_token": _csrf(client),
@@ -4765,14 +4780,15 @@ def test_phase_five_chooser_and_launch_require_all_exact_branch_results(
     ready = True
     ready_page = client.get(f"/project/{PROJECT_ID}?tab={phase_slug}")
     ready_html = ready_page.get_data(as_text=True)
-    radio = re.search(
-        r'<input[^>]+name="method_branch"[^>]+value="active-method"[^>]*>',
+    ready_option = re.search(
+        r'<option[^>]+value="active-method"[^>]*>',
         ready_html,
     )
-    assert radio is not None
-    assert "checked" not in radio.group(0)
-    assert re.search(r'data-knowledge-heads-version="[0-9a-f]{64}"', radio.group(0))
-    assert re.search(r'data-branch-graph-version="[0-9a-f]{64}"', radio.group(0))
+    assert ready_option is not None
+    assert "selected" not in ready_option.group(0)
+    assert "disabled" not in ready_option.group(0)
+    assert re.search(r'data-knowledge-heads-version="[0-9a-f]{64}"', ready_option.group(0))
+    assert re.search(r'data-branch-graph-version="[0-9a-f]{64}"', ready_option.group(0))
     assert 'name="knowledge_heads_version" value=""' in ready_html
     assert 'name="branch_graph_version" value=""' in ready_html
     assert "data-method-launch" in ready_html

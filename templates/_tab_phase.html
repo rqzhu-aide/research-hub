@@ -647,58 +647,57 @@
     {% endif %}
 
     {% if method_details %}
+    <label class="field-label" for="method-branch-select-{{ pc.slug }}">Method</label>
+    <select id="method-branch-select-{{ pc.slug }}" name="method_branch"
+            class="form-input-compact method-branch-select" data-method-select required>
+      <option value="" selected disabled hidden>Choose a method…</option>
+      {% for method in method_details %}
+        {% set method_selectable = method.launchable | default(false) and not (method_menu_state.warnings | default([])) %}
+      <option value="{{ method.stable_id or method.path }}"
+              class="method-branch-option-{{ method.status | default('invalid') }}"
+              {% if not method_selectable %}disabled{% endif %}
+              {% if method_selectable %}
+              data-method-selectable="true"
+              data-knowledge-heads-version="{{ method.knowledge_heads_version | default('') or '' }}"
+              {% if pc.slug in ['03-idea-evaluation', '04-draft-assembly'] %}data-phase-two-review-version="{{ method.phase_two_review_version | default('') or '' }}"{% endif %}
+              {% if pc.slug == '05-review-revision' %}data-branch-graph-version="{{ method.branch_graph_version | default('') or '' }}"{% endif %}
+              data-has-theory-history="{{ 'true' if method.has_theory_history | default(false) else 'false' }}"
+              {% endif %}>
+        {% if method.number %}#{{ method.number }} {% endif %}{{ method.label or method.stable_id or method.path or 'Invalid method entry' }}{% if method.status %} — {{ method.status }}{% endif %}
+      </option>
+      {% endfor %}
+    </select>
+
     <div class="phase3-method-layout">
-      <div class="phase3-method-list" aria-label="Phase 2 methods">
+      <div class="phase3-method-cards" aria-label="Selected method overview">
+        <p class="method-detail-placeholder" data-method-card-empty>Choose a method above to see its branch record and launch status.</p>
         {% for method in method_details %}
-          {% set method_selectable = method.launchable | default(false) and not (method_menu_state.warnings | default([])) %}
-        <div class="phase3-method-option{% if not method_selectable %} phase3-method-option-unavailable{% endif %}"
-             data-method-option="{{ method.stable_id or method.path }}">
-          {% if method_selectable %}
-          <input id="method-branch-{{ loop.index }}" type="radio"
-                 name="method_branch" value="{{ method.stable_id }}"
-                 required data-method-radio data-method-selectable="true"
-                 data-knowledge-heads-version="{{ method.knowledge_heads_version | default('') or '' }}"
-                 {% if pc.slug in ['03-idea-evaluation', '04-draft-assembly'] %}data-phase-two-review-version="{{ method.phase_two_review_version | default('') or '' }}"{% endif %}
-                 {% if pc.slug == '05-review-revision' %}data-branch-graph-version="{{ method.branch_graph_version | default('') or '' }}"{% endif %}
-                 data-has-theory-history="{{ 'true' if method.has_theory_history | default(false) else 'false' }}">
-          {% else %}
-          <span class="method-option-marker" aria-hidden="true"></span>
-          {% endif %}
-          {% if method_selectable %}
-          <label class="method-option-copy" for="method-branch-{{ loop.index }}">
-          {% else %}
-          <span class="method-option-copy">
-          {% endif %}
-            <span class="method-option-title">
-              {% if method.number %}#{{ method.number }} {% endif %}{{ method.label or method.stable_id or method.path or 'Invalid method entry' }}
-            </span>
-            <span class="method-option-meta">
-              <code>{{ method.stable_id or method.path or 'unidentified entry' }}</code>
-              {% if method.version %}<span>{{ method.version }}</span>{% endif %}
-              {% if method.status %}<span class="method-status-tag method-status-{{ method.status }}">{{ method.status }}</span>{% endif %}
-            </span>
-            {% if pc.slug in ['03-idea-evaluation', '04-draft-assembly', '05-review-revision'] %}
-              {% set records = method.record_status | default({}) %}
-            <span class="method-record-statuses" aria-label="Current branch records">
-              {{ branch_status_rail(records, pc.slug) }}
-            </span>
-            {% endif %}
-            {% if method.errors %}
-            <span class="method-entry-error">Unavailable: {{ method.errors | join('; ') }}</span>
-            {% elif method.status == 'retired' %}
-            <span class="method-action-state">Retired methods remain visible as history and cannot start new runs.</span>
-            {% elif method.launch_blockers | default([]) %}
-            <span class="method-entry-error">
-              <strong>{% if pc.slug == '05-review-revision' %}Phase 5 is unavailable for this method.{% else %}Unavailable for a new run.{% endif %}</strong>
-              {{ method.launch_blockers | join(' ') }}
-            </span>
-            {% endif %}
-          {% if method_selectable %}
-          </label>
-          {% else %}
+        <article class="method-card" data-method-card="{{ method.stable_id or method.path }}" hidden>
+          <span class="method-option-title">
+            {% if method.number %}#{{ method.number }} {% endif %}{{ method.label or method.stable_id or method.path or 'Invalid method entry' }}
+          </span>
+          <span class="method-option-meta">
+            <code>{{ method.stable_id or method.path or 'unidentified entry' }}</code>
+            {% if method.version %}<span>{{ method.version }}</span>{% endif %}
+            {% if method.status %}<span class="method-status-tag method-status-{{ method.status }}">{{ method.status }}</span>{% endif %}
+          </span>
+          {% if pc.slug in ['03-idea-evaluation', '04-draft-assembly', '05-review-revision'] %}
+            {% set records = method.record_status | default({}) %}
+          <span class="method-record-statuses" aria-label="Current branch records">
+            {{ branch_status_rail(records, pc.slug) }}
           </span>
           {% endif %}
-        </div>
+          {% if method.errors %}
+          <span class="method-entry-error">Unavailable: {{ method.errors | join('; ') }}</span>
+          {% elif method.status == 'retired' %}
+          <span class="method-action-state">Retired methods remain visible as history and cannot start new runs.</span>
+          {% elif method.launch_blockers | default([]) %}
+          <span class="method-entry-error">
+            <strong>{% if pc.slug == '05-review-revision' %}Phase 5 is unavailable for this method.{% else %}Unavailable for a new run.{% endif %}</strong>
+            {{ method.launch_blockers | join(' ') }}
+          </span>
+          {% endif %}
+        </article>
         {% endfor %}
       </div>
 

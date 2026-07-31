@@ -236,15 +236,16 @@
       const updateDigest = () => {
         if (!digest) return;
         /* Method. */
-        const selected = form.querySelector("[data-method-radio]:checked:not(:disabled)");
+        const methodSelect = form.querySelector("[data-method-select]");
+        const chosen = methodSelect && methodSelect.selectedIndex >= 0
+          ? methodSelect.options[methodSelect.selectedIndex]
+          : null;
+        const selected = chosen && chosen.value ? chosen : null;
         const auditSource = form.querySelector("[data-theory-audit-source]");
         const planSelect = form.querySelector("[data-theory-plan]");
         const branchName = form.querySelector(".branch-info-name")?.textContent.trim();
-        if (selected) {
-          const option = selected.closest("[data-method-option]");
-          const title = option?.querySelector(".method-option-title")?.textContent.trim() || selected.value;
-          const version = option?.querySelector(".method-option-meta span")?.textContent.trim() || "";
-          cell("method").textContent = version ? `${title} (${version})` : title;
+        if (selected && planSelect?.value !== "audit_only") {
+          cell("method").textContent = selected.textContent.trim();
           row("method").hidden = false;
         } else if (planSelect?.value === "audit_only") {
           cell("method").textContent = optionText(auditSource) || "Choose a theory artifact below";
@@ -349,8 +350,9 @@
       const planSelect = form.querySelector("[data-theory-plan]");
       if (!methodPanel && !planSelect) return;
 
-      const radios = Array.from(form.querySelectorAll("[data-method-radio]"));
-      const options = Array.from(form.querySelectorAll("[data-method-option]"));
+      const methodSelect = form.querySelector("[data-method-select]");
+      const cards = Array.from(form.querySelectorAll("[data-method-card]"));
+      const emptyCard = form.querySelector("[data-method-card-empty]");
       const details = Array.from(form.querySelectorAll("[data-method-detail]"));
       const emptyDetail = form.querySelector("[data-method-detail-empty]");
       const auditSource = form.querySelector("[data-theory-audit-source]");
@@ -371,14 +373,17 @@
         if (auditSourceRow) auditSourceRow.hidden = !auditOnly;
         methodPanel?.classList.toggle("method-selection-inactive", auditOnly);
 
-        radios.forEach((radio) => {
-          const selectable = radio.dataset.methodSelectable === "true";
-          radio.disabled = auditOnly || !selectable;
-          radio.required = !auditOnly && selectable;
-        });
-        const selected = auditOnly
-          ? null
-          : radios.find((radio) => radio.checked && !radio.disabled) || null;
+        if (methodSelect) {
+          methodSelect.disabled = auditOnly;
+          methodSelect.required = !auditOnly;
+          if (auditOnly) methodSelect.selectedIndex = 0;
+        }
+        const chosen = methodSelect && !auditOnly && methodSelect.selectedIndex >= 0
+          ? methodSelect.options[methodSelect.selectedIndex]
+          : null;
+        const selected = chosen && chosen.value && chosen.dataset.methodSelectable === "true"
+          ? chosen
+          : null;
         if (knowledgeHeadsVersion) {
           knowledgeHeadsVersion.value = selected?.dataset.knowledgeHeadsVersion || "";
         }
@@ -418,12 +423,16 @@
                 ? "This method has prior Phase 3 summaries. Include them only when they may contain useful information missing from the current package."
                 : "This is the first Phase 3 run for this method, so archived summaries are not available.";
         }
-        options.forEach((option) => {
-          option.classList.toggle(
-            "phase3-method-option-selected",
-            Boolean(selected && option.dataset.methodOption === selected.value)
-          );
+        const visibleCardValue = chosen?.value || null;
+        cards.forEach((card) => {
+          card.hidden = card.dataset.methodCard !== visibleCardValue;
         });
+        if (emptyCard) {
+          emptyCard.hidden = Boolean(visibleCardValue);
+          emptyCard.textContent = auditOnly
+            ? "Audit-only reruns use the method already frozen in the selected theory artifact."
+            : "Choose a method above to see its branch record and launch status.";
+        }
         let visibleDetail = null;
         details.forEach((detail) => {
           const visible = Boolean(selected && detail.dataset.methodDetail === selected.value);
@@ -459,7 +468,7 @@
       };
 
       if (form.dataset.theoryPlansInitialized !== "true") {
-        radios.forEach((radio) => radio.addEventListener("change", update));
+        methodSelect?.addEventListener("change", update);
         planSelect?.addEventListener("change", update);
         auditSource?.addEventListener("change", update);
         contextHistory?.addEventListener("change", update);
