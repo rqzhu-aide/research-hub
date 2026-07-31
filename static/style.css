@@ -1289,3 +1289,129 @@ progress::-moz-progress-bar { background: var(--running); }
 }
 /* Exclude elements that already have transitions to avoid jank */
 .btn, .tab, a, .overview-phase-card, .theme-toggle { transition: all var(--fast); }
+
+
+/* ═══════════════════════════════════════════════════════════════
+   User-control & feedback components (2026-07-30 UI round)
+   P2 direction panel · P4 status rail · P1 plan digest ·
+   P5 launch review · P3 decision brief
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── P2: elevated direction panel (the user's voice, hero input) ── */
+.direction-panel {
+  position: relative;
+  padding: 13px 15px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+.direction-panel::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 12px; bottom: 12px;
+  width: 3px; border-radius: 2px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-bright));
+}
+.direction-panel-head { display: flex; align-items: baseline; gap: 10px; }
+.direction-panel-head .instruction-label { font-weight: 700; font-size: .9rem; }
+.direction-tag {
+  font-size: .64rem; font-weight: 600; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--accent-bright);
+  background: var(--accent-soft); border-radius: 99px; padding: 2px 9px;
+}
+.direction-panel .instruction-textarea { margin-top: 9px; background: var(--canvas); }
+.direction-panel-foot {
+  display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  margin-top: 5px; font-size: .7rem; color: var(--faint);
+}
+.direction-char-count { font-family: var(--font-mono); }
+
+/* ── P4: compact branch status rail ── */
+.status-rail { display: inline-flex; gap: 4px; align-items: center; margin-top: 7px; flex-wrap: wrap; }
+.rail-seg {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--font-mono); font-size: .64rem; font-weight: 600;
+  padding: 2px 8px; border-radius: 99px;
+  background: var(--surface); border: 1px solid var(--line);
+}
+.rail-seg::before { content: ""; width: 6px; height: 6px; border-radius: 50%; }
+.rail-current { color: var(--approved); }
+.rail-current::before { background: var(--approved); }
+.rail-update_needed { color: var(--review); }
+.rail-update_needed::before { background: var(--review); }
+.rail-invalid { color: var(--danger); }
+.rail-invalid::before { background: var(--danger); }
+.rail-not_run { color: var(--muted); }
+.rail-not_run::before { background: var(--line-strong); }
+.status-rail-note { font-size: .68rem; color: var(--review); margin-left: 5px; }
+
+/* ── P1: run plan digest ── */
+.plan-digest {
+  display: flex; gap: 12px; align-items: flex-start;
+  margin: 0 0 16px; padding: 13px 16px;
+  border: 1px solid var(--accent-line); border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--accent-soft), transparent 70%), var(--surface-raised);
+}
+.plan-digest-head { color: var(--accent-bright); font-size: 1rem; line-height: 1.2; }
+.plan-digest-title { font-size: .84rem; letter-spacing: .02em; }
+.plan-digest-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px 22px; margin: 8px 0 0;
+}
+.plan-digest-grid dt {
+  font-size: .62rem; text-transform: uppercase; letter-spacing: .08em; color: var(--faint);
+}
+.plan-digest-grid dd { margin: 1px 0 0; font-size: .83rem; }
+.plan-digest-grid dd code { font-size: .75rem; color: var(--accent-bright); }
+.plan-digest-freeze {
+  margin: 9px 0 0; padding-top: 8px;
+  border-top: 1px dashed var(--line);
+  font-size: .71rem; color: var(--muted);
+}
+
+/* ── P5: inline launch review ── */
+.launch-review {
+  margin-top: 12px; padding: 13px 16px;
+  border: 1px solid var(--review); border-radius: var(--radius);
+  background: var(--review-soft);
+}
+.launch-review-title { color: var(--review); font-size: .88rem; }
+.launch-review-text { margin: 6px 0 0; font-size: .82rem; color: var(--text-soft); }
+.launch-review-actions { display: flex; gap: 10px; margin-top: 11px; flex-wrap: wrap; }
+
+/* ── P3: decision brief card ── */
+.decision-brief {
+  margin-top: 12px;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  overflow: hidden;
+}
+.decision-brief-row {
+  display: grid; grid-template-columns: 140px 1fr; gap: 14px;
+  padding: 10px 15px;
+}
+.decision-brief-row + .decision-brief-row { border-top: 1px solid var(--line); }
+.decision-brief-key {
+  font-size: .62rem; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--faint); padding-top: 3px;
+}
+.decision-brief-val { font-size: .84rem; color: var(--text-soft); }
+.decision-brief-risk .decision-brief-val { color: var(--review); }
+.decision-brief-list { margin: 0; padding-left: 18px; }
+.decision-brief-list li + li { margin-top: 3px; }
+.decision-brief-options { display: grid; gap: 7px; }
+.decision-brief-option {
+  display: grid; gap: 2px;
+  padding: 8px 11px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.decision-brief-option strong { font-size: .78rem; color: var(--accent-bright); text-transform: capitalize; }
+.decision-brief-option span { font-size: .8rem; }
+.decision-brief-option.is-recommended { border-color: var(--accent-line); background: var(--accent-soft); }
+.decision-brief-rec {
+  font-style: normal; font-size: .64rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .07em; color: var(--approved);
+}
+@media (max-width: 720px) {
+  .decision-brief-row { grid-template-columns: 1fr; gap: 3px; }
+}

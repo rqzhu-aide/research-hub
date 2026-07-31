@@ -1,3 +1,60 @@
+{% macro empirical_rail_state(empirical_record) -%}
+  {%- set states = [
+    empirical_record.method_applicability.display_state | default(empirical_record.state | default('not_run')),
+    empirical_record.sibling_basis.display_state | default('not_run'),
+    empirical_record.research_attention.display_state | default('not_run'),
+  ] -%}
+  {%- if 'invalid' in states -%}invalid
+  {%- elif 'update_needed' in states -%}update_needed
+  {%- elif states | select('equalto', 'current') | list | length == states | length -%}current
+  {%- else -%}not_run
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro branch_status_rail(records, phase_slug) -%}
+  {% set entries = [('P2', records.method | default({})), ('P3', records.theory | default({})), ('P4', records.empirical | default({}))] %}
+  {% if phase_slug == '05-review-revision' %}
+    {% set entries = entries + [('P5', records.manuscript | default({}))] %}
+  {% endif %}
+  <span class="status-rail" aria-label="Branch record status">
+  {% for label, rec in entries %}
+    {% if phase_slug == '04-draft-assembly' and label == 'P4' %}
+      {% set state %}{{ empirical_rail_state(rec) }}{% endset %}
+      {% set tooltip = [
+        rec.method_applicability.label | default(''),
+        rec.sibling_basis.label | default(''),
+        rec.research_attention.label | default(''),
+      ] | reject('equalto', '') | join(' · ') %}
+    {% else %}
+      {% set state = rec.state | default('not_run') %}
+      {% set tooltip = (rec.label | default('Not recorded')) ~ ((' — ' ~ rec.reason) if rec.reason | default('') else '') %}
+    {% endif %}
+    <span class="rail-seg rail-{{ state | trim }}" title="{{ tooltip }}">{{ label }}</span>
+  {% endfor %}
+  </span>
+  {% set ns = namespace(issues=[]) %}
+  {% for label, rec in entries %}
+    {% if phase_slug == '04-draft-assembly' and label == 'P4' %}
+      {% set state %}{{ empirical_rail_state(rec) }}{% endset %}
+      {% if state | trim in ['update_needed', 'invalid'] %}
+        {% set ns.issues = ns.issues + ['P4: ' ~ ([
+          rec.method_applicability.label | default(''),
+          rec.sibling_basis.label | default(''),
+          rec.research_attention.label | default(''),
+        ] | reject('equalto', '') | list | first | default('Evidence needs attention'))] %}
+      {% endif %}
+    {% else %}
+      {% set state = rec.state | default('not_run') %}
+      {% if state in ['update_needed', 'invalid'] and rec.label | default('') %}
+        {% set ns.issues = ns.issues + [label ~ ': ' ~ rec.label] %}
+      {% endif %}
+    {% endif %}
+  {% endfor %}
+  {% if ns.issues %}
+  <span class="status-rail-note">{{ ns.issues | join(' · ') }}</span>
+  {% endif %}
+{%- endmacro %}
+
 {% macro phase_four_record_signals(empirical_record) -%}
   {% set method_applicability = empirical_record.method_applicability | default({}) %}
   {% set sibling_basis = empirical_record.sibling_basis | default({}) %}
@@ -392,6 +449,55 @@
       {% endif %}
     </div>
     {% endif %}
+    {% if latest.decision_brief | default(none) %}
+      {% set brief = latest.decision_brief %}
+    <div class="decision-brief" aria-label="Decision brief for this run">
+      {% if brief.rerun_comparison %}
+      <div class="decision-brief-row">
+        <span class="decision-brief-key">What changed</span>
+        <span class="decision-brief-val">{{ brief.rerun_comparison }}</span>
+      </div>
+      {% endif %}
+      {% if brief.main_evidence %}
+      <div class="decision-brief-row">
+        <span class="decision-brief-key">Main evidence</span>
+        <span class="decision-brief-val">
+          <ul class="decision-brief-list">
+            {% for item in brief.main_evidence %}<li>{{ item }}</li>{% endfor %}
+          </ul>
+        </span>
+      </div>
+      {% endif %}
+      {% if brief.principal_risk %}
+      <div class="decision-brief-row decision-brief-risk">
+        <span class="decision-brief-key">Principal risk</span>
+        <span class="decision-brief-val">{{ brief.principal_risk }}</span>
+      </div>
+      {% endif %}
+      {% if brief.smallest_decision_changer %}
+      <div class="decision-brief-row">
+        <span class="decision-brief-key">Decision changer</span>
+        <span class="decision-brief-val">{{ brief.smallest_decision_changer }}</span>
+      </div>
+      {% endif %}
+      {% if brief.options %}
+      <div class="decision-brief-row">
+        <span class="decision-brief-key">Next decision</span>
+        <span class="decision-brief-val decision-brief-options">
+          {% for opt in brief.options %}
+          <span class="decision-brief-option{% if brief.recommended_user_action and opt.key == brief.recommended_user_action %} is-recommended{% endif %}">
+            <strong>{{ opt.label | replace('_', ' ') }}</strong>
+            <span>{{ opt.text }}</span>
+            {% if brief.recommended_user_action and opt.key == brief.recommended_user_action %}
+            <em class="decision-brief-rec">recommended</em>
+            {% endif %}
+          </span>
+          {% endfor %}
+        </span>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
 {# ── Action row ── #}
     <div class="run-actions">
       {% if latest.summary_available %}
@@ -439,7 +545,7 @@
 {% elif not recovery_only %}
 
 <form action="{{ url_for('start_phase', project_id=project.id, phase_slug=pc.slug) }}"
-      method="post" class="launch-form-lower" data-confirm="Launch this run now?" data-unsaved-guard
+      method="post" class="launch-form-lower" data-unsaved-guard
       data-draft-key="project-{{ project.id }}-phase-{{ pc.slug }}-launch">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="project_identity" value="{{ project_identity }}">
@@ -573,41 +679,8 @@
             </span>
             {% if pc.slug in ['03-idea-evaluation', '04-draft-assembly', '05-review-revision'] %}
               {% set records = method.record_status | default({}) %}
-              {% set method_record = records.method | default({}) %}
-              {% set theory_record = records.theory | default({}) %}
-              {% set empirical_record = records.empirical | default({}) %}
-              {% set manuscript_record = records.manuscript | default({}) %}
             <span class="method-record-statuses" aria-label="Current branch records">
-              <span class="record-status record-status-{{ method_record.state | default('update_needed') }}">
-                P2: {{ method_record.label | default('Phase 1 basis was not recorded') }}
-                {% if method_record.reason | default('') %}
-                <span class="record-status-reason">{{ method_record.reason }}</span>
-                {% endif %}
-              </span>
-              <span class="record-status record-status-{{ theory_record.state | default('not_run') }}">
-                P3: {{ theory_record.label | default('Theory not run') }}
-                {% if theory_record.reason | default('') %}
-                <span class="record-status-reason">{{ theory_record.reason }}</span>
-                {% endif %}
-              </span>
-              {% if pc.slug == '04-draft-assembly' %}
-              {{ phase_four_record_signals(empirical_record) }}
-              {% else %}
-              <span class="record-status record-status-{{ empirical_record.state | default('not_run') }}">
-                P4: {{ empirical_record.label | default('Empirical work not run') }}
-                {% if empirical_record.reason | default('') %}
-                <span class="record-status-reason">{{ empirical_record.reason }}</span>
-                {% endif %}
-              </span>
-              {% endif %}
-              {% if pc.slug == '05-review-revision' %}
-              <span class="record-status record-status-{{ manuscript_record.state | default('not_run') }}">
-                P5: {{ manuscript_record.label | default('No manuscript draft') }}
-                {% if manuscript_record.reason | default('') %}
-                <span class="record-status-reason">{{ manuscript_record.reason }}</span>
-                {% endif %}
-              </span>
-              {% endif %}
+              {{ branch_status_rail(records, pc.slug) }}
             </span>
             {% endif %}
             {% if method.errors %}
@@ -842,12 +915,20 @@
     <input type="hidden" name="rounds" value="{{ round_default }}">
   {% endif %}
 
-  {# ── Instruction textarea ── #}
-  <div class="instruction-box">
-    <label class="instruction-label" for="feedback-{{ pc.slug }}">Your instructions for this run</label>
+  {# ── Instruction textarea (the user's direction — the form's hero input) ── #}
+  <div class="instruction-box direction-panel">
+    <div class="direction-panel-head">
+      <label class="instruction-label" for="feedback-{{ pc.slug }}">Your direction</label>
+      <span class="direction-tag">frozen into the run record</span>
+    </div>
     <textarea name="feedback" id="feedback-{{ pc.slug }}" rows="6" class="instruction-textarea"
               maxlength="5000" autocomplete="off" spellcheck="true"
-              placeholder="{{ 'What should the team develop, compare, revise, preserve, or retire in this run?' if pc.slug == '02-method-development' else 'What should the agents focus on? What changed? What would you like to see improved?' }}"></textarea>
+              data-char-counter="{{ pc.slug }}"
+              placeholder="{{ 'What should the team develop, compare, revise, preserve, or retire in this run?' if pc.slug == '02-method-development' else 'What should the agents focus on? What changed since the last run? What would make this run a success?' }}"></textarea>
+    <div class="direction-panel-foot">
+      <span>Read by the research lead first; quoted back in the run progress view.</span>
+      <span class="direction-char-count" data-char-count="{{ pc.slug }}">0 / 5000</span>
+    </div>
   </div>
 
   {# ── Conditional overrides ── #}
@@ -864,6 +945,21 @@
   {# ── Replace awaiting-review run (R10): if the latest run is awaiting
        review, allow the user to launch a new run that replaces it directly,
        without needing to approve or request revision first. ── #}
+
+  {# ── Run plan digest: live summary of what this launch commits to ── #}
+  <div class="plan-digest" data-plan-digest hidden>
+    <div class="plan-digest-head" aria-hidden="true">▣</div>
+    <div class="plan-digest-body">
+      <strong class="plan-digest-title">Run plan — this is what launches</strong>
+      <dl class="plan-digest-grid">
+        <div data-digest-row="method"><dt>Method</dt><dd data-digest-method>—</dd></div>
+        <div data-digest-row="mode"><dt data-digest-mode-label>Plan</dt><dd data-digest-mode>—</dd></div>
+        <div data-digest-row="context"><dt>Context</dt><dd data-digest-context>—</dd></div>
+        <div data-digest-row="rounds"><dt>Rounds</dt><dd data-digest-rounds>—</dd></div>
+      </dl>
+      <p class="plan-digest-freeze">At launch, the selected inputs and your direction are frozen and hashed. Later project changes cannot silently alter this run — a rerun is how you respond to change.</p>
+    </div>
+  </div>
 
   {# ── Launch button with inline rounds selector ── #}
   <div class="launch-footer-compact">
@@ -905,6 +1001,16 @@
     {% elif run_active %}
     <span class="launch-hint">This run is already in progress.</span>
     {% endif %}
+  </div>
+
+  {# ── Inline launch review (replaces the native confirm dialog) ── #}
+  <div class="launch-review" data-launch-review hidden>
+    <strong class="launch-review-title">Review before launch</strong>
+    <p class="launch-review-text" data-launch-review-text></p>
+    <div class="launch-review-actions">
+      <button type="button" class="btn btn-primary" data-launch-confirm>Confirm — launch this run</button>
+      <button type="button" class="btn btn-quiet" data-launch-back>Back</button>
+    </div>
   </div>
 </form>
 

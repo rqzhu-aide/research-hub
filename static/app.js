@@ -203,6 +203,143 @@
     });
   }
 
+  function initializeLaunchExperience(root = document) {
+    /* Char counters on the direction textarea. */
+    root.querySelectorAll?.("textarea[data-char-counter]").forEach((ta) => {
+      if (ta.dataset.charCounterInit) return;
+      ta.dataset.charCounterInit = "true";
+      const counter = ta.closest(".direction-panel")
+        ?.querySelector(`[data-char-count="${ta.dataset.charCounter}"]`);
+      if (!counter) return;
+      const limit = ta.maxLength > 0 ? ta.maxLength : 5000;
+      const updateCount = () => {
+        counter.textContent = `${ta.value.length} / ${limit}`;
+      };
+      ta.addEventListener("input", updateCount);
+      updateCount();
+    });
+
+    /* Plan digest + inline launch review on launch forms. */
+    const forms = [];
+    if (root.matches?.("form.launch-form-lower")) forms.push(root);
+    root.querySelectorAll?.("form.launch-form-lower").forEach((form) => forms.push(form));
+    forms.forEach((form) => {
+      if (form.dataset.launchExperienceInit) return;
+      form.dataset.launchExperienceInit = "true";
+      const digest = form.querySelector("[data-plan-digest]");
+      const cell = (name) => digest?.querySelector(`[data-digest-${name}]`);
+      const row = (name) => digest?.querySelector(`[data-digest-row="${name}"]`);
+
+      const optionText = (select) =>
+        select?.selectedOptions?.[0]?.textContent.trim() || "";
+
+      const updateDigest = () => {
+        if (!digest) return;
+        /* Method. */
+        const selected = form.querySelector("[data-method-radio]:checked:not(:disabled)");
+        const auditSource = form.querySelector("[data-theory-audit-source]");
+        const planSelect = form.querySelector("[data-theory-plan]");
+        const branchName = form.querySelector(".branch-info-name")?.textContent.trim();
+        if (selected) {
+          const option = selected.closest("[data-method-option]");
+          const title = option?.querySelector(".method-option-title")?.textContent.trim() || selected.value;
+          const version = option?.querySelector(".method-option-meta span")?.textContent.trim() || "";
+          cell("method").textContent = version ? `${title} (${version})` : title;
+          row("method").hidden = false;
+        } else if (planSelect?.value === "audit_only") {
+          cell("method").textContent = optionText(auditSource) || "Choose a theory artifact below";
+          row("method").hidden = false;
+        } else if (branchName) {
+          cell("method").textContent = branchName;
+          row("method").hidden = false;
+        } else if (form.querySelector("[data-method-selection]")) {
+          cell("method").textContent = "Choose a method above";
+          row("method").hidden = false;
+        } else {
+          row("method").hidden = true;
+        }
+        /* Mode / plan / scope. */
+        const modeSelect = form.querySelector("[data-run-mode-select]");
+        const scopeRadio = form.querySelector("[data-phase-two-scope-radio]:checked");
+        const modeLabel = cell("mode-label");
+        if (modeSelect) {
+          modeLabel.textContent = "Run mode";
+          cell("mode").textContent = optionText(modeSelect);
+        } else if (planSelect) {
+          modeLabel.textContent = "Proof plan";
+          cell("mode").textContent = optionText(planSelect);
+        } else if (scopeRadio) {
+          modeLabel.textContent = "Scope";
+          const label = scopeRadio.closest(".scope-choice-row")?.querySelector("strong")?.textContent.trim() || scopeRadio.value;
+          const focused = form.querySelector("[data-phase-two-focus]");
+          cell("mode").textContent =
+            scopeRadio.value === "focused_method" && focused && !focused.disabled && focused.value
+              ? `${label}: ${optionText(focused)}`
+              : label;
+        } else {
+          row("mode").hidden = true;
+        }
+        if (modeSelect || planSelect || scopeRadio) row("mode").hidden = false;
+        /* Context policy. */
+        const contextRadio = form.querySelector("input[name='theory_context_policy']:checked");
+        if (contextRadio) {
+          cell("context").textContent =
+            contextRadio.closest(".scope-choice-row")?.querySelector("strong")?.textContent.trim() ||
+            contextRadio.value;
+        } else {
+          cell("context").textContent = "Verified current records (default)";
+        }
+        /* Rounds. */
+        const rounds = form.querySelector("[name='rounds']");
+        if (rounds) {
+          cell("rounds").textContent = `${rounds.value || "1"} round${String(rounds.value) === "1" ? "" : "s"}`;
+        } else {
+          row("rounds").hidden = true;
+        }
+        digest.hidden = false;
+      };
+
+      form.addEventListener("change", updateDigest);
+      updateDigest();
+
+      /* Inline launch review (replaces the native confirm dialog). */
+      const review = form.querySelector("[data-launch-review]");
+      if (review) {
+        const reviewText = review.querySelector("[data-launch-review-text]");
+        const confirmBtn = review.querySelector("[data-launch-confirm]");
+        const backBtn = review.querySelector("[data-launch-back]");
+        form.addEventListener("submit", (event) => {
+          if (form.dataset.reviewOk === "true") return;
+          event.preventDefault();
+          event.stopPropagation();
+          updateDigest();
+          const parts = ["method", "mode", "context", "rounds"]
+            .filter((name) => row(name) && !row(name).hidden)
+            .map((name) => {
+              const label = name === "mode" ? cell("mode-label").textContent : name[0].toUpperCase() + name.slice(1);
+              return `${label}: ${cell(name).textContent}`;
+            });
+          if (reviewText) {
+            reviewText.textContent =
+              `You are about to launch this run with ${parts.join(" · ")}. ` +
+              "The selected inputs and your direction are frozen into the run record at launch.";
+          }
+          review.hidden = false;
+          confirmBtn?.focus({ preventScroll: true });
+        });
+        confirmBtn?.addEventListener("click", () => {
+          form.dataset.reviewOk = "true";
+          review.hidden = true;
+          form.requestSubmit();
+        });
+        backBtn?.addEventListener("click", () => {
+          review.hidden = true;
+          delete form.dataset.reviewOk;
+        });
+      }
+    });
+  }
+
   function initializeMethodSelection(root = document) {
     const forms = [];
     if (root.matches?.("form.launch-form-lower")) forms.push(root);
@@ -608,6 +745,7 @@
       ensureMathJax(replacement);
       initializeMethodSelection(replacement);
       initializePhaseTwoScope(replacement);
+      initializeLaunchExperience(replacement);
       clearAsyncError(replacement, "project-tabs");
       clearAsyncError(replacement, "project-interaction");
       if (pushHistory) {
@@ -905,6 +1043,7 @@
   ensureMathJax();
   initializeMethodSelection();
   initializePhaseTwoScope();
+  initializeLaunchExperience();
   formatTimes();
 
   // ── Theme toggle (light/dark) ──

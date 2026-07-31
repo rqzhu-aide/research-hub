@@ -1375,7 +1375,7 @@ def test_phase_two_page_always_shows_an_empty_method_menu_and_run_panel(
     assert response.status_code == 200
     assert "Current methods" in body
     assert "No methods have been produced yet" in body
-    assert "Your instructions for this run" in body
+    assert "Your direction" in body
     assert "Launch Method Development" in body
     assert "Use for following phases" not in body
     assert 'name="replace_awaiting_review"' not in body
@@ -1474,7 +1474,7 @@ def test_phase_two_published_catalog_and_rerun_form_launch_without_approval(
     assert "Current methods" in body
     assert "Existing Method" in body
     assert "Rerun Phase 2" in body
-    assert "Your instructions for this run" in body
+    assert "Your direction" in body
     assert 'name="replace_awaiting_review"' not in body
     assert 'name="approval_kind"' not in body
     assert "accept_selected_scientific_object" not in body
@@ -1625,7 +1625,7 @@ def test_phase_two_table_and_launch_controls_remain_visible_during_a_run(
     assert response.status_code == 200
     assert "Current methods" in body
     assert "Active Method" in body
-    assert "Your instructions for this run" in body
+    assert "Your direction" in body
     assert "This run is already in progress" in body
     assert "Wait for the active project run to finish" in body
     assert re.search(
@@ -1762,7 +1762,10 @@ def test_method_panel_uses_authoritative_current_record_status(
     )
     assert body.count(theory_reason) == 2
     assert body.count(empirical_reason) == 2
-    assert body.count('class="record-status-reason"') >= 4
+    # Reasons now live in the detail panel and rail tooltips; the compact
+    # status rail replaced the verbose per-option status spans.
+    assert body.count('class="record-status-reason"') >= 2
+    assert 'class="status-rail"' in body
     assert f'data-knowledge-heads-version="{"h" * 64}"' in body
     assert f'data-phase-two-review-version="{"d" * 64}"' in body
     assert 'name="phase_two_review_version" value=""' in body

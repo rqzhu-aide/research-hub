@@ -1068,7 +1068,48 @@ def _run_view(
         "stages_requested": requested,
         "stages_completed": completed,
         "summary_highlight": _summary_highlight(project_dir, run, phase_slug),
+        "decision_brief": _decision_brief(run),
     }
+
+
+def _decision_brief(run: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Extract the structured decision payload for the phase-tab brief card.
+
+    Decision records already carry main evidence, the principal risk, and
+    per-option consequences; the UI previously showed only the plain-text
+    summary highlight. Returns None when nothing structured is available.
+    """
+
+    record = run.get("decision_record")
+    data = record.get("data") if isinstance(record, Mapping) else None
+    if not isinstance(data, Mapping):
+        return None
+    brief: dict[str, Any] = {}
+    for key in (
+        "rerun_comparison",
+        "principal_risk",
+        "smallest_decision_changer",
+        "recommended_user_action",
+    ):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            brief[key] = value.strip()
+    evidence = data.get("main_evidence")
+    if isinstance(evidence, list):
+        items = [str(item).strip() for item in evidence]
+        items = [item for item in items if item][:3]
+        if items:
+            brief["main_evidence"] = items
+    options = data.get("option_consequences")
+    if isinstance(options, Mapping):
+        brief["options"] = [
+            {"key": str(key), "label": str(key).replace("_", " "), "text": str(value).strip()}
+            for key, value in options.items()
+            if isinstance(value, str) and value.strip()
+        ]
+        if not brief["options"]:
+            brief.pop("options")
+    return brief or None
 
 
 def _phase_runs(
