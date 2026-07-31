@@ -411,16 +411,34 @@ def _dispatch_task(
                 evidence_label = (
                     f"{item.get('evidence_status', 'historical')} advisory evidence"
                 )
-            context_lines.append(
-                f"- Summary, {item['phase']} run {item['run_id']} "
-                f"({item.get('kind', 'context')}; {evidence_label}; "
-                f"SHA-256 {item['sha256']}): {item['path']}"
-            )
+            digest = item.get("decision_digest")
+            if isinstance(digest, Mapping) and digest.get("path"):
+                context_lines.append(
+                    f"- Decision digest, {item['phase']} run {item['run_id']} "
+                    f"({item.get('kind', 'context')}; {evidence_label}; "
+                    f"read this first): {digest['path']}"
+                )
+                context_lines.append(
+                    f"  - Full summary and decision record "
+                    f"(consult when the digest is insufficient; "
+                    f"SHA-256 {item['sha256']}): {item['path']}"
+                )
+            else:
+                context_lines.append(
+                    f"- Summary, {item['phase']} run {item['run_id']} "
+                    f"({item.get('kind', 'context')}; {evidence_label}; "
+                    f"SHA-256 {item['sha256']}): {item['path']}"
+                )
             for report in item.get("discussion", []):
+                report_role = str(report.get("role") or "")
+                if report_role == role:
+                    guidance = "your role's upstream report — read when the task needs depth"
+                else:
+                    guidance = "other role — consult only if your task touches it"
                 context_lines.append(
                     f"  - Prior role report, round {report.get('round')}, "
-                    f"{report.get('role') or 'role not recorded'} "
-                    f"(SHA-256 {report.get('sha256', 'not recorded')}): "
+                    f"{report_role or 'role not recorded'} ({guidance}; "
+                    f"SHA-256 {report.get('sha256', 'not recorded')}): "
                     f"{report.get('path')}"
                 )
             for artifact in item.get("supporting_artifacts", []):
@@ -650,6 +668,8 @@ END FROZEN ROLE SOUL
 Read these files before working:
 - Role protocol: {playbook}
 - Project brief: {snapshots['setting']['path']}
+
+Shared standards — consult as needed (vocabulary is binding when you use it):
 - Team charter: {snapshots['team']['charter']['path']}
 - Team norms: {snapshots['team']['norms']['path']}
 
