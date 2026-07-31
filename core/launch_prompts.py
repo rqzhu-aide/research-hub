@@ -31,6 +31,78 @@ MAX_FROZEN_PHASE5_CURRENT_RECORD_BYTES = 96 * 1024 * 1024
 _CONTEXT_USABLE_SCIENTIFIC_OUTCOMES = frozenset({"Complete", "Partial"})
 
 
+def _condense_decision_payload(
+    payload: Mapping[str, Any],
+    *,
+    phase: str,
+    run_id: str,
+    full_sha256: str,
+) -> str:
+    """Render a compact markdown digest of a sealed decision record.
+
+    Role agents read the digest instead of the full structured record; the
+    digest always points back to the frozen full record for depth. Field set
+    mirrors the webapp's decision brief (`web_phase_data._decision_brief`).
+    """
+
+    def _text(key: str) -> str:
+        value = payload.get(key)
+        return str(value).strip() if isinstance(value, str) and value.strip() else ""
+
+    lines = [
+        f"# Decision digest — {phase} run {run_id}",
+        "",
+        "Condensed from the sealed decision record. The full record is frozen",
+        f"alongside as `{phase}-{run_id}.json` (SHA-256 {full_sha256}).",
+        "",
+    ]
+    for label, key in (
+        ("Scientific outcome", "scientific_outcome"),
+        ("Decision requested", "decision_requested"),
+        ("Recommendation", "recommendation"),
+        ("Recommended user action", "recommended_user_action"),
+    ):
+        value = _text(key)
+        if value:
+            lines.append(f"- **{label}:** {value}")
+    selected = payload.get("selected_scientific_object")
+    if isinstance(selected, Mapping) and selected:
+        identity = selected.get("stable_id") or selected.get("id") or ""
+        version = selected.get("version") or ""
+        label = selected.get("label") or ""
+        rendered = " ".join(part for part in (str(label), f"`{identity}`", str(version)) if part)
+        lines.append(f"- **Selected object:** {rendered.strip()}")
+    evidence = payload.get("main_evidence")
+    if isinstance(evidence, list):
+        items = [str(item).strip() for item in evidence if str(item).strip()][:3]
+        if items:
+            lines.extend(["", "## Main evidence"])
+            lines.extend(f"{index}. {item}" for index, item in enumerate(items, 1))
+    risk = _text("principal_risk")
+    if risk:
+        lines.extend(["", "## Principal risk", "", risk])
+    changer = _text("smallest_decision_changer")
+    if changer:
+        lines.extend(["", "## Smallest decision changer", "", changer])
+    options = payload.get("option_consequences")
+    if isinstance(options, Mapping):
+        rendered_options = [
+            (str(key).replace("_", " "), str(value).strip())
+            for key, value in options.items()
+            if isinstance(value, str) and value.strip()
+        ]
+        if rendered_options:
+            lines.extend(["", "## Option consequences"])
+            lines.extend(f"- **{key}:** {text}" for key, text in rendered_options)
+    comparison = _text("rerun_comparison")
+    if comparison:
+        lines.extend(["", "## Comparison with the previous record", "", comparison])
+    question = _text("rerun_question")
+    if question:
+        lines.extend(["", "## Rerun question", "", question])
+    return "\n".join(lines) + "\n"
+
+
 def _snapshot_run_inputs(
     project_dir: Path,
     phase: Mapping[str, Any],
@@ -122,6 +194,20 @@ def _snapshot_run_inputs(
         return {
             "path": str(target),
             "sha256": target_digest,
+        }
+
+    def freeze_text(relative_name: str, text: str) -> dict[str, str]:
+        """Freeze derived (generated) text with the same integrity guarantees."""
+        payload = text.encode("utf-8")
+        target = launch_common._contained_file_destination(
+            destination / relative_name,
+            destination,
+            label="frozen derived context destination",
+        )
+        launch_common._write_bytes_atomic(target, payload)
+        return {
+            "path": str(target),
+            "sha256": hashlib.sha256(payload).hexdigest(),
         }
 
     snapshots: dict[str, Any] = {
@@ -568,6 +654,28 @@ def _snapshot_run_inputs(
                 "scientific_outcome": decision_input.get("scientific_outcome"),
             })
             frozen_entry["decision_record"] = decision_snapshot
+            # Derived condensed digest: role agents read this instead of the
+            # full structured record. Fail-safe: an unreadable payload skips
+            # the digest rather than blocking the launch.
+            try:
+                payload_text = launch_common._bounded_bytes(
+                    project_dir / str(decision_input.get("path", "")),
+                    label="prior decision payload",
+                    max_bytes=launch_common.MAX_SOURCE_DECISION_BYTES,
+                ).decode("utf-8")
+                digest_text = _condense_decision_payload(
+                    json.loads(payload_text),
+                    phase=str(entry["phase"]),
+                    run_id=str(entry["run_id"]),
+                    full_sha256=decision_snapshot["sha256"],
+                )
+            except (launch_common.LaunchError, UnicodeError, json.JSONDecodeError):
+                digest_text = ""
+            if digest_text:
+                frozen_entry["decision_digest"] = freeze_text(
+                    f"decisions/{entry['phase']}-{entry['run_id']}-digest.md",
+                    digest_text,
+                )
         snapshots["summaries"].append(frozen_entry)
 
     if selected_method is not None:

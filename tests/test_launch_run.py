@@ -6754,3 +6754,97 @@ def test_p5_review_context_includes_prior_review_cycle(
     by_run = {entry["run_id"]: entry for entry in context}
     assert set(by_run) == {"run-rev", "run-asm"}
     assert by_run["run-asm"]["kind"].endswith("_history")
+
+
+def test_snapshot_freezes_a_condensed_decision_digest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each frozen upstream decision gains a condensed digest artifact that
+    role agents read instead of the full structured record."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "setting.md").write_text("setting", encoding="utf-8")
+    summary_rel = "phase-summaries/01-literature-review/run-1.html"
+    summary_path = project / summary_rel
+    summary_path.parent.mkdir(parents=True)
+    summary_path.write_text("<html>summary</html>", encoding="utf-8")
+    decision_payload = {
+        "schema_version": 2,
+        "scientific_outcome": "Complete",
+        "decision_requested": "Approve the literature synthesis",
+        "recommendation": "Approve with limitations",
+        "recommended_user_action": "approve_with_limitations",
+        "selected_scientific_object": None,
+        "main_evidence": ["evidence one", "evidence two", "evidence three", "evidence four"],
+        "principal_risk": "coverage gaps remain",
+        "smallest_decision_changer": "a contradicting meta-analysis",
+        "option_consequences": {"approve": "proceed", "rerun": "one more cycle", "defer": "stall"},
+        "rerun_comparison": "initial run",
+        "rerun_question": "does the gap close with 2026 papers?",
+    }
+    decision_rel = "phase-summaries/01-literature-review/run-1.decision.json"
+    decision_path = project / decision_rel
+    decision_path.write_text(json.dumps(decision_payload), encoding="utf-8")
+    decision_bytes = decision_path.read_bytes()
+
+    team_dir = tmp_path / "team"
+    team_dir.mkdir()
+    (team_dir / "charter.md").write_text("charter", encoding="utf-8")
+    (team_dir / "norms.md").write_text("norms", encoding="utf-8")
+    souls_dir = tmp_path / "souls"
+    souls_dir.mkdir()
+    (souls_dir / "research_lead.md").write_text("lead", encoding="utf-8")
+    (souls_dir / "theorist.md").write_text("theorist", encoding="utf-8")
+    phases_dir = tmp_path / "phases"
+    phase_dir = phases_dir / "03-idea-evaluation"
+    phase_dir.mkdir(parents=True)
+    for name in ("_lead.md", "_phase.md", "theorist.md"):
+        (phase_dir / name).write_text(name, encoding="utf-8")
+    monkeypatch.setattr(launcher.launch_common, "TEAM_DIR", team_dir)
+    monkeypatch.setattr(launcher.launch_common, "SOULS_DIR", souls_dir)
+    monkeypatch.setattr(launcher.launch_common, "PHASES_DIR", phases_dir)
+
+    context_entry = {
+        "phase": "01-literature-review",
+        "run_id": "run-1",
+        "summary": summary_rel,
+        "sha256": hashlib.sha256(summary_path.read_bytes()).hexdigest(),
+        "kind": "current_phase_result",
+        "discussion": [],
+        "supporting_artifacts": [],
+        "protocol_artifacts": [],
+        "decision_record": {
+            "path": decision_rel,
+            "sha256": hashlib.sha256(decision_bytes).hexdigest(),
+            "size": len(decision_bytes),
+            "schema_version": 2,
+            "scientific_outcome": "Complete",
+        },
+    }
+    snapshots = launcher._snapshot_run_inputs(
+        project,
+        {"slug": "03-idea-evaluation", "members": ["theorist"]},
+        "digest-run",
+        [context_entry],
+    )
+
+    frozen = snapshots["summaries"][0]
+    digest = frozen.get("decision_digest")
+    assert digest is not None
+    digest_path = Path(digest["path"])
+    assert digest_path.is_relative_to(
+        launcher.run_context_dir(project, "03-idea-evaluation", "digest-run")
+    )
+    assert digest["sha256"] == hashlib.sha256(digest_path.read_bytes()).hexdigest()
+    text = digest_path.read_text(encoding="utf-8")
+    assert "Approve with limitations" in text
+    assert "coverage gaps remain" in text
+    assert "a contradicting meta-analysis" in text
+    assert "does the gap close with 2026 papers?" in text
+    assert "evidence one" in text
+    assert "evidence four" not in text  # capped at three items
+    assert "**rerun:** one more cycle" in text
+    # The full record stays frozen alongside.
+    assert Path(frozen["decision_record"]["path"]).name == "01-literature-review-run-1.json"
+    assert len(text.encode("utf-8")) < len(decision_bytes) + 512
