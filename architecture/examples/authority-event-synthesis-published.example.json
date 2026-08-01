@@ -1,0 +1,59 @@
+{
+    "schema_version":  "1.0.0",
+    "event_id":  "event.empirical_synthesis.published.001",
+    "project_id":  "project.demo",
+    "event_sequence":  13,
+    "prior_event_root_sha256":  "37a98b0dfcf502c429ac8af61305a3c29b2bdb84ec1276a72ecb19b7d9ac7685",
+    "event_root_sha256":  "5a320384e00301d554e9af9835509fc5cd82ebd39ce6967759d606ae3682937f",
+    "event_type":  "published",
+    "subject":  {
+                    "kind":  "record_generation",
+                    "subject_id":  "record.empirical_synthesis.overlap_stabilized_score",
+                    "generation_id":  "generation.empirical_synthesis.001",
+                    "method_identity":  {
+                                            "stable_id":  "method.overlap_stabilized_score",
+                                            "version":  1,
+                                            "definition_sha256":  "1111111111111111111111111111111111111111111111111111111111111111"
+                                        }
+                },
+    "changes":  {
+                    "publication_state":  "formal",
+                    "record_position":  "current",
+                    "alignment":  {
+                                      "state":  "exact",
+                                      "causes":  [
+                                                     "exact_match"
+                                                 ],
+                                      "assessed_at":  "2026-08-01T15:02:00Z",
+                                      "assessed_by":  "theorist",
+                                      "reasons":  [
+                                                      "The empirical synthesis reports only evidence applicable to the exact method definition."
+                                                  ],
+                                      "assessed_method":  {
+                                                              "stable_id":  "method.overlap_stabilized_score",
+                                                              "version":  1,
+                                                              "definition_sha256":  "1111111111111111111111111111111111111111111111111111111111111111"
+                                                          }
+                                  },
+                    "research_attention":  {
+                                               "level":  "monitor",
+                                               "open_item_ids":  [
+                                                                     "attention.preliminary_scope.001"
+                                                                 ],
+                                               "reasons":  [
+                                                               "The synthesis is aligned but remains limited to the preliminary design."
+                                                           ],
+                                               "next_question":  "Does the empirical conclusion persist in the comprehensive design?"
+                                           }
+                },
+    "reason":  {
+                   "code":  "reason.p4_synthesis_publication",
+                   "explanation":  "The validated Phase 4 publication created the current empirical synthesis."
+               },
+    "trigger":  {
+                    "kind":  "publication_receipt",
+                    "source_id":  "publication.p4.001"
+                },
+    "content_sha256":  "01ecbdacc786bd0c09fdd1bb421df4f25d3a879f7f9f1bedaac638f9ec518cab",
+    "created_at":  "2026-08-01T15:10:04Z"
+}

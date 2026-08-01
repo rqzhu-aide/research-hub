@@ -1,0 +1,58 @@
+{
+    "schema_version":  "1.0.0",
+    "event_id":  "event.implementation.published.001",
+    "project_id":  "project.demo",
+    "event_sequence":  14,
+    "prior_event_root_sha256":  "5a320384e00301d554e9af9835509fc5cd82ebd39ce6967759d606ae3682937f",
+    "event_root_sha256":  "bcc5618482f186d41f78d5dc7c73ebe73a928aef3bcc28b19802a4fe204d48a1",
+    "event_type":  "published",
+    "subject":  {
+                    "kind":  "record_generation",
+                    "subject_id":  "record.implementation.overlap_stabilized_score",
+                    "generation_id":  "generation.implementation.001",
+                    "method_identity":  {
+                                            "stable_id":  "method.overlap_stabilized_score",
+                                            "version":  1,
+                                            "definition_sha256":  "1111111111111111111111111111111111111111111111111111111111111111"
+                                        }
+                },
+    "changes":  {
+                    "publication_state":  "formal",
+                    "record_position":  "current",
+                    "alignment":  {
+                                      "state":  "exact",
+                                      "causes":  [
+                                                     "exact_match"
+                                                 ],
+                                      "assessed_at":  "2026-08-01T15:02:00Z",
+                                      "assessed_by":  "theorist",
+                                      "reasons":  [
+                                                      "The implementation record identifies the exact code and configuration used for the method."
+                                                  ],
+                                      "assessed_method":  {
+                                                              "stable_id":  "method.overlap_stabilized_score",
+                                                              "version":  1,
+                                                              "definition_sha256":  "1111111111111111111111111111111111111111111111111111111111111111"
+                                                          }
+                                  },
+                    "research_attention":  {
+                                               "level":  "none",
+                                               "open_item_ids":  [
+
+                                                                 ],
+                                               "reasons":  [
+
+                                                           ]
+                                           }
+                },
+    "reason":  {
+                   "code":  "reason.p4_implementation_publication",
+                   "explanation":  "The validated Phase 4 publication created the current implementation record."
+               },
+    "trigger":  {
+                    "kind":  "publication_receipt",
+                    "source_id":  "publication.p4.001"
+                },
+    "content_sha256":  "05e45c07cb1cdd0c41d696cb006e9e8f3569879b95c84c135938f225f4526654",
+    "created_at":  "2026-08-01T15:10:04Z"
+}

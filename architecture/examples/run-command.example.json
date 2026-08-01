@@ -1,0 +1,32 @@
+{
+    "schema_version":  "1.0.0",
+    "command_id":  "command.p4.preliminary.001",
+    "idempotency_key":  "demo-p4-preliminary-20260801",
+    "project_id":  "project.demo",
+    "phase":  "P4",
+    "mode":  "p4.preliminary",
+    "requested_by":  {
+                         "user_id":  "researcher.demo",
+                         "operating_actor_type":  "user"
+                     },
+    "context_policy":  "current_only",
+    "resource_constraints":  {
+                                 "wall_time_limit_seconds":  14400,
+                                 "network_policy":  "approved_resources"
+                             },
+    "content_sha256":  "ed29889e27d4e4e5965a972b06ac22f42193f86899cb4ed07e076f50ef8fdb5e",
+    "requested_at":  "2026-08-01T14:00:00Z",
+    "phase_contract_version":  "2.0.0",
+    "phase_contract_sha256":  "e0aa63edebdc8ec3d919507ce674b9865666b680732c5fa287b89ab97101ddd1",
+    "choice_values":  {
+                          "p4.selected_method":  {
+                                                     "stable_id":  "method.overlap_stabilized_score",
+                                                     "version":  1,
+                                                     "definition_sha256":  "1111111111111111111111111111111111111111111111111111111111111111"
+                                                 },
+                          "p4.instructions":  "Assess finite-sample bias, root mean squared error, and interval coverage under weak overlap before committing to a comprehensive study.",
+                          "p4.selected_history":  [
+
+                                                  ]
+                      }
+}

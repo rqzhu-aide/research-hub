@@ -1,0 +1,59 @@
+{
+    "schema_version":  "1.0.0",
+    "event_id":  "event.decision.published.001",
+    "project_id":  "project.demo",
+    "event_sequence":  15,
+    "prior_event_root_sha256":  "bcc5618482f186d41f78d5dc7c73ebe73a928aef3bcc28b19802a4fe204d48a1",
+    "event_root_sha256":  "98749865dc656c73370bd6498f70a7b9a5ef3e9e430559917f5700602e97dfba",
+    "event_type":  "published",
+    "subject":  {
+                    "kind":  "record_generation",
+                    "subject_id":  "decision.p4.preliminary",
+                    "generation_id":  "generation.decision.p4.001",
+                    "method_identity":  {
+                                            "stable_id":  "method.overlap_stabilized_score",
+                                            "version":  1,
+                                            "definition_sha256":  "1111111111111111111111111111111111111111111111111111111111111111"
+                                        }
+                },
+    "changes":  {
+                    "publication_state":  "formal",
+                    "record_position":  "current",
+                    "alignment":  {
+                                      "state":  "exact",
+                                      "causes":  [
+                                                     "exact_match"
+                                                 ],
+                                      "assessed_at":  "2026-08-01T15:05:00Z",
+                                      "assessed_by":  "research_lead",
+                                      "reasons":  [
+                                                      "The decision brief summarizes the exact current Phase 4 record."
+                                                  ],
+                                      "assessed_method":  {
+                                                              "stable_id":  "method.overlap_stabilized_score",
+                                                              "version":  1,
+                                                              "definition_sha256":  "1111111111111111111111111111111111111111111111111111111111111111"
+                                                          }
+                                  },
+                    "research_attention":  {
+                                               "level":  "monitor",
+                                               "open_item_ids":  [
+                                                                     "attention.preliminary_scope.001"
+                                                                 ],
+                                               "reasons":  [
+                                                               "The current evidence is aligned but scientifically narrow."
+                                                           ],
+                                               "next_question":  "Should the researcher authorize a comprehensive Phase 4 run?"
+                                           }
+                },
+    "reason":  {
+                   "code":  "reason.p4_decision_publication",
+                   "explanation":  "The validated Phase 4 publication created the current Phase 4 decision record."
+               },
+    "trigger":  {
+                    "kind":  "publication_receipt",
+                    "source_id":  "publication.p4.001"
+                },
+    "content_sha256":  "71f91f7265a544b42c7dd4cc2de7ab5a2bb064e9919bc6cad085b3be155936a9",
+    "created_at":  "2026-08-01T15:10:04Z"
+}

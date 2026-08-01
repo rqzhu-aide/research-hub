@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-hub.local/architecture/schemas/run-state.schema.json",
+  "title": "Controlled Run State Journal",
+  "description": "The mutable lifecycle projection and cryptographically chained append-only event journal for a run. It is separate from the immutable run manifest.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "run_id",
+    "manifest_sha256",
+    "current_state",
+    "events",
+    "journal_root_sha256",
+    "updated_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common-definitions.schema.json#/$defs/schemaVersion"
+    },
+    "project_id": {
+      "$ref": "common-definitions.schema.json#/$defs/stableId"
+    },
+    "run_id": {
+      "$ref": "common-definitions.schema.json#/$defs/stableId"
+    },
+    "manifest_sha256": {
+      "$ref": "common-definitions.schema.json#/$defs/sha256",
+      "description": "Digest of the sealed RunManifest whose lifecycle this journal records."
+    },
+    "current_state": {
+      "$ref": "common-definitions.schema.json#/$defs/runLifecycleState"
+    },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sequence",
+          "event_id",
+          "prior_event_sha256",
+          "event_sha256",
+          "to",
+          "at",
+          "actor",
+          "reason"
+        ],
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "event_id": {
+            "$ref": "common-definitions.schema.json#/$defs/stableId"
+          },
+          "prior_event_sha256": {
+            "$ref": "common-definitions.schema.json#/$defs/sha256",
+            "description": "Previous event_sha256, or 64 zero hexadecimal characters for the first event."
+          },
+          "event_sha256": {
+            "$ref": "common-definitions.schema.json#/$defs/sha256",
+            "description": "SHA-256 of canonical event JSON with event_sha256 omitted."
+          },
+          "from": {
+            "$ref": "common-definitions.schema.json#/$defs/runLifecycleState"
+          },
+          "to": {
+            "$ref": "common-definitions.schema.json#/$defs/runLifecycleState"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "actor": {
+            "$ref": "common-definitions.schema.json#/$defs/roleId"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence_artifact": {
+            "$ref": "common-definitions.schema.json#/$defs/artifactPointer"
+          }
+        }
+      }
+    },
+    "journal_root_sha256": {
+      "$ref": "common-definitions.schema.json#/$defs/sha256",
+      "description": "The event_sha256 of the final event. It seals the current journal projection without hashing this field into itself."
+    },
+    "terminal_reason_code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "publication_receipt_id": {
+      "$ref": "common-definitions.schema.json#/$defs/stableId"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "current_state": { "const": "published" }
+        },
+        "required": ["current_state"]
+      },
+      "then": {
+        "required": ["publication_receipt_id"]
+      },
+      "else": {
+        "not": { "required": ["publication_receipt_id"] }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "current_state": {
+            "enum": [
+              "cancelled",
+              "failed",
+              "rejected",
+              "conflicted"
+            ]
+          }
+        },
+        "required": ["current_state"]
+      },
+      "then": {
+        "required": ["terminal_reason_code"]
+      },
+      "else": {
+        "not": { "required": ["terminal_reason_code"] }
+      }
+    }
+  ]
+}

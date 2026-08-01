@@ -1,0 +1,184 @@
+{
+    "schema_version":  "1.0.0",
+    "project_id":  "project.demo",
+    "index_generation_id":  "generation.current_index.005",
+    "previous_index_generation_id":  "generation.current_index.004",
+    "slots":  [
+                  {
+                      "slot_id":  "p4.empirical_evidence_index.current",
+                      "record_id":  "record.empirical_evidence.overlap_stabilized_score",
+                      "record_type":  "empirical_evidence_index",
+                      "current_generation_id":  "generation.empirical.001",
+                      "content_sha256":  "a7bb5e0f36d60f95b2eabf79988c15cf878250c4da4a92945be31a09f9d12c1e",
+                      "method_identity":  {
+                                              "stable_id":  "method.overlap_stabilized_score",
+                                              "version":  1,
+                                              "definition_sha256":  "1111111111111111111111111111111111111111111111111111111111111111"
+                                          },
+                      "publication_state":  "formal",
+                      "record_position":  "current",
+                      "alignment":  {
+                                        "state":  "exact",
+                                        "causes":  [
+                                                       "exact_match"
+                                                   ],
+                                        "assessed_at":  "2026-08-01T15:02:00Z",
+                                        "assessed_by":  "theorist",
+                                        "reasons":  [
+                                                        "The current evidence index uses only evidence generated from the exact method definition."
+                                                    ],
+                                        "assessed_method":  {
+                                                                "stable_id":  "method.overlap_stabilized_score",
+                                                                "version":  1,
+                                                                "definition_sha256":  "1111111111111111111111111111111111111111111111111111111111111111"
+                                                            }
+                                    },
+                      "source_event_ids":  [
+                                               "event.record.published.001"
+                                           ],
+                      "research_attention":  {
+                                                 "level":  "monitor",
+                                                 "open_item_ids":  [
+                                                                       "attention.preliminary_scope.001"
+                                                                   ],
+                                                 "reasons":  [
+                                                                 "Evidence remains preliminary and covers a narrow simulation design."
+                                                             ],
+                                                 "next_question":  "Should the researcher launch a comprehensive Phase 4 run before using the performance claim in a manuscript?"
+                                             }
+                  },
+                  {
+                      "slot_id":  "p4.empirical_synthesis.current",
+                      "record_id":  "record.empirical_synthesis.overlap_stabilized_score",
+                      "record_type":  "empirical_synthesis",
+                      "current_generation_id":  "generation.empirical_synthesis.001",
+                      "content_sha256":  "abababababababababababababababababababababababababababababababab",
+                      "method_identity":  {
+                                              "stable_id":  "method.overlap_stabilized_score",
+                                              "version":  1,
+                                              "definition_sha256":  "1111111111111111111111111111111111111111111111111111111111111111"
+                                          },
+                      "publication_state":  "formal",
+                      "record_position":  "current",
+                      "alignment":  {
+                                        "state":  "exact",
+                                        "causes":  [
+                                                       "exact_match"
+                                                   ],
+                                        "assessed_at":  "2026-08-01T15:02:00Z",
+                                        "assessed_by":  "theorist",
+                                        "reasons":  [
+                                                        "The empirical synthesis reports only evidence applicable to the exact method definition."
+                                                    ],
+                                        "assessed_method":  {
+                                                                "stable_id":  "method.overlap_stabilized_score",
+                                                                "version":  1,
+                                                                "definition_sha256":  "1111111111111111111111111111111111111111111111111111111111111111"
+                                                            }
+                                    },
+                      "source_event_ids":  [
+                                               "event.empirical_synthesis.published.001"
+                                           ],
+                      "research_attention":  {
+                                                 "level":  "monitor",
+                                                 "open_item_ids":  [
+                                                                       "attention.preliminary_scope.001"
+                                                                   ],
+                                                 "reasons":  [
+                                                                 "The synthesis is aligned but remains limited to the preliminary design."
+                                                             ],
+                                                 "next_question":  "Does the empirical conclusion persist in the comprehensive design?"
+                                             }
+                  },
+                  {
+                      "slot_id":  "p4.implementation_record.current",
+                      "record_id":  "record.implementation.overlap_stabilized_score",
+                      "record_type":  "implementation_record",
+                      "current_generation_id":  "generation.implementation.001",
+                      "content_sha256":  "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc",
+                      "method_identity":  {
+                                              "stable_id":  "method.overlap_stabilized_score",
+                                              "version":  1,
+                                              "definition_sha256":  "1111111111111111111111111111111111111111111111111111111111111111"
+                                          },
+                      "publication_state":  "formal",
+                      "record_position":  "current",
+                      "alignment":  {
+                                        "state":  "exact",
+                                        "causes":  [
+                                                       "exact_match"
+                                                   ],
+                                        "assessed_at":  "2026-08-01T15:02:00Z",
+                                        "assessed_by":  "theorist",
+                                        "reasons":  [
+                                                        "The implementation record identifies the exact code and configuration used for the method."
+                                                    ],
+                                        "assessed_method":  {
+                                                                "stable_id":  "method.overlap_stabilized_score",
+                                                                "version":  1,
+                                                                "definition_sha256":  "1111111111111111111111111111111111111111111111111111111111111111"
+                                                            }
+                                    },
+                      "source_event_ids":  [
+                                               "event.implementation.published.001"
+                                           ],
+                      "research_attention":  {
+                                                 "level":  "none",
+                                                 "open_item_ids":  [
+
+                                                                   ],
+                                                 "reasons":  [
+
+                                                             ]
+                                             }
+                  },
+                  {
+                      "slot_id":  "p4.phase_decision.current",
+                      "record_id":  "decision.p4.preliminary",
+                      "record_type":  "phase_decision",
+                      "current_generation_id":  "generation.decision.p4.001",
+                      "content_sha256":  "62fe057bac89b289ebd290a13b86d897b9d6c7e27491525144f3c14f8498d1a8",
+                      "method_identity":  {
+                                              "stable_id":  "method.overlap_stabilized_score",
+                                              "version":  1,
+                                              "definition_sha256":  "1111111111111111111111111111111111111111111111111111111111111111"
+                                          },
+                      "publication_state":  "formal",
+                      "record_position":  "current",
+                      "alignment":  {
+                                        "state":  "exact",
+                                        "causes":  [
+                                                       "exact_match"
+                                                   ],
+                                        "assessed_at":  "2026-08-01T15:05:00Z",
+                                        "assessed_by":  "research_lead",
+                                        "reasons":  [
+                                                        "The decision brief summarizes the exact current Phase 4 record."
+                                                    ],
+                                        "assessed_method":  {
+                                                                "stable_id":  "method.overlap_stabilized_score",
+                                                                "version":  1,
+                                                                "definition_sha256":  "1111111111111111111111111111111111111111111111111111111111111111"
+                                                            }
+                                    },
+                      "source_event_ids":  [
+                                               "event.decision.published.001"
+                                           ],
+                      "research_attention":  {
+                                                 "level":  "monitor",
+                                                 "open_item_ids":  [
+                                                                       "attention.preliminary_scope.001"
+                                                                   ],
+                                                 "reasons":  [
+                                                                 "The current evidence is aligned but scientifically narrow."
+                                                             ],
+                                                 "next_question":  "Should the researcher authorize a comprehensive Phase 4 run?"
+                                             }
+                  }
+              ],
+    "publication_receipt_id":  "publication.p4.001",
+    "content_sha256":  "ee53b43b0b38937b6d1ad0cf13e5d2ee7d93fc827c495ac95dd6475ae8fae25e",
+    "created_at":  "2026-08-01T15:10:04Z",
+    "last_event_sequence":  17,
+    "event_root_sha256":  "bbd97f839adacc69bdd2abf826b7b7c4efbc423cbbf9c500073c1458cdbf7666"
+}
